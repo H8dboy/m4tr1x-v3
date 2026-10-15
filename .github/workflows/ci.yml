@@ -87,6 +87,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
+      - name: Dipendenze (servono al verificatore ML-DSA)
+        run: npm ci --ignore-scripts
       # I pacchetti e il release.json firmato offline vengono messi in release/
       # dal processo di build (dalla F8). Senza firma valida il job fallisce e
       # nessun passo di pubblicazione può seguirlo.
