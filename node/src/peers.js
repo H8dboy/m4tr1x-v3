@@ -28,14 +28,7 @@ function startPeers(ctx) {
   /** @type {Set<WebSocket>} */ const sockets = new Set()
   /** @type {Set<NodeJS.Timeout>} */ const timers = new Set()
 
-  /** @param {string} peer */
-  function parse(peer) {
-    let u
-    try { u = new URL(peer) } catch { return null }
-    const loop = cfg.allowLoopbackPeersForTests && (u.hostname === '127.0.0.1' || u.hostname === 'localhost')
-    if (u.protocol !== 'http:' || (!isOnionV3(u.hostname) && !loop)) return null
-    return { base: `http://${u.host}`, ws: `ws://${u.host}/relay`, loop, hostHeader: loop ? 'localhost' : u.hostname }
-  }
+  const parse = (/** @type {string} */ peer) => parsePeer(peer, cfg.allowLoopbackPeersForTests)
 
   function agentFor(/** @type {boolean} */ loop) {
     if (loop) return undefined
@@ -76,7 +69,7 @@ function startPeers(ctx) {
       let m; try { m = JSON.parse(raw.toString()) } catch { return }
       if (!Array.isArray(m) || m[0] !== 'EVENT' || m[1] !== 'sync') return
       const ev = m[2]
-      const [ok] = relay.ingest(ev, null)
+      const [ok] = relay.ingest(ev, null, { fromPeer: true })
       if (!ok) return
       setSince.run(peer, ev.created_at)
       replicateBlobs(peer, ev, target)
@@ -94,6 +87,8 @@ function startPeers(ctx) {
 
   for (const p of cfg.peers) connect(p)
   return {
+    /** Aggiunge peer a nodo avviato (dalla directory, o nei test). @param {string[]} list */
+    add(list) { for (const p of list) if (!cfg.peers.includes(p)) { cfg.peers.push(p); connect(p) } },
     stop() {
       stopped = true
       for (const t of timers) clearTimeout(t)
@@ -102,4 +97,16 @@ function startPeers(ctx) {
   }
 }
 
-module.exports = { startPeers }
+/**
+ * Indirizzo di un peer: solo http://<onion v3>; il loopback solo con l'opzione dei test.
+ * @param {string} peer @param {boolean} allowLoop
+ */
+function parsePeer(peer, allowLoop) {
+  let u
+  try { u = new URL(peer) } catch { return null }
+  const loop = allowLoop && (u.hostname === '127.0.0.1' || u.hostname === 'localhost')
+  if (u.protocol !== 'http:' || (!isOnionV3(u.hostname) && !loop)) return null
+  return { base: `http://${u.host}`, ws: `ws://${u.host}/relay`, loop, hostHeader: loop ? 'localhost' : u.hostname }
+}
+
+module.exports = { startPeers, parsePeer }

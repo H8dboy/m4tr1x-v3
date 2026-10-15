@@ -101,6 +101,8 @@ function checkTemplate(t) {
 function buildEvent(template, identityKey, network) {
   if (!NETWORKS.includes(network)) throw new Error(`rete sconosciuta: ${network}`)
   checkTemplate(template)
+  if (identityKey.role === keys.NODE_ROLE && template.kind !== DESCRIPTOR_KIND)
+    throw new Error('la chiave del nodo firma solo schede di directory')
   if (template.tags.some(t => t[0] === 'net')) throw new Error('il tag "net" lo aggiunge il protocollo')
   const ev = {
     kind: template.kind,
@@ -132,6 +134,84 @@ function verifyEvent(ev, network) {
   } catch { return false }
 }
 
+// ─── Directory: schede dei nodi (ADR-0003, I-29, I-38) ─────────────────────────
+/** Evento sostituibile parametrizzato (NIP-33): una sola scheda attiva per nodo. */
+const DESCRIPTOR_KIND = 30480
+const DESCRIPTOR_D = 'm4tr1x-node'
+const MAX_DESCRIPTOR_TTL = 7 * 86400
+const NODE_ROLES = Object.freeze(['user', 'edge', 'hub', 'anchor'])
+const ONION_V3 = /^[a-z2-7]{56}\.onion$/
+const ANY_IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/
+const ANY_IPV6 = /\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b|::1\b/i
+
+/** Bit a zero iniziali dell'id (difficoltà NIP-13). @param {string} idHex */
+function leadingZeroBits(idHex) {
+  let bits = 0
+  for (const ch of idHex) {
+    const v = parseInt(ch, 16)
+    if (v === 0) { bits += 4; continue }
+    bits += Math.clz32(v) - 28
+    break
+  }
+  return bits
+}
+
+/**
+ * Scheda di un nodo, firmata con la sua chiave (K5), con prova di lavoro facoltativa.
+ * @param {import('../keys').RoleKey} nodeKey
+ * @param {string} network
+ * @param {{ onion: string, roles: string[], version: string, ttlSec: number, powBits?: number, createdAt?: number }} o
+ */
+function buildDescriptor(nodeKey, network, o) {
+  if (nodeKey.role !== keys.NODE_ROLE) throw new Error('una scheda la firma solo la chiave del nodo (ruolo "node")')
+  if (!NETWORKS.includes(network)) throw new Error(`rete sconosciuta: ${network}`)
+  if (!ONION_V3.test(String(o.onion))) throw new Error('la scheda accetta solo un indirizzo onion v3')
+  if (!Array.isArray(o.roles) || !o.roles.length || !o.roles.every(r => NODE_ROLES.includes(r))) throw new Error('ruolo del nodo sconosciuto')
+  if (!Number.isInteger(o.ttlSec) || o.ttlSec < 1 || o.ttlSec > MAX_DESCRIPTOR_TTL) throw new Error('scadenza della scheda: da 1 secondo a 7 giorni')
+  const created_at = o.createdAt ?? Math.floor(Date.now() / 1000)
+  const content = JSON.stringify({ roles: o.roles, version: String(o.version).slice(0, 32) })
+  const base = [['d', DESCRIPTOR_D], ['onion', o.onion], ['expiration', String(created_at + o.ttlSec)]]
+  const bits = o.powBits || 0
+  let tags = [...base, ['net', network]]
+  if (bits > 0) {
+    for (let nonce = 0; ; nonce++) {
+      const t = [...base, ['nonce', String(nonce), String(bits)], ['net', network]]
+      if (leadingZeroBits(eventId(nodeKey.publicKey, created_at, DESCRIPTOR_KIND, t, content)) >= bits) { tags = t; break }
+    }
+  }
+  const ev = { kind: DESCRIPTOR_KIND, content, tags, created_at }
+  const why = h8Violation(ev)
+  if (why) throw new Error(`H8: ${why}`)
+  return signRaw(ev, nodeKey)
+}
+
+/**
+ * Verifica completa di una scheda ricevuta.
+ * @param {any} ev @param {string} network @param {number} now secondi
+ * @returns {{ ok: true } | { ok: false, reason: string }}
+ */
+function verifyDescriptor(ev, network, now) {
+  const no = (/** @type {string} */ reason) => ({ ok: /** @type {false} */ (false), reason })
+  if (!verifyEvent(ev, network)) return no('firma, rete o forma non valide')
+  if (ev.kind !== DESCRIPTOR_KIND) return no('non è una scheda di directory')
+  const all = (/** @type {string} */ n) => ev.tags.filter((/** @type {string[]} */ t) => t[0] === n)
+  if (all('d').length !== 1 || all('d')[0][1] !== DESCRIPTOR_D) return no('tag d mancante')
+  const onions = all('onion')
+  if (onions.length !== 1 || !ONION_V3.test(onions[0][1] || '')) return no('serve un solo indirizzo onion v3')
+  const exp = all('expiration')
+  const expAt = exp.length === 1 ? Number(exp[0][1]) : NaN
+  if (!Number.isInteger(expAt)) return no('scadenza mancante')
+  if (ev.created_at > now + 900) return no('data nel futuro')
+  if (expAt <= now) return no('scheda scaduta')
+  if (expAt - ev.created_at > MAX_DESCRIPTOR_TTL) return no('scadenza oltre 7 giorni')
+  const haystack = ev.content + ' ' + ev.tags.map((/** @type {string[]} */ t) => t.join(' ')).join(' ')
+  if (ANY_IPV4.test(haystack) || ANY_IPV6.test(haystack)) return no('indirizzo IP nella scheda')
+  let body
+  try { body = JSON.parse(ev.content) } catch { return no('contenuto non JSON') }
+  if (!body || !Array.isArray(body.roles) || !body.roles.length || !body.roles.every((/** @type {string} */ r) => NODE_ROLES.includes(r))) return no('ruoli non validi')
+  return { ok: true }
+}
+
 /** Solo per i test: firma un evento SENZA le regole del protocollo (per verificare che verifyEvent lo rifiuti). */
 function _signRawEventForTest(/** @type {any} */ t, /** @type {import('../keys').RoleKey} */ key) {
   return signRaw(t, key)
@@ -139,6 +219,7 @@ function _signRawEventForTest(/** @type {any} */ t, /** @type {import('../keys')
 
 module.exports = {
   NETWORKS, DOMAINS, ACCOUNT_ID_RE,
+  DESCRIPTOR_KIND, DESCRIPTOR_D, MAX_DESCRIPTOR_TTL, NODE_ROLES, leadingZeroBits, buildDescriptor, verifyDescriptor,
   newAccountId, domainDigest, signDomain, verifyDomain,
   eventId, buildEvent, verifyEvent, _signRawEventForTest,
 }

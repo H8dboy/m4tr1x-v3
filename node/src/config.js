@@ -27,6 +27,12 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
  * @property {number} quotaBytes            per pubkey
  * @property {string[]} peers               URL http://<onion v3>[:porta]
  * @property {boolean} allowLoopbackPeersForTests
+ * @property {string[]} anchors             ancore della directory: URL http://<onion v3>
+ * @property {Partial<typeof import('./directory').DEFAULT_LIMITS>} anchorLimits  solo ruolo anchor
+ * @property {number} descriptorTtlSec       scadenza della scheda del nodo (≤ 7 giorni)
+ * @property {number} descriptorRenewSec     ogni quanto si rinnova
+ * @property {number} descriptorPowBits      prova di lavoro della scheda (chiave nuova)
+ * @property {string} [descriptorOnionForTests]
  * @property {boolean} tor
  * @property {string} [torBin]
  * @property {(line: string) => void} [log]
@@ -55,12 +61,20 @@ function normalize(c) {
     quotaBytes: c.quotaBytes ?? 2 * 1024 * 1024 * 1024,
     peers: list(c.peers),
     allowLoopbackPeersForTests: !!c.allowLoopbackPeersForTests,
+    anchors: list(c.anchors),
+    anchorLimits: c.anchorLimits || {},
+    descriptorTtlSec: c.descriptorTtlSec ?? 3 * 86400,
+    descriptorRenewSec: c.descriptorRenewSec ?? 86400,
+    descriptorPowBits: c.descriptorPowBits ?? 18,
+    descriptorOnionForTests: c.descriptorOnionForTests,
     tor: c.tor !== false,
     torBin: c.torBin,
     log: c.log,
     adminKey: c.adminKey,
     allowNodeVersionMismatch: !!c.allowNodeVersionMismatch,
   }
+  if (!(cfg.descriptorTtlSec >= 1 && cfg.descriptorTtlSec <= 7 * 86400)) throw new Error('descriptorTtlSec: da 1 secondo a 7 giorni')
+  if (!(cfg.descriptorRenewSec >= 1 && cfg.descriptorRenewSec < cfg.descriptorTtlSec)) throw new Error('descriptorRenewSec deve essere minore della scadenza')
   for (const o of cfg.allowedOrigins) {
     const u = new URL(o)
     if (u.origin !== o) throw new Error(`origine CORS non canonica: ${o}`)

@@ -54,7 +54,7 @@
 
 ### K5 / K6 — Nodo e onion
 - **Scopo:** K5 firma il descrittore nella directory; K6 è la chiave di Tor dell'indirizzo onion.
-- **Dove vivono:** sul nodo, fuori dal repo, permessi 600; K5 cifrata con chiave della macchina.
+- **Dove vivono:** sul nodo, fuori dal repo, permessi 600. **Stato F3:** K5 è un file con permessi 600 (`node.key` nella cartella dati), **non ancora cifrato** con una chiave della macchina: da fare prima del lancio.
 - **Rotazione:** nuovo descrittore con nuova chiave + evento di revoca firmato con la vecchia; nuovo onion.
 - **Se rubate:** impersonazione del nodo. I client verificano sempre gli hash dei blob (I-17): un nodo falso può non servire, non può servire contenuti alterati.
 

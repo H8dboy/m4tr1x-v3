@@ -22,6 +22,16 @@ const EVENT_BURST = 30
 const EVENT_REFILL_MS = 1000
 const MAX_FUTURE_SEC = 15 * 60
 const isEphemeral = (/** @type {number} */ k) => k >= 20000 && k < 30000
+/** NIP-01: sostituibili (uno per pubkey+kind) e parametrizzati (uno per pubkey+kind+d). */
+const isReplaceable = (/** @type {number} */ k) => k === 0 || k === 3 || (k >= 10000 && k < 20000)
+const isParamReplaceable = (/** @type {number} */ k) => k >= 30000 && k < 40000
+const nowSec = () => Math.floor(Date.now() / 1000)
+/** @param {any} ev */
+function expirationOf(ev) {
+  const t = ev.tags.find((/** @type {string[]} */ x) => x[0] === 'expiration')
+  const n = t ? Number(t[1]) : NaN
+  return Number.isInteger(n) ? n : null
+}
 
 const HEX = /^[0-9a-f]{1,64}$/
 const strList = (/** @type {any} */ v, /** @type {RegExp} [re] */ re = undefined) => Array.isArray(v) && v.length <= MAX_LIST && v.every(x => typeof x === 'string' && x.length <= 256 && (!re || re.test(x)))
@@ -60,11 +70,16 @@ function matches(ev, f) {
 }
 
 /**
- * @param {{ db: import('node:sqlite').DatabaseSync, network: string, log: (s: string) => void }} ctx
+ * @typedef {(ev: any, meta: { fromPeer: boolean }) => [boolean, string]} RelayPolicy
+ *   regole aggiuntive del ruolo (es. ancora): chiamata dopo la verifica di base
+ * @param {{ db: import('node:sqlite').DatabaseSync, network: string, log: (s: string) => void, policy?: RelayPolicy }} ctx
  */
 function createRelay(ctx) {
   const { db, network, log } = ctx
-  const insEv = db.prepare('INSERT OR IGNORE INTO events (id,pubkey,created_at,kind,tags,content,sig,received_at) VALUES (?,?,?,?,?,?,?,?)')
+  const insEv = db.prepare('INSERT OR IGNORE INTO events (id,pubkey,created_at,kind,tags,content,sig,received_at,expires_at,dtag) VALUES (?,?,?,?,?,?,?,?,?,?)')
+  const findRepl = db.prepare('SELECT id, created_at FROM events WHERE pubkey = ? AND kind = ? AND dtag IS ?')
+  const delEv = db.prepare('DELETE FROM events WHERE id = ?')
+  const purgeStmt = db.prepare('DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?')
   const insTag = db.prepare('INSERT INTO event_tags (event_id,name,value) VALUES (?,?,?)')
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD })
   /** @type {Map<string, { ws: import('ws').WebSocket, sid: string, filters: Record<string, any>[] }>} */
@@ -72,9 +87,18 @@ function createRelay(ctx) {
   /** @type {Set<(ev: any) => void>} */
   const listeners = new Set()
 
-  /** Salva un evento già verificato; true se nuovo. @param {any} ev */
+  /** Salva un evento già verificato; true se nuovo. Gestisce i sostituibili. @param {any} ev */
   function store(ev) {
-    const r = insEv.run(ev.id, ev.pubkey, ev.created_at, ev.kind, JSON.stringify(ev.tags), ev.content, ev.sig, Math.floor(Date.now() / 1000))
+    const repl = isReplaceable(ev.kind) || isParamReplaceable(ev.kind)
+    const dtag = isParamReplaceable(ev.kind) ? String(ev.tags.find((/** @type {string[]} */ t) => t[0] === 'd')?.[1] ?? '') : null
+    if (repl) {
+      const old = /** @type {any} */ (findRepl.get(ev.pubkey, ev.kind, dtag))
+      if (old) {
+        if (old.created_at > ev.created_at || (old.created_at === ev.created_at && old.id <= ev.id)) return false
+        delEv.run(old.id)
+      }
+    }
+    const r = insEv.run(ev.id, ev.pubkey, ev.created_at, ev.kind, JSON.stringify(ev.tags), ev.content, ev.sig, nowSec(), expirationOf(ev), dtag)
     if (!r.changes) return false
     for (const t of ev.tags) if (t.length >= 2 && t[0].length === 1) insTag.run(ev.id, t[0], String(t[1]).slice(0, 256))
     return true
@@ -91,12 +115,18 @@ function createRelay(ctx) {
 
   /**
    * Ingresso unico per gli eventi (dai client e dai peer). Ritorna [accettato, messaggio].
-   * @param {any} ev @param {import('ws').WebSocket | null} source
+   * @param {any} ev @param {import('ws').WebSocket | null} source @param {{ fromPeer?: boolean }} [meta]
    * @returns {[boolean, string]}
    */
-  function ingest(ev, source) {
+  function ingest(ev, source, meta = {}) {
     if (!protocol.verifyEvent(ev, network)) return [false, 'invalid: evento non valido per questa rete']
-    if (ev.created_at > Math.floor(Date.now() / 1000) + MAX_FUTURE_SEC) return [false, 'invalid: created_at nel futuro']
+    if (ev.created_at > nowSec() + MAX_FUTURE_SEC) return [false, 'invalid: created_at nel futuro']
+    const exp = expirationOf(ev)
+    if (exp !== null && exp <= nowSec()) return [false, 'invalid: evento scaduto']
+    if (ctx.policy) {
+      const [ok, why] = ctx.policy(ev, { fromPeer: !!meta.fromPeer })
+      if (!ok) return [false, why]
+    }
     const clean = { id: ev.id, pubkey: ev.pubkey, created_at: ev.created_at, kind: ev.kind, tags: ev.tags, content: ev.content, sig: ev.sig }
     if (isEphemeral(clean.kind)) { broadcast(clean, source); return [true, ''] }
     const fresh = store(clean)
@@ -113,6 +143,7 @@ function createRelay(ctx) {
     if (f.kinds) { where.push(`e.kind IN (${f.kinds.map(() => '?').join(',')})`); params.push(...f.kinds) }
     if (f.since) { where.push('e.created_at >= ?'); params.push(f.since) }
     if (f.until) { where.push('e.created_at <= ?'); params.push(f.until) }
+    where.push('(e.expires_at IS NULL OR e.expires_at > ?)'); params.push(nowSec())
     const joinParams = /** @type {any[]} */ ([])
     let n = 0
     for (const [k, vals] of Object.entries(f)) {
@@ -175,10 +206,15 @@ function createRelay(ctx) {
     ws.on('close', () => { for (const sid of mySubs) subs.delete(`${wsId}:${sid}`) })
   })
 
+  /** Cancella gli eventi scaduti (NIP-40). Ritorna quanti. */
+  function purgeExpired() { return Number(purgeStmt.run(nowSec()).changes) }
+  const purgeTimer = setInterval(() => { try { purgeExpired() } catch {} }, 60000)
+  purgeTimer.unref()
+
   return {
-    wss, ingest, query,
+    wss, ingest, query, purgeExpired,
     /** @param {(ev: any) => void} fn */ onEvent: fn => { listeners.add(fn); return () => listeners.delete(fn) },
-    close: () => { for (const c of wss.clients) { try { c.terminate() } catch {} } wss.close() },
+    close: () => { clearInterval(purgeTimer); for (const c of wss.clients) { try { c.terminate() } catch {} } wss.close() },
   }
 }
 

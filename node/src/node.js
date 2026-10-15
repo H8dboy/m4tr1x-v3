@@ -15,6 +15,8 @@ const { createHttp } = require('./http')
 const { startPeers } = require('./peers')
 const { startTor } = require('./tor')
 const { assertPinnedNode } = require('./runtime')
+const keys = require('../../packages/keys')
+const directory = require('./directory')
 
 const VERSION = '3.0.0-dev'
 
@@ -24,6 +26,15 @@ function loadAdminKey(dataDir) {
   if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8').trim()
   const k = crypto.randomBytes(32).toString('hex')
   fs.writeFileSync(f, k, { mode: 0o600 })
+  return k
+}
+
+/** Chiave del nodo K5 (firma la scheda della directory). File con permessi 600. @param {string} dataDir */
+function loadNodeKey(dataDir) {
+  const f = path.join(dataDir, 'node.key')
+  if (fs.existsSync(f)) return keys.roleKeyFromSecret(keys.NODE_ROLE, 1, Buffer.from(fs.readFileSync(f, 'utf8').trim(), 'hex'))
+  const k = keys.generateNodeKey()
+  fs.writeFileSync(f, Buffer.from(keys.exportSecret(k)).toString('hex'), { mode: 0o600 })
   return k
 }
 
@@ -46,7 +57,9 @@ async function startNode(input) {
   let onion = /** @type {string|null} */ (null)
   let socksPort = /** @type {number|null} */ (null)
 
-  const relay = createRelay({ db, network: cfg.network, log })
+  const nodeKey = loadNodeKey(cfg.dataDir)
+  const policy = cfg.role === 'anchor' ? directory.anchorPolicy({ db, network: cfg.network, limits: cfg.anchorLimits }) : undefined
+  const relay = createRelay({ db, network: cfg.network, log, policy })
   const web = createHttp({ cfg, db, log, adminKey, onion: () => onion, version: VERSION })
 
   /** @param {boolean} isPublic */
@@ -80,12 +93,17 @@ async function startNode(input) {
   }
 
   const peers = startPeers({ cfg, db, relay, log, socksPort: () => socksPort })
+  const publisher = directory.startPublisher({ cfg, nodeKey, onion: () => onion, socksPort: () => socksPort, log, version: VERSION })
 
   return {
     port, ingressPort, adminKey,
     get onion() { return onion },
-    relay,
+    relay, db,
+    nodePubkey: nodeKey.publicKey,
+    directory: { purgeExpired: () => relay.purgeExpired(), publishNow: () => publisher.publishOnce() },
+    /** @param {string[]} list */ addPeers: list => peers.add(list),
     async close() {
+      publisher.stop()
       peers.stop()
       relay.close()
       await Promise.all([owner, pub].map(s => new Promise(r => { s.closeAllConnections?.(); s.close(() => r(undefined)) })))

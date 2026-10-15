@@ -21,8 +21,12 @@ const { wordlist } = require('@scure/bip39/wordlists/english.js')
 /** Ruoli ricavati dal seme dell'utente (KEYS.md: K1, K1d, K1r, K2). */
 const ROLES = Object.freeze(['identity', 'dm', 'revoke', 'wallet'])
 
+/** Chiave del nodo (K5): NON ricavata dal seme di un utente, generata a caso per ogni nodo. */
+const NODE_ROLE = 'node'
+
 /** Cosa può firmare ogni ruolo. Gli scopi sono i domini di @m4tr1x/protocol più "nostr-event". */
 const PERMISSIONS = Object.freeze({
+  node: Object.freeze(['nostr-event']),        // il protocollo la limita alle schede di directory
   identity: Object.freeze(['nostr-event', 'identity/migrate', 'dm/announce']),
   dm: Object.freeze([]),                       // la chiave DM decifra, non firma
   revoke: Object.freeze(['identity/revoke']),
@@ -144,12 +148,21 @@ function openSecret(sealed, passphrase) {
 
 /** Ricostruisce una RoleKey da un segreto sigillato. @param {string} role @param {number} version @param {Uint8Array} secret */
 function roleKeyFromSecret(role, version, secret) {
-  if (!ROLES.includes(role)) throw new Error(`ruolo sconosciuto: ${role}`)
+  if (!ROLES.includes(role) && role !== NODE_ROLE) throw new Error(`ruolo sconosciuto: ${role}`)
   return new RoleKey(role, version, secret)
 }
 
+/** Nuova chiave di nodo (K5), casuale. */
+function generateNodeKey() {
+  for (;;) {
+    const sk = crypto.randomBytes(32)
+    const n = BigInt('0x' + sk.toString('hex'))
+    if (n > 0n && n < CURVE_N) return new RoleKey(NODE_ROLE, 1, sk)
+  }
+}
+
 module.exports = {
-  ROLES, PERMISSIONS, SCRYPT_MIN, RoleKey,
+  ROLES, NODE_ROLE, PERMISSIONS, SCRYPT_MIN, RoleKey, generateNodeKey,
   generateMnemonic, validateMnemonic, seedFromMnemonic, deriveRoleKey,
   exportSecret, signDigest, sealSecret, openSecret, roleKeyFromSecret,
 }

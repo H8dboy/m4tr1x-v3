@@ -9,7 +9,6 @@ const { test } = require('node:test')
 
 const PENDING = [
   ['I-01', 'nessuna richiesta delle app fuori da Tor', 'F4'],
-  ['I-05', 'il nodo contatta solo peer .onion via SOCKS', 'F3'],
   ['I-09', 'conio senza firma della radice rifiutato', 'F7'],
   ['I-10', 'spesa senza autorizzazione del wallet rifiutata', 'F7'],
   ['I-11', 'conservazione dei saldi', 'F7'],
@@ -23,7 +22,6 @@ const PENDING = [
   ['I-22', 'niente rollback di versione o seq', 'F8'],
   ['I-24', 'build riproducibile dove possibile', 'F8'],
   ['I-27', 'processi esterni con timeout', 'F6'],
-  ['I-29', 'descrittori: solo onion, firmati, scadenza ≤ 7 giorni', 'F3'],
   ['I-31', 'nessuna chiave privata nel JavaScript dell\'app; CSP stretta', 'F4'],
   ['I-32', 'buoni offline entro il tetto', 'F10'],
   ['I-34', 'nessun trasferimento tra utenti; split della mancia', 'F7'],

@@ -109,7 +109,15 @@ Tutte le frecce passano da Tor. Nessun componente conosce l'IP di un altro.
 
 - **Perché.** Zero protocolli nuovi, codice già difeso (il relay è stato irrobustito il 15/10), e l'elenco completo è piccolo: anche con 10.000 nodi sono pochi MB, quindi l'app lo scarica tutto e nessuno sa a quale nodo si collegherà.
 - **Compromesso.** Le 3 ancore sono "speciali": se cadono tutte e 3 insieme, i nodi nuovi non si trovano finché una torna (quelli già in cache sì). Non è un single point of failure (ne servono 3 giù insieme), ma è un punto *raro* di fallimento. Mitigazione: ogni nodo e ogni app tengono l'ultimo elenco valido; qualsiasi nodo può fare da ancora di riserva (stesso programma, ruolo diverso).
-- **Regole che ogni ancora applica (e che l'app ricontrolla):** firma valida; nessun IP nel descrittore (solo `.onion` v3); scadenza ≤ 7 giorni; massimo 1 descrittore attivo per chiave di nodo; limite di nuove chiavi per giorno (anti-Sybil di base).
+- **Regole che ogni ancora applica (e che l'app ricontrolla)** — implementate in F3, invarianti I-29, I-38, I-39:
+  - firma valida della chiave del nodo (K5, che può firmare solo schede); un solo indirizzo `.onion` v3; **nessun IP** da nessuna parte della scheda;
+  - **scadenza obbligatoria ≤ 7 giorni** (NIP-40): la scheda scaduta non si accetta, non si restituisce e viene cancellata; il nodo la **rinnova da solo** (di default scadenza 3 giorni, rinnovo ogni 24 ore): un nodo spento sparisce da solo in al massimo 3 giorni;
+  - **una sola scheda attiva per nodo** (evento sostituibile NIP-33, kind 30480): il rinnovo sostituisce la precedente;
+  - **limiti per chiave e globali** (dietro Tor tutti sono 127.0.0.1, i limiti per IP non servono): un aggiornamento ogni 10 minuti per chiave; al massimo 20 chiavi nuove all'ora e 200 al giorno; tetto di 10.000 schede attive;
+  - **prova di lavoro** (NIP-13, 18 bit ≈ 1 s su un PC) solo sulla prima scheda di una chiave nuova: niente per i nodi veri, costosa per chi vuole crearne migliaia;
+  - l'ancora accetta **solo** schede di directory: non diventa un relay qualsiasi;
+  - le schede che arrivano dalle altre ancore saltano i limiti di frequenza (la replica le sposta in blocco) ma non la verifica né il tetto.
+- **Compromesso dei limiti:** chi esaurisce le chiavi nuove disponibili in un'ora fa aspettare per quell'ora i nodi nuovi veri; i nodi già registrati continuano a rinnovarsi senza limiti di quota.
 - **Le ancore non si fidano l'una dell'altra.** Si copiano solo eventi con firma valida: un'ancora compromessa può *nascondere* nodi (rimedio: l'app legge da tutte e 3 e unisce), non può *inventarli* senza le loro chiavi.
 
 ---
