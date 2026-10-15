@@ -1,0 +1,615 @@
+{
+  "date": "2026-10-15T12:37:19.465Z",
+  "env": "Node 22.23.3 · win32 10.0.26200 · 2026-10-15",
+  "pinnedOk": true,
+  "totals": {
+    "pass": 127,
+    "fail": 0,
+    "todo": 20,
+    "skipped": 1
+  },
+  "tests": [
+    {
+      "file": "tests/integration/directory.test.js",
+      "pass": 1,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 952
+    },
+    {
+      "file": "tests/integration/two-nodes.test.js",
+      "pass": 1,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 1,
+      "skipReasons": [
+        "M4TR1X_TOR_BIN non impostato: prova via Tor saltata"
+      ],
+      "ms": 731
+    },
+    {
+      "file": "tests/invariants/inv-02-bind.test.js",
+      "pass": 3,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 9677
+    },
+    {
+      "file": "tests/invariants/inv-03-host.test.js",
+      "pass": 7,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 560
+    },
+    {
+      "file": "tests/invariants/inv-04-cors.test.js",
+      "pass": 10,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 565
+    },
+    {
+      "file": "tests/invariants/inv-05-onion-only.test.js",
+      "pass": 3,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 3020
+    },
+    {
+      "file": "tests/invariants/inv-06-keys-at-rest.test.js",
+      "pass": 5,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 9046
+    },
+    {
+      "file": "tests/invariants/inv-07-role-separation.test.js",
+      "pass": 7,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 570
+    },
+    {
+      "file": "tests/invariants/inv-08-domain-sep.test.js",
+      "pass": 5,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 644
+    },
+    {
+      "file": "tests/invariants/inv-15-no-h8-in-events.test.js",
+      "pass": 9,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 573
+    },
+    {
+      "file": "tests/invariants/inv-17-blob-hash.test.js",
+      "pass": 4,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 856
+    },
+    {
+      "file": "tests/invariants/inv-18-no-ip-logs.test.js",
+      "pass": 1,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 969
+    },
+    {
+      "file": "tests/invariants/inv-23-release-gate.test.js",
+      "pass": 10,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 933
+    },
+    {
+      "file": "tests/invariants/inv-25-deps.test.js",
+      "pass": 2,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 391
+    },
+    {
+      "file": "tests/invariants/inv-26-fuzz.test.js",
+      "pass": 1,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 6630
+    },
+    {
+      "file": "tests/invariants/inv-28-secrets.test.js",
+      "pass": 19,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 345
+    },
+    {
+      "file": "tests/invariants/inv-29-descriptor.test.js",
+      "pass": 7,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 568
+    },
+    {
+      "file": "tests/invariants/inv-30-33-admin-onion.test.js",
+      "pass": 7,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 533
+    },
+    {
+      "file": "tests/invariants/inv-38-expiry.test.js",
+      "pass": 5,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 6844
+    },
+    {
+      "file": "tests/invariants/inv-39-anchor-limits.test.js",
+      "pass": 7,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 1841
+    },
+    {
+      "file": "tests/invariants/inv-40-signature-families.test.js",
+      "pass": 6,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 565
+    },
+    {
+      "file": "tests/invariants/pending.test.js",
+      "pass": 0,
+      "fail": 0,
+      "todo": 20,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 245
+    },
+    {
+      "file": "tests/unit/keys-vectors.test.js",
+      "pass": 4,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 552
+    },
+    {
+      "file": "tests/unit/runtime-sqlite.test.js",
+      "pass": 3,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 255
+    }
+  ],
+  "rules": [
+    [
+      "I-01",
+      "Nessuna richiesta di rete delle app esce fuori da Tor.",
+      "in attesa",
+      "F4",
+      "—",
+      "—"
+    ],
+    [
+      "I-02",
+      "Il nodo è in ascolto solo su loopback",
+      "attiva",
+      "F2",
+      "`inv-02-bind.test.js` ✅ 3 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-03",
+      "Il nodo rifiuta richieste con Host non ammesso",
+      "attiva",
+      "F2",
+      "`inv-03-host.test.js` ✅ 7 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-04",
+      "Nessun Access-Control-Allow-Origin: *",
+      "attiva",
+      "F2",
+      "`inv-04-cors.test.js` ✅ 10 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-05",
+      "Il nodo non contatta mai un peer che non sia .onion",
+      "attiva",
+      "F3",
+      "`inv-05-onion-only.test.js` ✅ 3 verdi",
+      "2/2 prese"
+    ],
+    [
+      "I-06",
+      "Nessuna chiave privata finisce su disco in chiaro.",
+      "attiva",
+      "F1",
+      "`inv-06-keys-at-rest.test.js` ✅ 5 verdi",
+      "2/2 prese"
+    ],
+    [
+      "I-07",
+      "Ruoli separati: una firma fatta con la chiave di un ruolo viene rifiutata dove serve un altro ruolo",
+      "attiva",
+      "F1",
+      "`inv-07-role-separation.test.js` ✅ 7 verdi",
+      "2/2 prese"
+    ],
+    [
+      "I-08",
+      "Ogni firma ha un'etichetta di dominio e l'identificativo di rete",
+      "attiva",
+      "F1",
+      "`inv-08-domain-sep.test.js` ✅ 5 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-09",
+      "Un conio senza firma della radice dell'emittente (K9) viene rifiutato",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-10",
+      "Una spesa senza l'autorizzazione del wallet del pagante viene rifiutata",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-11",
+      "Conservazione: somma dei saldi = somma dei coni − rimborsi; nessun saldo negativo, dopo qualsiasi sequenza",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-12",
+      "Doppia spesa impossibile: due spese con lo stesso seq_conto → la seconda è rifiutata",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-13",
+      "Equivocazione scoperta: se l'emittente firma due righe diverse con lo stesso indice, la replica si ferma e dà l'allarme",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-14",
+      "I conti H8 non sono collegabili alle chiavi Nostr",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-15",
+      "Nessun indirizzo o conto H8 in un evento Nostr pubblicato.",
+      "attiva",
+      "F1",
+      "`inv-15-no-h8-in-events.test.js` ✅ 9 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-16",
+      "Nessun metadato identificativo lascia il dispositivo",
+      "in attesa",
+      "F6",
+      "—",
+      "—"
+    ],
+    [
+      "I-17",
+      "Un blob si accetta solo se il suo SHA-256 corrisponde.",
+      "attiva",
+      "F2",
+      "`inv-17-blob-hash.test.js` ✅ 4 verdi",
+      "2/2 prese"
+    ],
+    [
+      "I-18",
+      "Hub, edge e nodi non scrivono indirizzi IP nei log.",
+      "attiva",
+      "F2",
+      "`inv-18-no-ip-logs.test.js` ✅ 1 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-19",
+      "I DM escono solo come gift wrap (kind 1059).",
+      "in attesa",
+      "F5",
+      "—",
+      "—"
+    ],
+    [
+      "I-20",
+      "La busta è firmata da una chiave usa e getta e ha data sfalsata.",
+      "in attesa",
+      "F5",
+      "—",
+      "—"
+    ],
+    [
+      "I-21",
+      "L'app rifiuta un aggiornamento con firma non valida",
+      "in attesa",
+      "F8",
+      "—",
+      "—"
+    ],
+    [
+      "I-22",
+      "Niente rollback: versione più bassa o seq del manifest più basso dell'ultimo visto → rifiutato",
+      "in attesa",
+      "F8",
+      "—",
+      "—"
+    ],
+    [
+      "I-23",
+      "La CI non pubblica release senza manifest firmato valido",
+      "attiva",
+      "F0",
+      "`inv-23-release-gate.test.js` ✅ 10 verdi",
+      "2/2 prese"
+    ],
+    [
+      "I-24",
+      "Build riproducibile (dove possibile): due build dello stesso tag danno gli stessi hash per frontend, binari Rust e contenuto dell'APK",
+      "in attesa",
+      "F8",
+      "—",
+      "—"
+    ],
+    [
+      "I-25",
+      "Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti.",
+      "attiva",
+      "F0",
+      "`inv-25-deps.test.js` ✅ 2 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-26",
+      "Un input malformato non fa cadere il nodo",
+      "attiva",
+      "F2",
+      "`inv-26-fuzz.test.js` ✅ 1 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-27",
+      "Ogni processo esterno (ffmpeg, exiftool) ha un timeout",
+      "in attesa",
+      "F6",
+      "—",
+      "—"
+    ],
+    [
+      "I-28",
+      "Nessun segreto nel repo (chiavi, .env, .db, chiavi onion, IP, email personali)",
+      "attiva",
+      "F0",
+      "`inv-28-secrets.test.js` ✅ 19 verdi",
+      "2/2 prese"
+    ],
+    [
+      "I-29",
+      "I descrittori della directory contengono solo onion v3",
+      "attiva",
+      "F3",
+      "`inv-29-descriptor.test.js` ✅ 7 verdi",
+      "3/3 prese"
+    ],
+    [
+      "I-30",
+      "L'indirizzo onion di un nodo utente è visibile solo al suo proprietario",
+      "attiva",
+      "F2",
+      "`inv-30-33-admin-onion.test.js` ✅ 7 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-31",
+      "Nessuna chiave privata utente raggiunge il codice JavaScript dell'app;",
+      "in attesa",
+      "F4",
+      "—",
+      "—"
+    ],
+    [
+      "I-32",
+      "Buoni offline entro il tetto: un edge non accetta più del tetto giornaliero per conto, anche offline",
+      "in attesa",
+      "F10",
+      "—",
+      "—"
+    ],
+    [
+      "I-33",
+      "L'admin del nodo è raggiungibile solo da loopback con la chiave admin (K13)",
+      "attiva",
+      "F2",
+      "`inv-30-33-admin-onion.test.js` ✅ 7 verdi",
+      "1/1 prese"
+    ],
+    [
+      "I-34",
+      "Nessun trasferimento tra utenti:",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-35",
+      "Buono cieco: l'emittente non può collegare un buono riscattato al bonifico che l'ha pagato",
+      "in attesa",
+      "F7b",
+      "—",
+      "—"
+    ],
+    [
+      "I-36",
+      "Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016)",
+      "in attesa",
+      "F4",
+      "—",
+      "—"
+    ],
+    [
+      "I-37",
+      "Il Tor di Windows è solo dell'app:",
+      "in attesa",
+      "F4",
+      "—",
+      "—"
+    ],
+    [
+      "I-38",
+      "Le schede della directory scadono e si rinnovano:",
+      "attiva",
+      "F3",
+      "`inv-38-expiry.test.js` ✅ 5 verdi",
+      "4/4 prese"
+    ],
+    [
+      "I-39",
+      "Limiti sulle ancore senza porte chiudibili:",
+      "attiva",
+      "F3",
+      "`inv-39-anchor-limits.test.js` ✅ 7 verdi",
+      "5/5 prese"
+    ],
+    [
+      "I-40",
+      "Due famiglie di firme (ADR-0017):",
+      "attiva",
+      "F1",
+      "`inv-40-signature-families.test.js` ✅ 6 verdi",
+      "3/3 prese"
+    ]
+  ],
+  "divergences": [],
+  "deps": {
+    "list": [
+      {
+        "name": "@noble/curves",
+        "declared": "2.4.0",
+        "installed": "2.4.0",
+        "kind": "produzione"
+      },
+      {
+        "name": "@noble/hashes",
+        "declared": "2.4.0",
+        "installed": "2.4.0",
+        "kind": "produzione"
+      },
+      {
+        "name": "@noble/post-quantum",
+        "declared": "0.7.1",
+        "installed": "0.7.1",
+        "kind": "produzione"
+      },
+      {
+        "name": "@scure/bip39",
+        "declared": "2.4.0",
+        "installed": "2.4.0",
+        "kind": "produzione"
+      },
+      {
+        "name": "ws",
+        "declared": "8.22.0",
+        "installed": "8.22.0",
+        "kind": "produzione"
+      },
+      {
+        "name": "@types/node",
+        "declared": "22.20.5",
+        "installed": "22.20.5",
+        "kind": "solo sviluppo"
+      },
+      {
+        "name": "@types/ws",
+        "declared": "8.18.2",
+        "installed": "8.18.2",
+        "kind": "solo sviluppo"
+      },
+      {
+        "name": "typescript",
+        "declared": "5.9.3",
+        "installed": "5.9.3",
+        "kind": "solo sviluppo"
+      }
+    ],
+    "transitive": 2,
+    "audit": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  }
+}

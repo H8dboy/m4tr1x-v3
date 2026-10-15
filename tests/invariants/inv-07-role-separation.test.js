@@ -47,3 +47,8 @@ test('solo la chiave di revoca firma una revoca', () => {
   const sig = protocol.signDomain(revoke, 'identity/revoke', NET, payload)
   assert.ok(protocol.verifyDomain(revoke.publicKey, sig, 'identity/revoke', NET, payload))
 })
+
+test('stessa famiglia, ruoli diversi: la chiave di release non autorizza spese H8', () => {
+  const release = keys.generateKey('release')
+  assert.throws(() => protocol.signDomain(release, 'h8/spend', NET, spend), /ruolo/)
+})

@@ -1,0 +1,341 @@
+{
+  "date": "2026-10-15T12:35:54.094Z",
+  "node": "22.23.3",
+  "platform": "win32 10.0.26200",
+  "partial": false,
+  "results": [
+    {
+      "id": "i23-rete",
+      "rule": "I-23",
+      "name": "rete della firma non controllata",
+      "file": "tools/release/verify-release.js",
+      "test": "tests/invariants/inv-23-release-gate.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i23-hash",
+      "rule": "I-23",
+      "name": "hash dei pacchetti non controllato",
+      "file": "tools/release/verify-release.js",
+      "test": "tests/invariants/inv-23-release-gate.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i25-banned",
+      "rule": "I-25",
+      "name": "pacchetto vietato e non approvato tra le dipendenze",
+      "file": "package.json",
+      "test": "tests/invariants/inv-25-deps.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i28-doc",
+      "rule": "I-28",
+      "name": "IP vero ammesso se accanto a uno di documentazione",
+      "file": "tools/security/scan-secrets.js",
+      "test": "tests/invariants/inv-28-secrets.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i28-nsec",
+      "rule": "I-28",
+      "name": "chiavi Nostr private non cercate",
+      "file": "tools/security/scan-secrets.js",
+      "test": "tests/invariants/inv-28-secrets.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i06-json",
+      "rule": "I-06",
+      "name": "segreto nel JSON della chiave",
+      "file": "packages/keys/index.js",
+      "test": "tests/invariants/inv-06-keys-at-rest.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i06-scrypt",
+      "rule": "I-06",
+      "name": "scrypt sotto il minimo (N=2^14)",
+      "file": "packages/keys/index.js",
+      "test": "tests/invariants/inv-06-keys-at-rest.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i07-perm",
+      "rule": "I-07",
+      "name": "l'identità può firmare una revoca (stessa famiglia)",
+      "file": "packages/keys/index.js",
+      "test": "tests/invariants/inv-07-role-separation.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i07-release",
+      "rule": "I-07",
+      "name": "la chiave di release può autorizzare spese (stessa famiglia)",
+      "file": "packages/keys/index.js",
+      "test": "tests/invariants/inv-07-role-separation.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i08-rete",
+      "rule": "I-08",
+      "name": "rete fuori dal digest firmato",
+      "file": "packages/protocol/index.js",
+      "test": "tests/invariants/inv-08-domain-sep.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i15-off",
+      "rule": "I-15",
+      "name": "controllo dei dati H8 negli eventi spento",
+      "file": "packages/protocol/index.js",
+      "test": "tests/invariants/inv-15-no-h8-in-events.test.js",
+      "outcome": "presa",
+      "detail": "fail 8"
+    },
+    {
+      "id": "i40-wallet",
+      "rule": "I-40",
+      "name": "wallet riportato a Schnorr",
+      "file": "packages/keys/index.js",
+      "test": "tests/invariants/inv-40-signature-families.test.js",
+      "outcome": "presa",
+      "detail": "fail 3"
+    },
+    {
+      "id": "i40-anyfam",
+      "rule": "I-40",
+      "name": "verifica accetta qualsiasi famiglia",
+      "file": "packages/protocol/index.js",
+      "test": "tests/invariants/inv-40-signature-families.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i40-release",
+      "rule": "I-40",
+      "name": "release verificata con Schnorr",
+      "file": "packages/protocol/index.js",
+      "test": "tests/invariants/inv-23-release-gate.test.js",
+      "outcome": "presa",
+      "detail": "fail 9"
+    },
+    {
+      "id": "i02-bind",
+      "rule": "I-02",
+      "name": "ascolto su tutte le interfacce di default",
+      "file": "node/src/config.js",
+      "test": "tests/invariants/inv-02-bind.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i03-host",
+      "rule": "I-03",
+      "name": "Host non controllato",
+      "file": "node/src/http.js",
+      "test": "tests/invariants/inv-03-host.test.js",
+      "outcome": "presa",
+      "detail": "fail 6"
+    },
+    {
+      "id": "i04-star",
+      "rule": "I-04",
+      "name": "CORS con *",
+      "file": "node/src/http.js",
+      "test": "tests/invariants/inv-04-cors.test.js",
+      "outcome": "presa",
+      "detail": "fail 10"
+    },
+    {
+      "id": "i17-upload",
+      "rule": "I-17",
+      "name": "upload senza controllo dell'hash",
+      "file": "node/src/blobs.js",
+      "test": "tests/invariants/inv-17-blob-hash.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i17-peer",
+      "rule": "I-17",
+      "name": "lettura da peer senza controllo dell'hash",
+      "file": "node/src/blobs.js",
+      "test": "tests/invariants/inv-17-blob-hash.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i18-ip",
+      "rule": "I-18",
+      "name": "IP del client nel log",
+      "file": "node/src/log.js",
+      "test": "tests/invariants/inv-18-no-ip-logs.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i26-crash",
+      "rule": "I-26",
+      "name": "messaggi malformati senza nessuna protezione (interna ed esterna)",
+      "file": "node/src/relay.js",
+      "test": "tests/invariants/inv-26-fuzz.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i30-onion",
+      "rule": "I-30",
+      "name": "onion senza chiave admin",
+      "file": "node/src/http.js",
+      "test": "tests/invariants/inv-30-33-admin-onion.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i33-public",
+      "rule": "I-33",
+      "name": "admin anche sul listener dell'onion",
+      "file": "node/src/http.js",
+      "test": "tests/invariants/inv-30-33-admin-onion.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i05-peer",
+      "rule": "I-05",
+      "name": "parser dei peer accetta indirizzi in chiaro",
+      "file": "node/src/peers.js",
+      "test": "tests/invariants/inv-05-onion-only.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i05-anchor",
+      "rule": "I-05",
+      "name": "parser delle ancore accetta indirizzi in chiaro",
+      "file": "node/src/directory.js",
+      "test": "tests/invariants/inv-05-onion-only.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i29-ip",
+      "rule": "I-29",
+      "name": "IP nella scheda accettato",
+      "file": "packages/protocol/index.js",
+      "test": "tests/invariants/inv-29-descriptor.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i29-ttl",
+      "rule": "I-29",
+      "name": "scadenza oltre 7 giorni accettata",
+      "file": "packages/protocol/index.js",
+      "test": "tests/invariants/inv-29-descriptor.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i29-nodepost",
+      "rule": "I-29",
+      "name": "la chiave del nodo firma post",
+      "file": "packages/protocol/index.js",
+      "test": "tests/invariants/inv-29-descriptor.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i38-query",
+      "rule": "I-38",
+      "name": "scheda scaduta ancora restituita",
+      "file": "node/src/relay.js",
+      "test": "tests/invariants/inv-38-expiry.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i38-purge",
+      "rule": "I-38",
+      "name": "scheda scaduta mai cancellata",
+      "file": "node/src/relay.js",
+      "test": "tests/invariants/inv-38-expiry.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i38-replace",
+      "rule": "I-38",
+      "name": "il rinnovo non sostituisce la scheda",
+      "file": "node/src/relay.js",
+      "test": "tests/invariants/inv-38-expiry.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i38-renew",
+      "rule": "I-38",
+      "name": "il nodo non rinnova",
+      "file": "node/src/directory.js",
+      "test": "tests/invariants/inv-38-expiry.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i39-perkey",
+      "rule": "I-39",
+      "name": "nessun limite per chiave",
+      "file": "node/src/directory.js",
+      "test": "tests/invariants/inv-39-anchor-limits.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i39-fixedpow",
+      "rule": "I-39",
+      "name": "difficoltà fissa (niente adattamento)",
+      "file": "node/src/directory.js",
+      "test": "tests/invariants/inv-39-anchor-limits.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i39-noretry",
+      "rule": "I-39",
+      "name": "il nodo non rilegge la difficoltà",
+      "file": "node/src/directory.js",
+      "test": "tests/invariants/inv-39-anchor-limits.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i39-cap",
+      "rule": "I-39",
+      "name": "nessun tetto di schede attive",
+      "file": "node/src/directory.js",
+      "test": "tests/invariants/inv-39-anchor-limits.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i39-nopow",
+      "rule": "I-39",
+      "name": "nessuna prova di lavoro",
+      "file": "node/src/directory.js",
+      "test": "tests/invariants/inv-39-anchor-limits.test.js",
+      "outcome": "presa",
+      "detail": "fail 3"
+    }
+  ]
+}
