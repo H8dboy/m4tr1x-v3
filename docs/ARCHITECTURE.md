@@ -82,7 +82,7 @@ Tutte le frecce passano da Tor. Nessun componente conosce l'IP di un altro.
 | Diretta | **Nessuna diretta in v3.0.** Eventuale "quasi-diretta" HLS via hub (20–40 s di ritardo) dopo | WebRTC (vedi sopra: incompatibile con la promessa) | Vedi ADR-0006 e OPEN_QUESTIONS Q6 | — |
 | Directory dei nodi | **Descrittori firmati pubblicati come eventi Nostr sostituibili sulle 3 ancore** (§3) | DHT Kademlia; gossip firmato su protocollo nuovo | Riusa il protocollo che c'è già | Nessuna dipendenza nuova |
 | Registro H8 | **Log append-only firmato dall'emittente**, replicato come file/eventi verificabili | Blockchain (consenso pesante, non serve: c'è un solo emittente per scelta); database condiviso (nessuna verifica indipendente) | Chiunque può verificare tutto il registro senza fidarsi di chi glielo passa (§6) | Libreria `@noble/post-quantum` (già usata) |
-| Aggiornamenti | **Manifest firmato** (Ed25519, formato minisign) + hash dei pacchetti | Aggiornamento degli store (assenti per scelta); electron-updater (lega a Electron, firma solo del pacchetto) | Una sola chiave offline decide cosa è una release valida, indipendente dalla firma Android/Windows (§8) | Verifica in ~200 righe |
+| Aggiornamenti | **Manifest firmato ML-DSA-65** (chiave di release K11) + hash dei pacchetti | Aggiornamento degli store (assenti per scelta); electron-updater (lega a Electron, firma solo del pacchetto); minisign/Ed25519 (non post-quantum, ADR-0017) | Una sola chiave offline decide cosa è una release valida, indipendente dalla firma Android/Windows (§8) | Verifica in ~80 righe |
 | Federazione con Mastodon / PeerTube / Funkwhale | **Tolta** | Ponti in sola lettura | Ogni ponte è un protocollo in più e fa uscire richieste verso server terzi (IP). ADR-0010 | −3 adattatori |
 | P2P tra utenti (WebTorrent, tracker) | **Tolto** | — | Il P2P mostra l'IP dei visitatori agli altri peer | −1 protocollo |
 
@@ -269,7 +269,7 @@ Il creator registra **in privato presso l'emittente** "la mia chiave Nostr → i
 | Passo | Come |
 |---|---|
 | Build | In CI, da un tag, con le versioni bloccate dai lockfile. Due build indipendenti dello stesso tag devono dare lo stesso hash (dove la piattaforma lo permette, vedi sotto) |
-| Firma | Il fondatore firma **offline** un `release.json` (versione, numero di sequenza, data, hash SHA-256 di ogni pacchetto, versione minima ammessa) con la **chiave release K11** (Ed25519, formato minisign) |
+| Firma | Il fondatore firma **offline** un `release.json` (versione, numero di sequenza, data, hash SHA-256 di ogni pacchetto, versione minima ammessa) con la **chiave release K11** (ML-DSA-65, ADR-0017) |
 | Distribuzione | `release.json` + pacchetti come blob Blossom sugli hub/edge (via Tor) e come copia su nderja.com |
 | Verifica nell'app | L'app ha la chiave pubblica K11 incorporata. Scarica `release.json` via Tor, verifica la firma, verifica l'hash del pacchetto e solo allora propone l'installazione |
 | Rollback | L'app rifiuta una versione **più vecchia** di quella installata, e un `release.json` con numero di sequenza **più basso** dell'ultimo visto (così nessuno può rimandarti a una versione bucata). Per tornare indietro di proposito si pubblica una nuova release con numero più alto che contiene il codice vecchio |

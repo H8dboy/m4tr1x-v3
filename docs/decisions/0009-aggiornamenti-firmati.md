@@ -4,6 +4,8 @@
 
 **Decisione.** Ogni release ha un `release.json` (versione, `seq`, hash dei pacchetti, versione minima) firmato offline con K11 (Ed25519, formato minisign). App e nodo incorporano la chiave pubblica, controllano via Tor, verificano firma e hash, rifiutano versioni o `seq` più bassi (I-21, I-22). La CI non pubblica nulla senza manifest firmato (I-23). Su Android serve anche la firma K12.
 
+**Aggiornamento 15/10/2026 (ADR-0017):** la chiave di release è ML-DSA-65 (non più Ed25519/minisign); file di firma `release.json.sig`; strumenti in `tools/release/`.
+
 **Conseguenze.**
 - (+) Si possono avvisare e aggiornare gli utenti; nessuno può spingere versioni vecchie e bucate.
 - (+) Indipendente dagli store.

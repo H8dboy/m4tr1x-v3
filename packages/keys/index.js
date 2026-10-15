@@ -10,6 +10,8 @@
  *   WeakMap e si legge solo con `exportSecret`, così non finisce per sbaglio in
  *   un JSON, in un log o in una stampa (I-06).
  * - Ogni ruolo può firmare solo i propri scopi (I-07).
+ * - Due famiglie di firme (ADR-0017, I-40): Schnorr secp256k1 per il social,
+ *   ML-DSA-65 per ciò che vale. Questo pacchetto è l'unico che le conosce.
  */
 const crypto = require('crypto')
 const { schnorr, secp256k1 } = require('@noble/curves/secp256k1.js')
@@ -17,12 +19,25 @@ const { hkdf } = require('@noble/hashes/hkdf.js')
 const { sha256 } = require('@noble/hashes/sha2.js')
 const bip39 = require('@scure/bip39')
 const { wordlist } = require('@scure/bip39/wordlists/english.js')
+const { ml_dsa65 } = require('@noble/post-quantum/ml-dsa.js')
 
 /** Ruoli ricavati dal seme dell'utente (KEYS.md: K1, K1d, K1r, K2). */
 const ROLES = Object.freeze(['identity', 'dm', 'revoke', 'wallet'])
 
 /** Chiave del nodo (K5): NON ricavata dal seme di un utente, generata a caso per ogni nodo. */
 const NODE_ROLE = 'node'
+
+/** Ruoli di sistema, generati a caso (mai dal seme di un utente). */
+const SYSTEM_ROLES = Object.freeze(['node', 'issuer-root', 'issuer-op', 'release'])
+
+/**
+ * Famiglia di firma per ruolo (ADR-0017):
+ *   social → Schnorr secp256k1 (Nostr) · valore → ML-DSA-65 (post-quantum)
+ */
+const FAMILY = Object.freeze({
+  identity: 'schnorr', dm: 'schnorr', revoke: 'schnorr', node: 'schnorr',
+  wallet: 'ml-dsa-65', 'issuer-root': 'ml-dsa-65', 'issuer-op': 'ml-dsa-65', release: 'ml-dsa-65',
+})
 
 /** Cosa può firmare ogni ruolo. Gli scopi sono i domini di @m4tr1x/protocol più "nostr-event". */
 const PERMISSIONS = Object.freeze({
@@ -31,6 +46,9 @@ const PERMISSIONS = Object.freeze({
   dm: Object.freeze([]),                       // la chiave DM decifra, non firma
   revoke: Object.freeze(['identity/revoke']),
   wallet: Object.freeze(['h8/spend', 'h8/rekey']),
+  'issuer-root': Object.freeze([]),            // domini di conio e certificazione: fase F7
+  'issuer-op': Object.freeze([]),              // domini delle righe del registro: fase F7
+  release: Object.freeze(['release/manifest']),
 })
 
 const HKDF_SALT = new TextEncoder().encode('m4tr1x/v3/keys')
@@ -39,13 +57,27 @@ const CURVE_N = secp256k1.Point.Fn.ORDER
 /** @type {WeakMap<RoleKey, Uint8Array>} */
 const SECRETS = new WeakMap()
 
+/** @param {string} role */
+function familyOf(role) {
+  const f = FAMILY[/** @type {keyof typeof FAMILY} */ (role)]
+  if (!f) throw new Error(`ruolo sconosciuto: ${role}`)
+  return f
+}
+
 class RoleKey {
-  /** @param {string} role @param {number} version @param {Uint8Array} secret */
+  /**
+   * @param {string} role @param {number} version
+   * @param {Uint8Array} secret  Schnorr: chiave privata (32 byte) · ML-DSA: seme di 32 byte
+   */
   constructor(role, version, secret) {
     /** @readonly */ this.role = role
     /** @readonly */ this.version = version
-    /** @readonly x-only, hex (formato Nostr) */
-    this.publicKey = Buffer.from(schnorr.getPublicKey(secret)).toString('hex')
+    /** @readonly */ this.family = familyOf(role)
+    if (!(secret instanceof Uint8Array) || secret.length !== 32) throw new Error('segreto di 32 byte richiesto')
+    /** @readonly hex: Schnorr x-only (32 byte, formato Nostr) · ML-DSA-65 (1952 byte) */
+    this.publicKey = this.family === 'schnorr'
+      ? Buffer.from(schnorr.getPublicKey(secret)).toString('hex')
+      : Buffer.from(ml_dsa65.keygen(secret).publicKey).toString('hex')
     SECRETS.set(this, Uint8Array.from(secret))
     Object.freeze(this)
   }
@@ -85,6 +117,7 @@ function deriveRoleKey(seed, role, version = 1) {
   for (let counter = 0; counter < 256; counter++) {
     const info = new TextEncoder().encode(`m4tr1x/${role}/v${version}` + (counter ? `/${counter}` : ''))
     const sk = hkdf(sha256, seed, HKDF_SALT, info, 32)
+    if (familyOf(role) === 'ml-dsa-65') return new RoleKey(role, version, sk)   // qualsiasi seme va bene
     const n = BigInt('0x' + Buffer.from(sk).toString('hex'))
     if (n > 0n && n < CURVE_N) return new RoleKey(role, version, sk)
   }
@@ -99,8 +132,8 @@ function exportSecret(key) {
 }
 
 /**
- * Firma Schnorr di un digest da 32 byte, solo se il ruolo può firmare `purpose`.
- * Usata da @m4tr1x/protocol: non chiamarla direttamente dall'app.
+ * Firma di un digest da 32 byte con la famiglia del ruolo, solo se il ruolo può
+ * firmare `purpose`. Usata da @m4tr1x/protocol: non chiamarla dall'app.
  * @param {RoleKey} key @param {Uint8Array} digest @param {string} purpose
  */
 function signDigest(key, digest, purpose) {
@@ -109,7 +142,28 @@ function signDigest(key, digest, purpose) {
   if (!PERMISSIONS[/** @type {keyof typeof PERMISSIONS} */ (key.role)]?.includes(purpose))
     throw new Error(`il ruolo "${key.role}" non può firmare "${purpose}"`)
   if (!(digest instanceof Uint8Array) || digest.length !== 32) throw new Error('digest di 32 byte richiesto')
-  return Buffer.from(schnorr.sign(digest, s)).toString('hex')
+  if (key.family === 'schnorr') return Buffer.from(schnorr.sign(digest, s)).toString('hex')
+  const { secretKey } = ml_dsa65.keygen(s)
+  try { return Buffer.from(ml_dsa65.sign(digest, secretKey)).toString('hex') }
+  finally { secretKey.fill(0) }
+}
+
+/**
+ * Verifica una firma con la famiglia indicata. Rifiuta chiavi o firme della forma sbagliata.
+ * @param {'schnorr'|'ml-dsa-65'} family @param {string} pubHex @param {string} sigHex @param {Uint8Array} digest
+ */
+function verifyDigest(family, pubHex, sigHex, digest) {
+  try {
+    if (family === 'schnorr') {
+      if (!/^[0-9a-f]{64}$/.test(pubHex) || !/^[0-9a-f]{128}$/.test(sigHex)) return false
+      return schnorr.verify(Buffer.from(sigHex, 'hex'), digest, Buffer.from(pubHex, 'hex'))
+    }
+    if (family === 'ml-dsa-65') {
+      if (pubHex.length !== 1952 * 2 || sigHex.length !== 3309 * 2 || !/^[0-9a-f]+$/.test(pubHex + sigHex)) return false
+      return ml_dsa65.verify(Buffer.from(sigHex, 'hex'), digest, Buffer.from(pubHex, 'hex'))
+    }
+    return false
+  } catch { return false }
 }
 
 // ─── Vault a passphrase (quando il portachiavi del sistema non c'è) ──────────
@@ -148,21 +202,31 @@ function openSecret(sealed, passphrase) {
 
 /** Ricostruisce una RoleKey da un segreto sigillato. @param {string} role @param {number} version @param {Uint8Array} secret */
 function roleKeyFromSecret(role, version, secret) {
-  if (!ROLES.includes(role) && role !== NODE_ROLE) throw new Error(`ruolo sconosciuto: ${role}`)
+  familyOf(role)
   return new RoleKey(role, version, secret)
+}
+
+/**
+ * Nuova chiave casuale per un ruolo di sistema (nodo, emittente, release).
+ * @param {string} role
+ */
+function generateKey(role) {
+  if (!SYSTEM_ROLES.includes(role)) throw new Error(`"${role}" non è un ruolo di sistema: le chiavi utente vengono dal seme`)
+  for (;;) {
+    const sk = crypto.randomBytes(32)
+    if (familyOf(role) === 'ml-dsa-65') return new RoleKey(role, 1, sk)
+    const n = BigInt('0x' + sk.toString('hex'))
+    if (n > 0n && n < CURVE_N) return new RoleKey(role, 1, sk)
+  }
 }
 
 /** Nuova chiave di nodo (K5), casuale. */
 function generateNodeKey() {
-  for (;;) {
-    const sk = crypto.randomBytes(32)
-    const n = BigInt('0x' + sk.toString('hex'))
-    if (n > 0n && n < CURVE_N) return new RoleKey(NODE_ROLE, 1, sk)
-  }
+  return generateKey(NODE_ROLE)
 }
 
 module.exports = {
-  ROLES, NODE_ROLE, PERMISSIONS, SCRYPT_MIN, RoleKey, generateNodeKey,
+  ROLES, NODE_ROLE, SYSTEM_ROLES, FAMILY, PERMISSIONS, SCRYPT_MIN, RoleKey, generateNodeKey, generateKey, verifyDigest,
   generateMnemonic, validateMnemonic, seedFromMnemonic, deriveRoleKey,
   exportSecret, signDigest, sealSecret, openSecret, roleKeyFromSecret,
 }

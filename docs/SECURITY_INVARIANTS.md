@@ -63,7 +63,7 @@
 |---|---|---|---|
 | I-21 | **L'app rifiuta un aggiornamento con firma non valida** o pacchetto con hash diverso. | `inv-21-update-sig`: manifest con firma sbagliata / pacchetto alterato → rifiutato | F8 |
 | I-22 | **Niente rollback:** versione più bassa o `seq` del manifest più basso dell'ultimo visto → rifiutato. | `inv-22-rollback` | F8 |
-| I-23 | **La CI non pubblica release senza manifest firmato valido.** | `inv-23-release-gate`: il job di pubblicazione fallisce se `release.json.minisig` manca o non verifica | F0 |
+| I-23 | **La CI non pubblica release senza manifest firmato valido** (ML-DSA-65, chiave K11, rete corretta). | `inv-23-release-gate`: il job di pubblicazione fallisce se `release.json.sig` manca, non verifica, è di un'altra rete o di un'altra famiglia | F0 |
 | I-24 | **Build riproducibile** (dove possibile): due build dello stesso tag danno gli stessi hash per frontend, binari Rust e contenuto dell'APK. | `inv-24-repro`: job CI che compila due volte in ambienti puliti e confronta | F8 |
 
 ## Repo e dipendenze
@@ -82,6 +82,7 @@
 | I-37 | **Il Tor di Windows è solo dell'app:** SOCKS e controllo solo su 127.0.0.1, porte casuali, autenticazione SOCKS e cookie; `tor` termina con l'app; binario con hash fissato. | `inv-37-tor-process`: un client SOCKS senza credenziali viene rifiutato; uccidendo l'app il processo `tor` sparisce; hash del binario confrontato in build | F4 |
 | I-38 | **Le schede della directory scadono e si rinnovano:** scadenza obbligatoria ≤ 7 giorni; scheda scaduta rifiutata, non restituita e cancellata dalle ancore; il rinnovo sostituisce la scheda precedente; il nodo rinnova da solo prima della scadenza. | `inv-38-expiry` | F3 |
 | I-39 | **Limiti sulle ancore senza porte chiudibili:** intervallo minimo tra aggiornamenti della stessa chiave; **prova di lavoro adattiva** (NIP-13) sulla prima scheda di una chiave nuova, +2 bit a ogni raddoppio delle chiavi nuove nell'ultima ora oltre l'obiettivo, con tetto alla difficoltà; **nessun tetto fisso di chiavi nuove** (chi paga la prova entra sempre); il nodo rilegge la difficoltà richiesta e riprova; tetto di schede attive (spazio); l'ancora accetta solo schede di directory. | `inv-39-anchor-limits` | F3 |
+| I-40 | **Due famiglie di firme (ADR-0017):** Schnorr per identità, DM, revoca, nodo; ML-DSA-65 per wallet, emittente, release. Una firma Schnorr non vale mai per un dominio di valore, né una ML-DSA per un dominio social. Ed25519 e minisign assenti dal codice (Ed25519 solo dentro Tor); RSA solo nel modulo buoni. | `inv-40-signature-families` (dinamico + statico) | F1 |
 | I-31 | **Nessuna chiave privata utente raggiunge il codice JavaScript dell'app;** CSP senza `unsafe-inline`. | `inv-31-no-keys-in-js`: le API esposte dal lato Rust al frontend non restituiscono mai chiavi (test sui comandi Tauri); CSP verificata | F4 |
 | I-33 | **L'admin del nodo è raggiungibile solo da loopback con la chiave admin (K13)**, distinta da ogni altra chiave. | `inv-33-admin`: da onion/porta pubblica → 404; senza K13 → 401 | F2 |
 

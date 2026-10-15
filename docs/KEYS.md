@@ -1,6 +1,7 @@
 # M4TR1X v3 — Chiavi
 
 > Principio 4: ogni ruolo ha la sua chiave. Una chiave rubata deve far danni **solo nel suo ruolo**.
+> **Due famiglie di firme (ADR-0017, I-40):** Schnorr secp256k1 per tutto il social, ML-DSA-65 (post-quantum) per tutto ciò che vale. Ed25519 solo dentro Tor; RSA solo nel modulo buoni; la firma APK la impone Android.
 > Ogni firma include un'etichetta di dominio (`m4tr1x/<ruolo>/v1`) e l'identificativo di rete: una firma non è mai riutilizzabile in un altro contesto (I-08).
 > Nessuna chiave privata, chiave onion o keystore entra mai in un repo o nella CI (I-28), salvo dove indicato esplicitamente ("segreto CI").
 
@@ -12,15 +13,15 @@
 | K1 | Identità | secp256k1 Schnorr (Nostr) | Portachiavi del dispositivo | Sì | Impersonare, leggere i DM |
 | K1d | Chiave DM | secp256k1 (NIP-44) | Portachiavi del dispositivo | Sì | Leggere i DM del suo periodo |
 | K1r | Revoca | secp256k1 | **Solo dal seme**, mai salvata | No | Revocare l'identità (solo con il seme) |
-| K2 | Wallet | secp256k1 Schnorr | Portachiavi del dispositivo | Sì | Spendere il saldo |
+| K2 | Wallet | **ML-DSA-65** | Portachiavi del dispositivo | Sì | Spendere il saldo |
 | K5 | Nodo | secp256k1 Schnorr | Disco del nodo, cifrata | Sì | Impersonare il nodo nella directory |
-| K6 | Servizio onion | Ed25519 (Tor v3) | Cartella di Tor del nodo | Sì | Impersonare l'indirizzo onion |
+| K6 | Servizio onion | Ed25519 (gestita solo da Tor) | Cartella di Tor del nodo | Sì | Impersonare l'indirizzo onion |
 | K7 | Ancora | secp256k1 Schnorr | Disco dell'ancora | Sì | Firmare istantanee della directory a nome dell'ancora |
 | K8 | Hub | secp256k1 Schnorr | Disco dell'hub | Sì | Firmare manifest video falsi |
 | K9 | **Radice emittente H8** | ML-DSA-65 | **Offline**, backup diviso | No | Coniare H8, certificare emittenti |
 | K10 | Emittente operativo H8 | ML-DSA-65 | Server dell'emittente | Sì | Ordinare/censurare le spese (non rubare, non coniare) |
-| K11 | **Firma release** | Ed25519 (minisign) | **Offline**, dal fondatore | No | Aggiornamenti malevoli (insieme a K12 su Android) |
-| K12 | Keystore Android | RSA/EC (Android) | Offline + segreto CI cifrato (OPEN_QUESTIONS Q9) | Solo in build | APK con la stessa firma |
+| K11 | **Firma release** | **ML-DSA-65** | **Offline**, dal fondatore | No | Aggiornamenti malevoli (insieme a K12 su Android) |
+| K12 | Keystore Android | RSA/EC (imposto da Android, fuori dalla regola) | Offline + segreto CI cifrato (OPEN_QUESTIONS Q9) | Solo in build | APK con la stessa firma |
 | K13 | Admin del nodo | Token casuale 256 bit | File del nodo (permessi 600) | Sì | Amministrare quel nodo |
 | K14 | ~~Pagamenti~~ | — | **Non serve** (bonifico manuale, ADR-0015) | — | — |
 | K15 | Firma cieca dei buoni H8 | RSA-PSS 3072 (RFC 9474) | Server dell'emittente | Sì | Emettere buoni falsi (limitato: i coni restano con K9 e la conservazione è verificata) |
@@ -49,6 +50,7 @@
 
 ### K2 — Wallet H8
 - **Scopo:** autorizzare le spese H8 (`m4tr1x/h8/spend/v1`). È distinta da K1: il registro non deve collegare conto e identità (I-14).
+- **Algoritmo:** ML-DSA-65, ricavata dal seme (HKDF → seme ML-DSA di 32 byte → coppia di chiavi). Chiave pubblica 1952 byte, firma 3309 byte.
 - **Rotazione:** riga `ricodifica_conto` firmata dalla K2 vecchia, o da K0 se K2 è persa.
 - **Se rubata:** può spendere fino al saldo. Mitigazione: conferma con PIN/biometria sopra una soglia.
 
@@ -78,7 +80,8 @@
 - **Se rubata:** il ladro può scrivere righe ordinate in modo diverso (equivocazione, scoperta da I-13) o rifiutare spese. Non può rubare.
 
 ### K11 — Firma release
-- **Scopo:** firmare `release.json` per app e nodi.
+- **Scopo:** firmare `release.json` per app e nodi (ML-DSA-65, dominio `release/manifest`).
+- **Strumenti:** `tools/release/keygen.js` (cerimonia, offline), `sign-release.js` (firma offline), `verify-release.js` (cancello della CI).
 - **Dove vive:** offline, dal fondatore; copia di backup in un secondo luogo fisico. **Mai in CI.**
 - **Rotazione:** la release N firmata con la chiave vecchia annuncia la chiave nuova; dalla N+1 si usa la nuova.
 - **Se rubata:** aggiornamenti malevoli per desktop e nodi; per Android serve anche K12. È la chiave più pericolosa insieme a K9.

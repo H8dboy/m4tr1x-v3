@@ -26,6 +26,18 @@ async function submit(port, ev) {
   return r.at(-1)
 }
 const desc = (/** @type {any} */ k, /** @type {number} */ i, extra = {}) => protocol.buildDescriptor(k, NET, { onion: onion(i), roles: ['user'], version: '3', ttlSec: 3600, powBits: 0, ...extra })
+/**
+ * Scheda con MENO di `maxBits` bit di prova di lavoro. Una prova cercata per
+ * N bit può averne di più per caso (1 volta su 4 ne ha N+2): per verificare un
+ * rifiuto serve una scheda che sia davvero sotto la soglia.
+ */
+function descBelow(/** @type {any} */ k, /** @type {number} */ i, /** @type {number} */ maxBits) {
+  const base = Math.floor(Date.now() / 1000)
+  for (let j = 0; ; j++) {
+    const d = desc(k, i, { createdAt: base - j })
+    if (protocol.leadingZeroBits(d.id) < maxBits) return d
+  }
+}
 
 test('aggiornamenti troppo frequenti della stessa chiave: rifiutati', async () => {
   const t = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 0, minUpdateIntervalSec: 600 } })
@@ -53,7 +65,7 @@ test('sotto pressione la prova si fa più difficile, ma chi la paga entra sempre
   try {
     for (let i = 0; i < 3; i++) assert.equal((await submit(t.node.port, desc(keys.generateNodeKey(), i, { powBits: 2 })))[2], true, `chiave ${i}`)
     // ora l'ancora è "sotto pressione": la prova minima non basta più…
-    const cheap = await submit(t.node.port, desc(keys.generateNodeKey(), 10, { powBits: 2 }))
+    const cheap = await submit(t.node.port, descBelow(keys.generateNodeKey(), 10, 4))
     assert.equal(cheap[2], false)
     const need = Number(/servono almeno (\d+) bit/.exec(cheap[3])?.[1])
     assert.equal(need, 4, cheap[3])
@@ -99,7 +111,7 @@ test('tetto alle schede attive', async () => {
 test('prova di lavoro richiesta per una chiave nuova', async () => {
   const t = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 12 } })
   try {
-    const noPow = await submit(t.node.port, desc(keys.generateNodeKey(), 1))
+    const noPow = await submit(t.node.port, descBelow(keys.generateNodeKey(), 1, 12))
     assert.equal(noPow[2], false)
     assert.match(noPow[3], /pow/)
     const withPow = await submit(t.node.port, desc(keys.generateNodeKey(), 2, { powBits: 12 }))

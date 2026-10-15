@@ -20,5 +20,6 @@ Un ADR non si cancella: se si cambia idea se ne scrive uno nuovo che lo sostitui
 | [0012](0012-javascript-ts-check.md) | Server in JavaScript con `@ts-check` | proposta |
 | [0013](0013-tor-server-arti-app.md) | Tor: `tor` sui server, Arti nelle app | proposta |
 | [0014](0014-programma-unico-ruoli.md) | Un solo programma server con ruoli | proposta |
+| [0017](0017-due-famiglie-di-firme.md) | Due famiglie di firme: Schnorr per il social, ML-DSA-65 per ciò che vale | accettata 15/10 |
 | [0016](0016-interfaccia-trasporto.md) | Interfaccia di trasporto unica: Arti dove regge, Tor classico su Windows | accettata 15/10 |
 | [0015](0015-h8-acquisto-sepa.md) | H8: acquisto con bonifico SEPA manuale, buoni | accettata 15/10 (in attesa di parere legale) |

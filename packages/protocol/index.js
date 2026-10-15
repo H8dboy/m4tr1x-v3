@@ -17,8 +17,16 @@ const { sha256 } = require('@noble/hashes/sha2.js')
 const keys = require('../keys')
 
 const NETWORKS = Object.freeze(['m4tr1x-main', 'm4tr1x-test'])
-/** Domini delle firme non-Nostr. Il ruolo ammesso per ognuno è in @m4tr1x/keys PERMISSIONS. */
-const DOMAINS = Object.freeze(['h8/spend', 'h8/rekey', 'identity/migrate', 'identity/revoke', 'dm/announce'])
+/**
+ * Domini delle firme non-Nostr e famiglia con cui si verificano (ADR-0017, I-40):
+ * ciò che vale → ML-DSA-65, il social → Schnorr. Il ruolo ammesso per ogni
+ * dominio è in @m4tr1x/keys PERMISSIONS.
+ */
+const DOMAIN_FAMILY = Object.freeze({
+  'h8/spend': 'ml-dsa-65', 'h8/rekey': 'ml-dsa-65', 'release/manifest': 'ml-dsa-65',
+  'identity/migrate': 'schnorr', 'identity/revoke': 'schnorr', 'dm/announce': 'schnorr',
+})
+const DOMAINS = Object.freeze(Object.keys(DOMAIN_FAMILY))
 
 // ─── Dati H8 vietati negli eventi (I-15) ─────────────────────────────────────
 /** Formato degli id di conto H8 v3: "m4a1" + 32 esadecimali casuali. */
@@ -56,14 +64,22 @@ function domainDigest(domain, network, payload) {
 
 /** @param {import('../keys').RoleKey} key @param {string} domain @param {string} network @param {Uint8Array} payload */
 function signDomain(key, domain, network, payload) {
-  return keys.signDigest(key, domainDigest(domain, network, payload), domain)
+  const digest = domainDigest(domain, network, payload)
+  if (DOMAIN_FAMILY[/** @type {keyof typeof DOMAIN_FAMILY} */ (domain)] !== key.family)
+    throw new Error(`il ruolo "${key.role}" (famiglia ${key.family}) non può firmare "${domain}"`)
+  return keys.signDigest(key, digest, domain)
 }
 
-/** @param {string} pubkeyHex @param {string} sigHex @param {string} domain @param {string} network @param {Uint8Array} payload */
+/**
+ * Verifica con la famiglia del dominio: una firma Schnorr non vale mai per un
+ * dominio di valore, né una ML-DSA per un dominio social.
+ * @param {string} pubkeyHex @param {string} sigHex @param {string} domain @param {string} network @param {Uint8Array} payload
+ */
 function verifyDomain(pubkeyHex, sigHex, domain, network, payload) {
   try {
-    if (!/^[0-9a-f]{64}$/.test(pubkeyHex) || !/^[0-9a-f]{128}$/.test(sigHex)) return false
-    return schnorr.verify(Buffer.from(sigHex, 'hex'), domainDigest(domain, network, payload), Buffer.from(pubkeyHex, 'hex'))
+    const fam = DOMAIN_FAMILY[/** @type {keyof typeof DOMAIN_FAMILY} */ (domain)]
+    if (!fam || typeof pubkeyHex !== 'string' || typeof sigHex !== 'string') return false
+    return keys.verifyDigest(/** @type {any} */ (fam), pubkeyHex, sigHex, domainDigest(domain, network, payload))
   } catch { return false }
 }
 
@@ -101,6 +117,7 @@ function checkTemplate(t) {
 function buildEvent(template, identityKey, network) {
   if (!NETWORKS.includes(network)) throw new Error(`rete sconosciuta: ${network}`)
   checkTemplate(template)
+  if (identityKey.family !== 'schnorr') throw new Error(`il ruolo "${identityKey.role}" non firma eventi Nostr`)
   if (identityKey.role === keys.NODE_ROLE && template.kind !== DESCRIPTOR_KIND)
     throw new Error('la chiave del nodo firma solo schede di directory')
   if (template.tags.some(t => t[0] === 'net')) throw new Error('il tag "net" lo aggiunge il protocollo')
@@ -218,7 +235,7 @@ function _signRawEventForTest(/** @type {any} */ t, /** @type {import('../keys')
 }
 
 module.exports = {
-  NETWORKS, DOMAINS, ACCOUNT_ID_RE,
+  NETWORKS, DOMAINS, DOMAIN_FAMILY, ACCOUNT_ID_RE,
   DESCRIPTOR_KIND, DESCRIPTOR_D, MAX_DESCRIPTOR_TTL, NODE_ROLES, leadingZeroBits, buildDescriptor, verifyDescriptor,
   newAccountId, domainDigest, signDomain, verifyDomain,
   eventId, buildEvent, verifyEvent, _signRawEventForTest,
