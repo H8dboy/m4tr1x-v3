@@ -1,18 +1,21 @@
 // @ts-check
 'use strict'
 /**
- * I-39 — Le ancore non si lasciano riempire di schede false.
+ * I-39 — Le ancore non si lasciano riempire di schede false, e un attaccante non
+ * può chiudere la porta ai nodi veri.
  * Dietro Tor tutti arrivano da 127.0.0.1: i limiti sono per chiave e globali.
  * - una chiave non può aggiornare la scheda più spesso del minimo
- * - limite di chiavi nuove per ora (e per giorno)
- * - tetto alle schede attive
- * - prova di lavoro sulla prima scheda di una chiave nuova
+ * - prova di lavoro ADATTIVA sulla prima scheda di una chiave nuova: più chiavi
+ *   nuove arrivano, più la prova è difficile. Non c'è un tetto fisso di chiavi
+ *   nuove che un attaccante possa consumare: chi paga la prova entra sempre.
+ * - tetto alle schede attive (protegge lo spazio, non blocca i rinnovi)
  * - l'ancora accetta solo schede di directory (non diventa un relay qualsiasi)
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const keys = require('../../packages/keys')
 const protocol = require('../../packages/protocol')
+const { requiredPowBits } = require('../../node/src/directory')
 const { NET, startTestNode, wsOpen, wsExchange, testIdentity } = require('../helpers/node')
 
 const onion = (/** @type {number} */ i) => String.fromCharCode(97 + (i % 26)).repeat(55) + 'a' + '.onion'
@@ -35,21 +38,57 @@ test('aggiornamenti troppo frequenti della stessa chiave: rifiutati', async () =
   } finally { await t.close() }
 })
 
-test('troppe chiavi nuove in un\'ora: le eccedenti rifiutate', async () => {
-  const t = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 0, maxNewKeysPerHour: 5, maxNewKeysPerDay: 100 } })
+test('difficoltà adattiva: sale di 2 bit a ogni raddoppio delle chiavi nuove nell\'ultima ora', () => {
+  const L = { powBitsNewKey: 4, newKeysPerHourTarget: 10, powBitsMax: 30 }
+  assert.equal(requiredPowBits(0, L), 4)
+  assert.equal(requiredPowBits(9, L), 4)
+  assert.equal(requiredPowBits(10, L), 6)
+  assert.equal(requiredPowBits(20, L), 8)
+  assert.equal(requiredPowBits(40, L), 10)
+  assert.equal(requiredPowBits(1e9, L), 30, 'tetto alla difficoltà')
+})
+
+test('sotto pressione la prova si fa più difficile, ma chi la paga entra sempre (nessun tetto fisso)', async () => {
+  const t = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 2, newKeysPerHourTarget: 3 } })
   try {
-    let accepted = 0, limited = 0
-    for (let i = 0; i < 9; i++) {
-      const r = await submit(t.node.port, desc(keys.generateNodeKey(), i))
-      if (r[2]) accepted++; else if (/rate-limited/.test(r[3])) limited++
+    for (let i = 0; i < 3; i++) assert.equal((await submit(t.node.port, desc(keys.generateNodeKey(), i, { powBits: 2 })))[2], true, `chiave ${i}`)
+    // ora l'ancora è "sotto pressione": la prova minima non basta più…
+    const cheap = await submit(t.node.port, desc(keys.generateNodeKey(), 10, { powBits: 2 }))
+    assert.equal(cheap[2], false)
+    const need = Number(/servono almeno (\d+) bit/.exec(cheap[3])?.[1])
+    assert.equal(need, 4, cheap[3])
+    // …ma con la difficoltà richiesta si entra, anche dopo molte chiavi
+    for (let i = 0; i < 8; i++) {
+      const k = keys.generateNodeKey()
+      let r = await submit(t.node.port, desc(k, 20 + i, { powBits: 2 }))
+      if (!r[2]) r = await submit(t.node.port, desc(k, 20 + i, { powBits: Number(/(\d+) bit/.exec(r[3])?.[1]) }))
+      assert.equal(r[2], true, `il nodo vero ${i} deve poter entrare pagando la prova: ${r[3]}`)
     }
-    assert.equal(accepted, 5)
-    assert.equal(limited, 4)
   } finally { await t.close() }
 })
 
+test('il nodo legge la difficoltà richiesta e riprova da solo', async () => {
+  const anchor = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 8 } })
+  const n = await startTestNode({
+    anchors: [`http://127.0.0.1:${anchor.node.port}`], allowLoopbackPeersForTests: true,
+    descriptorOnionForTests: 'f'.repeat(56) + '.onion', descriptorPowBits: 1,
+  })
+  try {
+    let found = null
+    for (let i = 0; i < 60 && !found; i++) {
+      await new Promise(r => setTimeout(r, 250))
+      const ws = await wsOpen(anchor.node.port)
+      const m = await wsExchange(ws, ['REQ', 'd', { kinds: [protocol.DESCRIPTOR_KIND] }], x => x[0] === 'EOSE')
+      ws.close()
+      found = m.find(x => x[0] === 'EVENT')
+    }
+    assert.ok(found, 'la scheda non è mai entrata')
+    assert.ok(protocol.leadingZeroBits(found[2].id) >= 8)
+  } finally { await n.close(); await anchor.close() }
+})
+
 test('tetto alle schede attive', async () => {
-  const t = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 0, maxNewKeysPerHour: 100, maxActive: 3 } })
+  const t = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 0, maxActive: 3 } })
   try {
     const res = []
     for (let i = 0; i < 5; i++) res.push((await submit(t.node.port, desc(keys.generateNodeKey(), i)))[2])

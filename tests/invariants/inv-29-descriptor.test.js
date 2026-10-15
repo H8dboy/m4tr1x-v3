@@ -20,8 +20,7 @@ test('descrittore corretto: valido', () => {
 })
 
 test('onion non v3 o IP al posto dell\'onion: rifiutato già in costruzione', () => {
-  // IP d'esempio composti a pezzi (lo scanner dei segreti blocca gli IP scritti per intero)
-  for (const onion of ['x.onion', ['127', '0', '0', '1'].join('.'), ['8', '8', '8', '8'].join('.'), 'nodo.example.com', 'b'.repeat(16) + '.onion']) {
+  for (const onion of ['x.onion', '127.0.0.1', '203.0.113.8', 'nodo.example.com', 'b'.repeat(16) + '.onion']) {
     assert.throws(() => protocol.buildDescriptor(nodeKey, NET, { onion, roles: ['user'], version: '3', ttlSec: 3600, powBits: 0 }), /onion/)
   }
 })
@@ -32,7 +31,7 @@ test('IP nascosto nel contenuto o in un tag: rifiutato in verifica', () => {
     content: extra.content ?? JSON.stringify({ roles: ['user'] }),
     tags: [['d', 'm4tr1x-node'], ['onion', ONION], ['expiration', String(now() + 3600)], ['net', NET], ...(extra.tags || [])],
   }, nodeKey)
-  const ip = ['8', '8', '4', '4'].join('.')
+  const ip = '198.51.100.4'   // indirizzo di documentazione (RFC 5737)
   assert.equal(protocol.verifyDescriptor(raw({ content: JSON.stringify({ roles: ['user'], fallback: ip }) }), NET, now()).ok, false)
   assert.equal(protocol.verifyDescriptor(raw({ tags: [['r', 'http://' + ip + ':8080']] }), NET, now()).ok, false)
 })

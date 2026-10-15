@@ -113,11 +113,11 @@ Tutte le frecce passano da Tor. Nessun componente conosce l'IP di un altro.
   - firma valida della chiave del nodo (K5, che può firmare solo schede); un solo indirizzo `.onion` v3; **nessun IP** da nessuna parte della scheda;
   - **scadenza obbligatoria ≤ 7 giorni** (NIP-40): la scheda scaduta non si accetta, non si restituisce e viene cancellata; il nodo la **rinnova da solo** (di default scadenza 3 giorni, rinnovo ogni 24 ore): un nodo spento sparisce da solo in al massimo 3 giorni;
   - **una sola scheda attiva per nodo** (evento sostituibile NIP-33, kind 30480): il rinnovo sostituisce la precedente;
-  - **limiti per chiave e globali** (dietro Tor tutti sono 127.0.0.1, i limiti per IP non servono): un aggiornamento ogni 10 minuti per chiave; al massimo 20 chiavi nuove all'ora e 200 al giorno; tetto di 10.000 schede attive;
-  - **prova di lavoro** (NIP-13, 18 bit ≈ 1 s su un PC) solo sulla prima scheda di una chiave nuova: niente per i nodi veri, costosa per chi vuole crearne migliaia;
+  - **limiti** (dietro Tor tutti sono 127.0.0.1, i limiti per IP non servono): un aggiornamento ogni 10 minuti per chiave; tetto di 10.000 schede attive (protegge lo spazio, non blocca i rinnovi);
+  - **prova di lavoro adattiva** (NIP-13) solo sulla prima scheda di una chiave nuova: 18 bit (≈ 1 s su un PC) finché le chiavi nuove nell'ultima ora restano sotto 20; poi **+2 bit (costo ×4) a ogni raddoppio**, fino a un tetto di 28 bit. Il nodo legge dalla risposta quanti bit servono, rifà la prova e riprova. **Non c'è un tetto fisso di chiavi nuove**: un tetto fisso lo può consumare un attaccante e chiudere fuori i nodi veri (osservazione del fondatore, 15/10/2026); con la prova adattiva chi vuole riempire l'ancora paga un costo esponenziale, chi la paga entra;
   - l'ancora accetta **solo** schede di directory: non diventa un relay qualsiasi;
   - le schede che arrivano dalle altre ancore saltano i limiti di frequenza (la replica le sposta in blocco) ma non la verifica né il tetto.
-- **Compromesso dei limiti:** chi esaurisce le chiavi nuove disponibili in un'ora fa aspettare per quell'ora i nodi nuovi veri; i nodi già registrati continuano a rinnovarsi senza limiti di quota.
+- **Compromesso della prova adattiva:** durante un attacco anche i nodi nuovi veri pagano una prova più cara (da secondi a minuti, su hardware lento di più); i nodi già registrati rinnovano senza prova di lavoro. Oltre 26 bit il nodo non insiste e riprova più tardi.
 - **Le ancore non si fidano l'una dell'altra.** Si copiano solo eventi con firma valida: un'ancora compromessa può *nascondere* nodi (rimedio: l'app legge da tutte e 3 e unisce), non può *inventarli* senza le loro chiavi.
 
 ---

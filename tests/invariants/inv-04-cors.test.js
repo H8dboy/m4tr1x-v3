@@ -13,10 +13,10 @@ after(() => t.close())
 
 const preflight = (/** @type {string} */ origin) => request(t.node.port, '/health', { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'GET' } })
 
-// origine di rete locale d'esempio, composta a pezzi: lo scanner dei segreti
-// (giustamente) blocca gli IP privati scritti per intero nei file del repo
-const LAN_ORIGIN = 'http://' + ['192', '168', '1', '5'].join('.')
-for (const o of ['http://evil.example', 'http://localhost.evil.example', 'http://localhost:1420.evil.example', LAN_ORIGIN, 'http://x.onion', 'null', 'http://localhost:1421']) {
+// Origine con indirizzo IP: v3 non ha eccezioni per le reti locali, qualsiasi origine
+// IP non configurata è rifiutata. Si usa un indirizzo riservato alla documentazione
+// (RFC 5737), ammesso dallo scanner dei segreti.
+for (const o of ['http://evil.example', 'http://localhost.evil.example', 'http://localhost:1420.evil.example', 'http://198.51.100.5', 'http://x.onion', 'null', 'http://localhost:1421']) {
   test(`origine "${o}" rifiutata`, async () => {
     const r = await preflight(o)
     assert.equal(r.headers['access-control-allow-origin'], undefined)

@@ -10,4 +10,4 @@
 - (−) Se cadono tutte e 3 le ancore, i nodi nuovi non si trovano finché una torna (quelli in cache sì). Qualsiasi nodo può diventare ancora di riserva.
 - (−) Un'ancora può nascondere nodi, non inventarli. Mitigazione: lettura da tutte e 3.
 
-**Aggiornamento 15/10/2026 (F3, richieste del fondatore):** schede con **scadenza e rinnovo** (I-38) e **limiti di frequenza sulle ancore** (I-39), più prova di lavoro NIP-13 sulla prima scheda di una chiave nuova. Dettagli e numeri in ARCHITECTURE §3. Le schede sono eventi NIP-33 di kind 30480 con tag `d=m4tr1x-node`, `onion`, `expiration`, `net`.
+**Aggiornamento 15/10/2026 (F3, richieste del fondatore):** schede con **scadenza e rinnovo** (I-38) e **limiti sulle ancore** (I-39). Il tetto fisso di chiavi nuove all'ora, introdotto inizialmente, è stato **sostituito da una prova di lavoro adattiva** (NIP-13): un tetto fisso poteva essere consumato da un attaccante e chiudere fuori i nodi veri. Dettagli e numeri in ARCHITECTURE §3. Le schede sono eventi NIP-33 di kind 30480 con tag `d=m4tr1x-node`, `onion`, `expiration`, `net`.

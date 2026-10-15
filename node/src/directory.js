@@ -5,10 +5,12 @@
  *
  * Lato ANCORA — regole di ingresso (I-29, I-38, I-39):
  *  - accetta solo schede di directory valide (firma, onion v3, nessun IP, scadenza ≤ 7 giorni)
- *  - limiti per chiave (intervallo minimo tra aggiornamenti) e globali (chiavi nuove
- *    per ora e per giorno, tetto di schede attive): dietro Tor tutti sono 127.0.0.1,
- *    quindi i limiti per IP non servono
- *  - prova di lavoro (NIP-13) sulla prima scheda di una chiave nuova
+ *  - limite per chiave (intervallo minimo tra aggiornamenti) e tetto di schede
+ *    attive: dietro Tor tutti sono 127.0.0.1, quindi i limiti per IP non servono
+ *  - prova di lavoro (NIP-13) ADATTIVA sulla prima scheda di una chiave nuova:
+ *    più chiavi nuove nell'ultima ora, più bit richiesti (+2 bit a ogni raddoppio
+ *    oltre l'obiettivo). Nessun tetto fisso di chiavi nuove: un attaccante non può
+ *    "consumare" i posti, può solo pagare una prova sempre più cara; chi la paga entra.
  *  - le schede che arrivano dalle altre ancore saltano i limiti di frequenza (la
  *    replica sposta molte schede insieme) ma non la verifica né il tetto
  *
@@ -22,12 +24,23 @@ const protocol = require('../../packages/protocol')
 const { isOnionV3, TorAgent } = require('./socks')
 
 const DEFAULT_LIMITS = Object.freeze({
-  powBitsNewKey: 18,          // ~1 s su un PC, una volta sola per nodo
-  maxNewKeysPerHour: 20,
-  maxNewKeysPerDay: 200,
+  powBitsNewKey: 18,          // difficoltà base: ~1 s su un PC, una volta sola per nodo
+  newKeysPerHourTarget: 20,   // oltre questo ritmo la difficoltà sale
+  powBitsMax: 28,             // tetto alla difficoltà (~4 min su un PC)
   minUpdateIntervalSec: 600,  // il rinnovo normale è ogni ~24 h
   maxActive: 10000,
 })
+
+/**
+ * Bit di prova di lavoro richiesti a una chiave nuova, dato quante chiavi nuove
+ * l'ancora ha accettato nell'ultima ora. +2 bit (costo ×4) a ogni raddoppio oltre l'obiettivo.
+ * @param {number} recentNewKeys @param {{ powBitsNewKey: number, newKeysPerHourTarget: number, powBitsMax: number }} L
+ */
+function requiredPowBits(recentNewKeys, L) {
+  const target = Math.max(1, L.newKeysPerHourTarget)
+  const extra = recentNewKeys < target ? 0 : 2 * (1 + Math.floor(Math.log2(recentNewKeys / target)))
+  return Math.min(L.powBitsMax, L.powBitsNewKey + extra)
+}
 const nowSec = () => Math.floor(Date.now() / 1000)
 
 /**
@@ -56,10 +69,9 @@ function anchorPolicy(o) {
       if (known) {
         if (now - known.last_update < L.minUpdateIntervalSec) return [false, 'rate-limited: aggiornamento troppo frequente per questa chiave']
       } else {
-        if (L.powBitsNewKey > 0 && protocol.leadingZeroBits(ev.id) < L.powBitsNewKey)
-          return [false, `pow: servono almeno ${L.powBitsNewKey} bit di prova di lavoro per una chiave nuova`]
-        if (/** @type {any} */ (newSince.get(now - 3600)).n >= L.maxNewKeysPerHour) return [false, 'rate-limited: troppe chiavi nuove nell\'ultima ora']
-        if (/** @type {any} */ (newSince.get(now - 86400)).n >= L.maxNewKeysPerDay) return [false, 'rate-limited: troppe chiavi nuove nelle ultime 24 ore']
+        const need = requiredPowBits(/** @type {any} */ (newSince.get(now - 3600)).n, L)
+        if (need > 0 && protocol.leadingZeroBits(ev.id) < need)
+          return [false, `pow: servono almeno ${need} bit di prova di lavoro per una chiave nuova`]
       }
     }
     upsert.run(ev.pubkey, known ? known.first_seen : now, now)
@@ -166,17 +178,30 @@ function startPublisher(c) {
   const { cfg, log } = c
   let stopped = false, timer = /** @type {NodeJS.Timeout | null} */ (null)
   let registered = false   // la prova di lavoro serve solo alla prima scheda di una chiave nuova
+  const POW_CAP = Math.max(cfg.descriptorPowBits, 26)   // oltre questo il nodo non insiste (minuti di calcolo)
   const anchors = cfg.anchors.filter(a => parseTarget(a, cfg.allowLoopbackPeersForTests))
   if (cfg.anchors.length && !anchors.length) log('directory: nessuna ancora valida (solo indirizzi .onion)')
 
   async function publishOnce() {
     const onion = c.onion() || cfg.descriptorOnionForTests || null
     if (!onion || !anchors.length) return false
-    const d = protocol.buildDescriptor(c.nodeKey, cfg.network, {
-      onion, roles: [cfg.role], version: c.version, ttlSec: cfg.descriptorTtlSec,
-      powBits: registered ? 0 : cfg.descriptorPowBits,
+    const opts = { network: cfg.network, socksPort: c.socksPort(), allowLoopbackForTests: cfg.allowLoopbackPeersForTests }
+    const build = (/** @type {number} */ bits) => protocol.buildDescriptor(c.nodeKey, cfg.network, {
+      onion, roles: [cfg.role], version: c.version, ttlSec: cfg.descriptorTtlSec, powBits: bits,
     })
-    const res = await publishDescriptor(anchors, d, { network: cfg.network, socksPort: c.socksPort(), allowLoopbackForTests: cfg.allowLoopbackPeersForTests })
+    let res = await publishDescriptor(anchors, build(registered ? 0 : cfg.descriptorPowBits), opts)
+    // ancora sotto pressione: dice quanti bit servono; si rifà la prova e si riprova lì
+    const asked = res.map(r => Number(/servono almeno (\d+) bit/.exec(r.message)?.[1] || 0))
+    const need = Math.max(...asked)
+    if (need > 0 && need <= POW_CAP) {
+      log(`directory: un'ancora chiede una prova di lavoro di ${need} bit, la calcolo`)
+      const retry = anchors.filter((_, i) => asked[i] > 0)
+      const again = await publishDescriptor(retry, build(need), opts)
+      let j = 0
+      res = res.map((r, i) => asked[i] > 0 ? again[j++] : r)
+    } else if (need > POW_CAP) {
+      log(`directory: prova di lavoro richiesta (${need} bit) oltre il limite del nodo (${POW_CAP}): riprovo più tardi`)
+    }
     const okCount = res.filter(r => r.ok).length
     log(`directory: scheda pubblicata su ${okCount}/${anchors.length} ancore`)
     if (okCount > 0) registered = true
@@ -195,4 +220,4 @@ function startPublisher(c) {
   return { stop() { stopped = true; if (timer) clearTimeout(timer) }, publishOnce }
 }
 
-module.exports = { DEFAULT_LIMITS, anchorPolicy, parseTarget, publishDescriptor, fetchDirectory, startPublisher }
+module.exports = { DEFAULT_LIMITS, requiredPowBits, anchorPolicy, parseTarget, publishDescriptor, fetchDirectory, startPublisher }

@@ -32,9 +32,13 @@ for (const f of ['.env', 'config/.env.local', 'data/relay.db', 'h8ledger.db-wal'
   test(`file vietato: ${f}`, () => assert.ok(scanFile(f, '').length > 0))
 }
 
-test('ammessi: email noreply, IP di documentazione, localhost', () => {
-  const ok = 'Co-Authored-By: x <234557612+H8dboy@users.noreply.github.com> 127.0.0.1 203.0.113.5 version 3.0.0'
+test('ammessi: email noreply, i tre blocchi di documentazione (RFC 5737), localhost', () => {
+  const ok = 'Co-Authored-By: x <234557612+H8dboy@users.noreply.github.com> 127.0.0.1 192.0.2.10 198.51.100.4 203.0.113.5 version 3.0.0'
   assert.deepEqual(scanFile('docs/x.md', ok), [])
+})
+
+test('un IP vero accanto a uno di documentazione viene comunque segnalato', () => {
+  assert.ok(scanFile('src/x.js', 'a = "203.0.113.5"; b = "' + FAKE.pub.split('@')[1] + '"').length > 0)
 })
 
 test('il repo non contiene segreti nei file tracciati', () => {
