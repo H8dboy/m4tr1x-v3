@@ -20,7 +20,11 @@ const BANNED = ['webtorrent', 'bittorrent-tracker', 'simple-peer', 'request', 'n
   'electron', 'electron-builder', '@capacitor/core', 'pg', 'activitypub-express', 'masto', 'megalodon']
 
 /** Approvate (si allunga solo con un motivo scritto nel commit). */
-const APPROVED = new Set([])
+const APPROVED = new Set([
+  // F1: firme Schnorr secp256k1 (Nostr), hash, HKDF, BIP-39. Librerie con audit
+  // indipendenti, zero dipendenze esterne oltre @noble/hashes.
+  '@noble/curves', '@noble/hashes', '@scure/bip39',
+])
 
 function packageJsons() {
   return execFileSync('git', ['ls-files', '-z', '--', '*package.json'], { cwd: ROOT }).toString('utf8')

@@ -35,7 +35,7 @@
 
 ### K1 — Identità (Nostr)
 - **Scopo:** firma post, profilo, follow, eventi di migrazione. È "il nome" dell'utente.
-- **Dove vive:** Android Keystore / iOS Keychain / DPAPI / macOS Keychain; altrimenti passphrase + Argon2id. **La firma avviene nel lato Rust dell'app**, il JavaScript non vede mai la chiave (I-31).
+- **Dove vive:** Android Keystore / iOS Keychain / DPAPI / macOS Keychain; altrimenti passphrase + scrypt (vault `packages/keys`, AES-256-GCM). **La firma avviene nel lato Rust dell'app**, il JavaScript non vede mai la chiave (I-31).
 - **Rotazione:** evento di migrazione firmato con K1 vecchia → K1 nuova (ricavata con indice di versione successivo dal seme).
 - **Se rubata:** il ladro può pubblicare a nome dell'utente e leggere i DM se K1d non è separata. Rimedio: revoca con K1r e migrazione.
 

@@ -160,7 +160,7 @@ sequenceDiagram
 | Fase | Come | Perché / compromesso |
 |---|---|---|
 | **Generazione** | Sul dispositivo, da un **seme di 24 parole** (BIP-39). Dal seme si ricavano chiavi diverse per ruoli diversi con etichette diverse (HKDF): `m4tr1x/identity/v1`, `m4tr1x/wallet/v1` | Un solo backup per l'utente, ma chiavi separate: chi ruba la firma di un post non ha la chiave del wallet. **Compromesso:** chi ruba il **seme** ha tutto, ed è per questo che il seme non sta mai sul dispositivo in chiaro |
-| **Conservazione** | Chiavi cifrate a riposo: portachiavi del sistema (Android Keystore, iOS Keychain, Windows DPAPI, macOS Keychain); in mancanza, passphrase + Argon2id | Oggi il nodo salva la password dell'identità in un file accanto alla chiave (M2 dell'audit): non si ripete |
+| **Conservazione** | Chiavi cifrate a riposo: portachiavi del sistema (Android Keystore, iOS Keychain, Windows DPAPI, macOS Keychain); in mancanza, passphrase + scrypt (N=2^17, incluso in Node: nessuna dipendenza in più; Argon2id quando sarà disponibile nativamente) | Oggi il nodo salva la password dell'identità in un file accanto alla chiave (M2 dell'audit): non si ripete |
 | **Backup** | Le 24 parole su carta. Facoltativo: backup cifrato con la passphrase sul proprio nodo | Niente backup "nel cloud di qualcuno" |
 | **Recupero** | Solo con il seme. Senza seme l'identità è persa | Nessun custode = nessuno che possa essere costretto a consegnarla. Il recupero "sociale" è in OPEN_QUESTIONS Q11 |
 | **Rotazione** | Evento "migrazione" firmato **dalla chiave vecchia** che indica la nuova; l'app di chi ti segue lo segue in automatico | Serve quando la chiave è sospetta ma ancora in mano tua |
