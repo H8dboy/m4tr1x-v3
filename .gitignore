@@ -1,0 +1,42 @@
+# Dipendenze e build
+node_modules/
+target/
+dist/
+build/
+/release/
+
+# Segreti e dati: MAI nel repo (I-28)
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.enc
+*.seed
+*.minisign.key
+hs_ed25519_secret_key
+hs_ed25519_public_key
+node_config.json
+
+# Binari delle app: solo nelle release firmate
+*.apk
+*.aab
+*.ipa
+*.exe
+*.dmg
+*.msi
+*.AppImage
+*.deb
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini

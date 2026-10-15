@@ -1,0 +1,73 @@
+# CI di M4TR1X v3 (fase F0)
+# - test: tutte le invarianti attive (node --test)
+# - secrets: gitleaks sulla storia intera + scanner M4TR1X sui file tracciati
+# - deps: audit delle dipendenze (npm audit; cargo deny dalla F4)
+# - release-gate: sui tag v*, nessuna pubblicazione senza release.json firmato (I-23)
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Invarianti
+        run: node --test "tests/**/*.test.js"
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # storia intera, non solo l'ultimo commit
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Scanner M4TR1X (I-28)
+        run: node tools/security/scan-secrets.js
+      - name: gitleaks (storia intera)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.3 \
+            git /repo --config /repo/.gitleaks.toml --redact --verbose
+
+  deps:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: npm audit (I-25)
+        run: |
+          found=0
+          for lock in $(git ls-files '*package-lock.json'); do
+            found=1
+            (cd "$(dirname "$lock")" && npm audit --audit-level=high)
+          done
+          [ "$found" = 0 ] && echo "nessuna dipendenza npm: niente da controllare" || true
+
+  release-gate:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, secrets, deps]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # I pacchetti e il release.json firmato offline vengono messi in release/
+      # dal processo di build (dalla F8). Senza firma valida il job fallisce e
+      # nessun passo di pubblicazione può seguirlo.
+      - name: Verifica release firmata (I-23)
+        run: node tools/release/verify-release.js release/
