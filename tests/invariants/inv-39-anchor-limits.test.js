@@ -126,3 +126,15 @@ test('l\'ancora rifiuta eventi che non sono schede di directory', async () => {
     assert.equal((await submit(t.node.port, post))[2], false)
   } finally { await t.close() }
 })
+
+test("un'ancora-peer ha un budget di chiavi nuove all'ora: non può riempire le altre", async () => {
+  const a = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 0, newKeysPerHourTarget: 1000 } })
+  for (let i = 0; i < 8; i++) await submit(a.node.port, desc(keys.generateNodeKey(), i))
+  const b = await startTestNode({ role: 'anchor', allowLoopbackPeersForTests: true, peers: [`http://127.0.0.1:${a.node.port}`],
+    anchorLimits: { powBitsNewKey: 0, peerNewKeysPerHour: 3 } })
+  try {
+    await new Promise(r => setTimeout(r, 2500))
+    const n = /** @type {any} */ (b.node.db.prepare('SELECT COUNT(*) AS n FROM events WHERE kind = ?').get(protocol.DESCRIPTOR_KIND)).n
+    assert.equal(n, 3, `l'ancora B ha accettato ${n} chiavi nuove dalla stessa ancora-peer (budget 3)`)
+  } finally { await b.close(); await a.close() }
+})

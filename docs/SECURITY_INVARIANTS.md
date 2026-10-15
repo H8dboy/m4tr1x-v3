@@ -20,7 +20,7 @@
 
 | # | Invariante | Test | Fase |
 |---|---|---|---|
-| I-06 | **Nessuna chiave privata finisce su disco in chiaro.** | `inv-06-keys-at-rest`: dopo creazione identità, post, DM e spesa, si scansiona la cartella dati cercando i byte della chiave (hex, base64, bech32 `nsec`) → zero risultati | F1 |
+| I-06 | **Nessuna chiave privata finisce su disco in chiaro** (utente: vault; nodo: K5 e K13 in vault, il nodo non parte senza passphrase). | `inv-06-keys-at-rest` + `inv-06b-node-secrets`: dopo creazione identità, post, DM e spesa, si scansiona la cartella dati cercando i byte della chiave (hex, base64, bech32 `nsec`) → zero risultati | F1 |
 | I-07 | **Ruoli separati:** una firma fatta con la chiave di un ruolo viene rifiutata dove serve un altro ruolo. | `inv-07-role-separation`: firma identità usata come autorizzazione H8 → rifiutata; chiave wallet usata per un post → rifiutata | F1 |
 | I-08 | **Ogni firma ha un'etichetta di dominio e l'identificativo di rete** (`m4tr1x-main` vs `m4tr1x-test`). | `inv-08-domain-sep`: una firma valida in rete di prova non vale in rete principale; una firma "spesa" non vale come "conio" | F1 |
 | I-30 | **L'indirizzo onion di un nodo utente è visibile solo al suo proprietario** (i ruoli pubblici lo pubblicano nel descrittore per scelta). | `inv-30-33-admin-onion`: `GET /node/onion` senza chiave admin → 401; dal listener dell'onion → 404 | F2 |
@@ -83,6 +83,7 @@
 | I-38 | **Le schede della directory scadono e si rinnovano:** scadenza obbligatoria ≤ 7 giorni; scheda scaduta rifiutata, non restituita e cancellata dalle ancore; il rinnovo sostituisce la scheda precedente; il nodo rinnova da solo prima della scadenza. | `inv-38-expiry` | F3 |
 | I-39 | **Limiti sulle ancore senza porte chiudibili:** intervallo minimo tra aggiornamenti della stessa chiave; **prova di lavoro adattiva** (NIP-13) sulla prima scheda di una chiave nuova, +2 bit a ogni raddoppio delle chiavi nuove nell'ultima ora oltre l'obiettivo, con tetto alla difficoltà; **nessun tetto fisso di chiavi nuove** (chi paga la prova entra sempre); il nodo rilegge la difficoltà richiesta e riprova; tetto di schede attive (spazio); l'ancora accetta solo schede di directory. | `inv-39-anchor-limits` | F3 |
 | I-40 | **Due famiglie di firme (ADR-0017):** Schnorr per identità, DM, revoca, nodo; ML-DSA-65 per wallet, emittente, release. Una firma Schnorr non vale mai per un dominio di valore, né una ML-DSA per un dominio social. Ed25519 e minisign assenti dal codice (Ed25519 solo dentro Tor); RSA solo nel modulo buoni. | `inv-40-signature-families` (dinamico + statico) | F1 |
+| I-41 | **Spazio del relay limitato:** dimensione massima per evento, quota per autore, tetto globale (gli autori fidati del nodo sono esenti); la sincronizzazione dai peer rispetta gli stessi limiti. | `inv-41-relay-space` | F2 |
 | I-31 | **Nessuna chiave privata utente raggiunge il codice JavaScript dell'app;** CSP senza `unsafe-inline`. | `inv-31-no-keys-in-js`: le API esposte dal lato Rust al frontend non restituiscono mai chiavi (test sui comandi Tauri); CSP verificata | F4 |
 | I-33 | **L'admin del nodo è raggiungibile solo da loopback con la chiave admin (K13)**, distinta da ogni altra chiave. | `inv-30-33-admin-onion`: da onion/porta pubblica → 404; senza K13 → 401 | F2 |
 

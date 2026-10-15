@@ -108,4 +108,18 @@ module.exports = [
     find: "      return [false, 'blocked: directory piena']", replace: '      {}', test: T('inv-39-anchor-limits') },
   { id: 'i39-nopow', rule: 'I-39', name: 'nessuna prova di lavoro', file: 'node/src/directory.js',
     find: '        if (need > 0 && protocol.leadingZeroBits(ev.id) < need)', replace: '        if (false)', test: T('inv-39-anchor-limits') },
+  // ─── Debolezze 3–5 chiuse prima di F4 ───────────────────────────────────────
+  { id: 'i06-nopass', rule: 'I-06', name: 'il nodo parte con una passphrase di default', file: 'node/src/node.js',
+    find: "  throw new Error('passphrase delle chiavi del nodo mancante: keyPassphrase, keyPassphraseFile o M4TR1X_KEY_PASSPHRASE')",
+    replace: "  return 'default'", test: T('inv-06b-node-secrets') },
+  { id: 'i06-plainleft', rule: 'I-06', name: 'i file in chiaro vecchi restano sul disco', file: 'node/src/node.js',
+    find: "    fs.rmSync(f, { force: true })", replace: '', test: T('inv-06b-node-secrets') },
+  { id: 'i41-size', rule: 'I-41', name: 'nessun limite di dimensione per evento', file: 'node/src/relay.js',
+    find: "    if (size > L.maxEventBytes) return [false, `invalid: evento troppo grande (${size} byte, massimo ${L.maxEventBytes})`]", replace: '', test: T('inv-41-relay-space') },
+  { id: 'i41-author', rule: 'I-41', name: 'nessuna quota per autore', file: 'node/src/relay.js',
+    find: "      if (a.n >= L.perAuthorMaxEvents || a.b + size > L.perAuthorMaxBytes) return [false, 'blocked: quota di questo autore esaurita su questo nodo']", replace: '', test: T('inv-41-relay-space') },
+  { id: 'i41-total', rule: 'I-41', name: 'nessun tetto globale', file: 'node/src/relay.js',
+    find: "      if (totals.n >= L.maxTotalEvents || totals.b + size > L.maxTotalBytes) return [false, 'blocked: relay pieno']", replace: '', test: T('inv-41-relay-space') },
+  { id: 'i39-peerbudget', rule: 'I-39', name: 'nessun budget per ancora-peer', file: 'node/src/directory.js',
+    find: "      if (recent.length >= L.peerNewKeysPerHour) { peerBudget.set(key, recent); return [false, 'rate-limited: budget di chiavi nuove di questa ancora-peer esaurito'] }", replace: '', test: T('inv-39-anchor-limits') },
 ]

@@ -70,13 +70,21 @@ function matches(ev, f) {
 }
 
 /**
- * @typedef {(ev: any, meta: { fromPeer: boolean }) => [boolean, string]} RelayPolicy
+ * @typedef {(ev: any, meta: { fromPeer: boolean, peer?: string }) => [boolean, string]} RelayPolicy
  *   regole aggiuntive del ruolo (es. ancora): chiamata dopo la verifica di base
- * @param {{ db: import('node:sqlite').DatabaseSync, network: string, log: (s: string) => void, policy?: RelayPolicy }} ctx
+ * @typedef {{ maxEventBytes: number, perAuthorMaxEvents: number, perAuthorMaxBytes: number, maxTotalEvents: number, maxTotalBytes: number }} SpaceLimits
+ * @param {{ db: import('node:sqlite').DatabaseSync, network: string, log: (s: string) => void, policy?: RelayPolicy,
+ *           limits?: SpaceLimits, trusted?: string[] }} ctx
+ *   limits: spazio (I-41); trusted: autori esenti da quote e tetto (il proprietario del nodo)
  */
 function createRelay(ctx) {
   const { db, network, log } = ctx
-  const insEv = db.prepare('INSERT OR IGNORE INTO events (id,pubkey,created_at,kind,tags,content,sig,received_at,expires_at,dtag) VALUES (?,?,?,?,?,?,?,?,?,?)')
+  const insEv = db.prepare('INSERT OR IGNORE INTO events (id,pubkey,created_at,kind,tags,content,sig,received_at,expires_at,dtag,bytes) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+  const L = ctx.limits || { maxEventBytes: 64 * 1024, perAuthorMaxEvents: 10000, perAuthorMaxBytes: 64 * 1024 * 1024, maxTotalEvents: 1000000, maxTotalBytes: 2 * 1024 * 1024 * 1024 }
+  const trusted = new Set(ctx.trusted || [])
+  const authorUse = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(bytes),0) AS b FROM events WHERE pubkey = ?')
+  const totalUse = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(bytes),0) AS b FROM events')
+  let totals = /** @type {any} */ (totalUse.get())   // tenuto aggiornato in memoria, ricalcolato dopo le pulizie
   const findRepl = db.prepare('SELECT id, created_at FROM events WHERE pubkey = ? AND kind = ? AND dtag IS ?')
   const delEv = db.prepare('DELETE FROM events WHERE id = ?')
   const purgeStmt = db.prepare('DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?')
@@ -96,10 +104,13 @@ function createRelay(ctx) {
       if (old) {
         if (old.created_at > ev.created_at || (old.created_at === ev.created_at && old.id <= ev.id)) return false
         delEv.run(old.id)
+        totals = /** @type {any} */ (totalUse.get())
       }
     }
-    const r = insEv.run(ev.id, ev.pubkey, ev.created_at, ev.kind, JSON.stringify(ev.tags), ev.content, ev.sig, nowSec(), expirationOf(ev), dtag)
+    const size = Buffer.byteLength(JSON.stringify(ev))
+    const r = insEv.run(ev.id, ev.pubkey, ev.created_at, ev.kind, JSON.stringify(ev.tags), ev.content, ev.sig, nowSec(), expirationOf(ev), dtag, size)
     if (!r.changes) return false
+    totals = { n: totals.n + 1, b: totals.b + size }
     for (const t of ev.tags) if (t.length >= 2 && t[0].length === 1) insTag.run(ev.id, t[0], String(t[1]).slice(0, 256))
     return true
   }
@@ -115,7 +126,7 @@ function createRelay(ctx) {
 
   /**
    * Ingresso unico per gli eventi (dai client e dai peer). Ritorna [accettato, messaggio].
-   * @param {any} ev @param {import('ws').WebSocket | null} source @param {{ fromPeer?: boolean }} [meta]
+   * @param {any} ev @param {import('ws').WebSocket | null} source @param {{ fromPeer?: boolean, peer?: string }} [meta]
    * @returns {[boolean, string]}
    */
   function ingest(ev, source, meta = {}) {
@@ -123,8 +134,16 @@ function createRelay(ctx) {
     if (ev.created_at > nowSec() + MAX_FUTURE_SEC) return [false, 'invalid: created_at nel futuro']
     const exp = expirationOf(ev)
     if (exp !== null && exp <= nowSec()) return [false, 'invalid: evento scaduto']
+    // Spazio (I-41): un autore o un peer non possono riempire il nodo
+    const size = Buffer.byteLength(JSON.stringify({ id: ev.id, pubkey: ev.pubkey, created_at: ev.created_at, kind: ev.kind, tags: ev.tags, content: ev.content, sig: ev.sig }))
+    if (size > L.maxEventBytes) return [false, `invalid: evento troppo grande (${size} byte, massimo ${L.maxEventBytes})`]
+    if (!trusted.has(ev.pubkey) && !isEphemeral(ev.kind)) {
+      const a = /** @type {any} */ (authorUse.get(ev.pubkey))
+      if (a.n >= L.perAuthorMaxEvents || a.b + size > L.perAuthorMaxBytes) return [false, 'blocked: quota di questo autore esaurita su questo nodo']
+      if (totals.n >= L.maxTotalEvents || totals.b + size > L.maxTotalBytes) return [false, 'blocked: relay pieno']
+    }
     if (ctx.policy) {
-      const [ok, why] = ctx.policy(ev, { fromPeer: !!meta.fromPeer })
+      const [ok, why] = ctx.policy(ev, { fromPeer: !!meta.fromPeer, peer: meta.peer })
       if (!ok) return [false, why]
     }
     const clean = { id: ev.id, pubkey: ev.pubkey, created_at: ev.created_at, kind: ev.kind, tags: ev.tags, content: ev.content, sig: ev.sig }
@@ -207,7 +226,7 @@ function createRelay(ctx) {
   })
 
   /** Cancella gli eventi scaduti (NIP-40). Ritorna quanti. */
-  function purgeExpired() { return Number(purgeStmt.run(nowSec()).changes) }
+  function purgeExpired() { const n = Number(purgeStmt.run(nowSec()).changes); totals = /** @type {any} */ (totalUse.get()); return n }
   const purgeTimer = setInterval(() => { try { purgeExpired() } catch {} }, 60000)
   purgeTimer.unref()
 

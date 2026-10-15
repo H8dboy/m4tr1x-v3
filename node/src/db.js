@@ -22,7 +22,8 @@ function openDb(dataDir) {
       kind INTEGER NOT NULL, tags TEXT NOT NULL, content TEXT NOT NULL, sig TEXT NOT NULL,
       received_at INTEGER NOT NULL,
       expires_at INTEGER,          -- NIP-40: dopo questa data l'evento non esiste più
-      dtag TEXT                    -- NIP-33: chiave degli eventi sostituibili parametrizzati
+      dtag TEXT,                   -- NIP-33: chiave degli eventi sostituibili parametrizzati
+      bytes INTEGER NOT NULL DEFAULT 0  -- dimensione serializzata (quote di spazio, I-41)
     );
     CREATE INDEX IF NOT EXISTS ev_expires ON events(expires_at) WHERE expires_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS ev_replace ON events(pubkey, kind, dtag);

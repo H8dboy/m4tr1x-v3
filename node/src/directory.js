@@ -29,6 +29,7 @@ const DEFAULT_LIMITS = Object.freeze({
   powBitsMax: 28,             // tetto alla difficoltà (~4 min su un PC)
   minUpdateIntervalSec: 600,  // il rinnovo normale è ogni ~24 h
   maxActive: 10000,
+  peerNewKeysPerHour: 500,    // chiavi nuove accettate in un'ora da UNA ancora-peer (I-39)
 })
 
 /**
@@ -55,6 +56,8 @@ function anchorPolicy(o) {
   const newSince = o.db.prepare('SELECT COUNT(*) AS n FROM directory_keys WHERE first_seen > ?')
   const active = o.db.prepare('SELECT COUNT(*) AS n FROM events WHERE kind = ? AND (expires_at IS NULL OR expires_at > ?)')
   const hasActive = o.db.prepare('SELECT 1 AS x FROM events WHERE kind = ? AND pubkey = ? AND (expires_at IS NULL OR expires_at > ?)')
+  /** @type {Map<string, number[]>} ancora-peer → momenti in cui ci ha portato una chiave nuova */
+  const peerBudget = new Map()
 
   return (ev, meta) => {
     if (ev.kind !== protocol.DESCRIPTOR_KIND) return [false, 'blocked: questa ancora accetta solo schede di directory']
@@ -65,6 +68,13 @@ function anchorPolicy(o) {
     const replacing = !!hasActive.get(protocol.DESCRIPTOR_KIND, ev.pubkey, now)
     if (!replacing && /** @type {any} */ (active.get(protocol.DESCRIPTOR_KIND, now)).n >= L.maxActive)
       return [false, 'blocked: directory piena']
+    if (meta.fromPeer && !known) {
+      // Un'ancora compromessa non deve poter riempire le altre: budget per ancora-peer
+      const key = meta.peer || '?'
+      const recent = (peerBudget.get(key) || []).filter(t => t > now - 3600)
+      if (recent.length >= L.peerNewKeysPerHour) { peerBudget.set(key, recent); return [false, 'rate-limited: budget di chiavi nuove di questa ancora-peer esaurito'] }
+      recent.push(now); peerBudget.set(key, recent)
+    }
     if (!meta.fromPeer) {
       if (known) {
         if (now - known.last_update < L.minUpdateIntervalSec) return [false, 'rate-limited: aggiornamento troppo frequente per questa chiave']

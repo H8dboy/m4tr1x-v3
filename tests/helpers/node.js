@@ -17,7 +17,7 @@ async function startTestNode(over = {}) {
   const { startNode } = require('../../node')
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'm4-node-'))
   const logs = /** @type {string[]} */ ([])
-  const node = await startNode({ dataDir, network: NET, port: 0, tor: false, log: line => logs.push(line), ...over })
+  const node = await startNode({ dataDir, network: NET, port: 0, tor: false, keyPassphrase: 'passphrase dei test, non segreta', log: line => logs.push(line), ...over })
   return { node, logs, dataDir, close: () => node.close() }
 }
 

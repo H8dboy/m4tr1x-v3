@@ -33,6 +33,9 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
  * @property {number} descriptorRenewSec     ogni quanto si rinnova
  * @property {number} descriptorPowBits      prova di lavoro della scheda (chiave nuova)
  * @property {string} [descriptorOnionForTests]
+ * @property {string} [keyPassphrase]       passphrase del vault delle chiavi del nodo (K5, K13)
+ * @property {string} [keyPassphraseFile]   oppure file che la contiene (fuori dalla cartella dati)
+ * @property {{ maxEventBytes: number, perAuthorMaxEvents: number, perAuthorMaxBytes: number, maxTotalEvents: number, maxTotalBytes: number }} relayLimits
  * @property {boolean} tor
  * @property {string} [torBin]
  * @property {(line: string) => void} [log]
@@ -67,6 +70,16 @@ function normalize(c) {
     descriptorRenewSec: c.descriptorRenewSec ?? 86400,
     descriptorPowBits: c.descriptorPowBits ?? 18,
     descriptorOnionForTests: c.descriptorOnionForTests,
+    keyPassphrase: c.keyPassphrase,
+    keyPassphraseFile: c.keyPassphraseFile,
+    relayLimits: {
+      maxEventBytes: 64 * 1024,
+      perAuthorMaxEvents: 10000,
+      perAuthorMaxBytes: 64 * 1024 * 1024,
+      maxTotalEvents: 1000000,
+      maxTotalBytes: 2 * 1024 * 1024 * 1024,
+      ...(c.relayLimits || {}),
+    },
     tor: c.tor !== false,
     torBin: c.torBin,
     log: c.log,

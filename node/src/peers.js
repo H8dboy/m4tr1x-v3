@@ -69,7 +69,7 @@ function startPeers(ctx) {
       let m; try { m = JSON.parse(raw.toString()) } catch { return }
       if (!Array.isArray(m) || m[0] !== 'EVENT' || m[1] !== 'sync') return
       const ev = m[2]
-      const [ok] = relay.ingest(ev, null, { fromPeer: true })
+      const [ok] = relay.ingest(ev, null, { fromPeer: true, peer })
       if (!ok) return
       setSince.run(peer, ev.created_at)
       replicateBlobs(peer, ev, target)

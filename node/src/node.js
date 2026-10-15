@@ -20,22 +20,47 @@ const directory = require('./directory')
 
 const VERSION = '3.0.0-dev'
 
-/** Chiave admin K13: generata una volta, file con permessi 600, mai nei log. @param {string} dataDir */
-function loadAdminKey(dataDir) {
-  const f = path.join(dataDir, 'admin.key')
-  if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8').trim()
-  const k = crypto.randomBytes(32).toString('hex')
-  fs.writeFileSync(f, k, { mode: 0o600 })
-  return k
+/**
+ * Passphrase del vault: dalla configurazione, da un file (consigliato: fuori dalla
+ * cartella dati, es. credenziale di systemd) o dalla variabile M4TR1X_KEY_PASSPHRASE.
+ * Nessun default: senza passphrase il nodo non parte (principio 1).
+ * @param {import('./config').NodeConfig} cfg
+ */
+function keyPassphrase(cfg) {
+  if (cfg.keyPassphrase) return cfg.keyPassphrase
+  if (cfg.keyPassphraseFile) return fs.readFileSync(cfg.keyPassphraseFile, 'utf8').trim()
+  if (process.env.M4TR1X_KEY_PASSPHRASE) return process.env.M4TR1X_KEY_PASSPHRASE
+  throw new Error('passphrase delle chiavi del nodo mancante: keyPassphrase, keyPassphraseFile o M4TR1X_KEY_PASSPHRASE')
 }
 
-/** Chiave del nodo K5 (firma la scheda della directory). File con permessi 600. @param {string} dataDir */
-function loadNodeKey(dataDir) {
-  const f = path.join(dataDir, 'node.key')
-  if (fs.existsSync(f)) return keys.roleKeyFromSecret(keys.NODE_ROLE, 1, Buffer.from(fs.readFileSync(f, 'utf8').trim(), 'hex'))
-  const k = keys.generateNodeKey()
-  fs.writeFileSync(f, Buffer.from(keys.exportSecret(k)).toString('hex'), { mode: 0o600 })
-  return k
+/**
+ * Chiavi del nodo K5 (scheda della directory) e K13 (admin), in un vault cifrato
+ * (scrypt N=2^17 + AES-GCM). Mai in chiaro nella cartella dati (I-06). I file in
+ * chiaro di versioni precedenti vengono sigillati e cancellati.
+ * @param {string} dataDir @param {string} pass
+ */
+function loadSecrets(dataDir, pass) {
+  const vault = path.join(dataDir, 'secrets.vault.json')
+  const oldNode = path.join(dataDir, 'node.key'), oldAdmin = path.join(dataDir, 'admin.key')
+  /** @type {{ node: string, admin: string }} */ let s
+  if (fs.existsSync(vault)) {
+    try { s = JSON.parse(Buffer.from(keys.openSecret(fs.readFileSync(vault, 'utf8'), pass)).toString('utf8')) }
+    catch { throw new Error('vault delle chiavi: passphrase sbagliata o file alterato') }
+  } else {
+    s = {
+      node: fs.existsSync(oldNode) ? fs.readFileSync(oldNode, 'utf8').trim() : Buffer.from(keys.exportSecret(keys.generateNodeKey())).toString('hex'),
+      admin: fs.existsSync(oldAdmin) ? fs.readFileSync(oldAdmin, 'utf8').trim() : crypto.randomBytes(32).toString('hex'),
+    }
+    const tmp = vault + '.tmp'
+    fs.writeFileSync(tmp, keys.sealSecret(Buffer.from(JSON.stringify(s)), pass), { mode: 0o600 })
+    fs.renameSync(tmp, vault)
+  }
+  for (const f of [oldNode, oldAdmin]) {
+    if (!fs.existsSync(f)) continue
+    try { fs.writeFileSync(f, crypto.randomBytes(fs.statSync(f).size)) } catch {}   // sovrascrittura prima di cancellare
+    fs.rmSync(f, { force: true })
+  }
+  return { nodeKey: keys.roleKeyFromSecret(keys.NODE_ROLE, 1, Buffer.from(s.node, 'hex')), adminKey: s.admin }
 }
 
 /** @param {http.Server} srv @param {string} host @param {number} port @returns {Promise<number>} */
@@ -53,13 +78,14 @@ async function startNode(input) {
   const log = makeLogger(cfg.log)
   fs.mkdirSync(cfg.dataDir, { recursive: true, mode: 0o700 })
   const db = openDb(cfg.dataDir)
-  const adminKey = cfg.adminKey || loadAdminKey(cfg.dataDir)
+  const secrets = loadSecrets(cfg.dataDir, keyPassphrase(cfg))
+  const adminKey = cfg.adminKey || secrets.adminKey
   let onion = /** @type {string|null} */ (null)
   let socksPort = /** @type {number|null} */ (null)
 
-  const nodeKey = loadNodeKey(cfg.dataDir)
+  const nodeKey = secrets.nodeKey
   const policy = cfg.role === 'anchor' ? directory.anchorPolicy({ db, network: cfg.network, limits: cfg.anchorLimits }) : undefined
-  const relay = createRelay({ db, network: cfg.network, log, policy })
+  const relay = createRelay({ db, network: cfg.network, log, policy, limits: cfg.relayLimits, trusted: cfg.uploaders })
   const web = createHttp({ cfg, db, log, adminKey, onion: () => onion, version: VERSION })
 
   /** @param {boolean} isPublic */
@@ -100,6 +126,8 @@ async function startNode(input) {
     get onion() { return onion },
     relay, db,
     nodePubkey: nodeKey.publicKey,
+    /** Solo per i test (I-06): il segreto della chiave del nodo, per cercarlo su disco. */
+    _nodeSecretHexForTests: () => Buffer.from(keys.exportSecret(nodeKey)).toString('hex'),
     directory: { purgeExpired: () => relay.purgeExpired(), publishNow: () => publisher.publishOnce() },
     /** @param {string[]} list */ addPeers: list => peers.add(list),
     async close() {
