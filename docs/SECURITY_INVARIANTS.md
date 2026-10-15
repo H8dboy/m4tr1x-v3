@@ -78,6 +78,8 @@
 | # | Invariante | Test | Fase |
 |---|---|---|---|
 | I-29 | **I descrittori della directory contengono solo onion v3** e sono firmati dalla chiave del nodo; scadenza ≤ 7 giorni. | `inv-29-descriptor`: descrittore con IP, firma sbagliata o scadenza lunga → rifiutato da ancora e app | F3 |
+| I-36 | **Trasporto unico:** solo il modulo `transport` dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016). | `inv-36-transport-only`: statico (nessun uso di socket/HTTP fuori da `app/shell/src/transport/`) + la stessa suite di test gira su `ArtiTransport` e `TorProcessTransport` | F4 |
+| I-37 | **Il Tor di Windows è solo dell'app:** SOCKS e controllo solo su 127.0.0.1, porte casuali, autenticazione SOCKS e cookie; `tor` termina con l'app; binario con hash fissato. | `inv-37-tor-process`: un client SOCKS senza credenziali viene rifiutato; uccidendo l'app il processo `tor` sparisce; hash del binario confrontato in build | F4 |
 | I-31 | **Nessuna chiave privata utente raggiunge il codice JavaScript dell'app;** CSP senza `unsafe-inline`. | `inv-31-no-keys-in-js`: le API esposte dal lato Rust al frontend non restituiscono mai chiavi (test sui comandi Tauri); CSP verificata | F4 |
 | I-33 | **L'admin del nodo è raggiungibile solo da loopback con la chiave admin (K13)**, distinta da ogni altra chiave. | `inv-33-admin`: da onion/porta pubblica → 404; senza K13 → 401 | F2 |
 

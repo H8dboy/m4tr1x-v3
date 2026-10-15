@@ -24,6 +24,7 @@
 | `tor` (C) su Windows, hotspot | **OK in 31 s** |
 | `arti` CLI 2.7.0 su **Linux** (container), rete officina | **OK in 11 s** |
 | Compressione disattivata (prototipo, Windows) | **Bloccato** (esclusa la compressione come causa) |
+| `arti` CLI su Windows con **eccezione Defender** (processo + cartella) | **Bloccato** — l'ispezione di rete di Defender (NIS) non è escludibile per processo e non è stata disattivata: ipotesi residua non verificata |
 
 ## Conclusione provvisoria
 
@@ -35,7 +36,7 @@
 
 - **Android/iOS:** decisione rinviata alla misura su telefono reale (criteri invariati in MIGRATION_PLAN F4a).
 - **Desktop Windows:** con Arti 0.47 oggi **non** regge. Opzioni: (a) piano B solo su Windows: `tor` C come processo accanto all'app, controllato dal lato Rust (sul desktop si può, è ciò che faceva il vecchio Electron); (b) riprovare con versioni successive di Arti e segnalare il problema al progetto Arti con i log raccolti. Raccomandazione: (a) per non bloccarsi, (b) in parallelo.
-- **Niente decisione definitiva** finché non c'è la misura sul telefono.
+- **Decisione (15/10/2026):** ADR-0016 — interfaccia di trasporto unica; `tor` classico solo su Windows. Per Android/iOS resta da misurare il telefono.
 
 ## Cosa resta
 

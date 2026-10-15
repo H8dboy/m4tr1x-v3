@@ -10,4 +10,5 @@
 - (+) Le chiavi stanno fuori dal JavaScript (I-31).
 - (−) Va scritto un po' di Rust (rete, firma, aggiornamenti).
 - (−) **Da verificare con un prototipo (fase F4a)** che Arti come client verso servizi onion regga su Android e iOS. Piano B: Tor come libreria nativa (tor-android / Tor.framework) dietro la stessa interfaccia.
+- **Aggiornamento 15/10/2026:** Arti 0.47 non regge su Windows (F4a). Vedi ADR-0016: interfaccia di trasporto unica, Tor classico solo su Windows.
 - (−) Le webview differiscono tra piattaforme (Safari su iOS, WebView2 su Windows): più test d'interfaccia.
