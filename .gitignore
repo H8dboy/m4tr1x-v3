@@ -40,3 +40,10 @@ node_config.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Prototipi: cartelle generate
+!/spikes/*/dist/
+spikes/*/src-tauri/gen/
+spikes/*/src-tauri/target/
+*.log
+spikes/*/icon-src.png

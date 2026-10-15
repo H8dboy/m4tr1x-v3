@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M4TR1X F4a</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Prototipo F4a — Arti</h1>
+  <p class="muted">Tutto il traffico passa da Arti (Tor in Rust). Nessun'altra connessione.</p>
+
+  <label for="onion">Indirizzo onion di prova</label>
+  <input id="onion" placeholder="xxxxxxxx….onion" autocomplete="off" autocapitalize="off" spellcheck="false">
+
+  <div class="row">
+    <button id="b-boot">1. Avvia Tor</button>
+    <button id="b-health">2. Prova collegamento</button>
+  </div>
+  <div class="row">
+    <button id="b-10m">3. Scarica 10 MB</button>
+    <button id="b-10x">4. Dieci collegamenti</button>
+  </div>
+  <div class="row">
+    <button id="b-soak">5. Prova 30 minuti</button>
+    <button id="b-copy">Copia risultati</button>
+  </div>
+
+  <pre id="log"></pre>
+  <script src="main.js"></script>
+</body>
+</html>
