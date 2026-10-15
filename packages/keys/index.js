@@ -109,13 +109,15 @@ function signDigest(key, digest, purpose) {
 }
 
 // ─── Vault a passphrase (quando il portachiavi del sistema non c'è) ──────────
-// scrypt (incluso in Node, nessuna dipendenza) + AES-256-GCM. Parametri: N=2^17,
-// r=8, p=1 (~128 MB, ~0,5 s). `fast` solo nei test.
+// scrypt (incluso in Node, nessuna dipendenza) + AES-256-GCM. Parametri MINIMI
+// N=2^17, r=8, p=1 (~128 MB, ~0,5 s): non esiste una variante più debole, e un
+// vault con parametri sotto il minimo viene rifiutato anche in apertura.
+const SCRYPT_MIN = Object.freeze({ N: 2 ** 17, r: 8, p: 1 })
 
-/** @param {Uint8Array} secret @param {string} passphrase @param {{fast?: boolean}} [opts] */
-function sealSecret(secret, passphrase, opts = {}) {
+/** @param {Uint8Array} secret @param {string} passphrase */
+function sealSecret(secret, passphrase) {
   if (typeof passphrase !== 'string' || passphrase.length < 1) throw new Error('passphrase richiesta')
-  const N = opts.fast ? 2 ** 14 : 2 ** 17, r = 8, p = 1
+  const { N, r, p } = SCRYPT_MIN
   const salt = crypto.randomBytes(16)
   const key = crypto.scryptSync(passphrase.normalize('NFKC'), salt, 32, { N, r, p, maxmem: 256 * 1024 * 1024 })
   const iv = crypto.randomBytes(12)
@@ -129,6 +131,9 @@ function sealSecret(secret, passphrase, opts = {}) {
 function openSecret(sealed, passphrase) {
   const o = JSON.parse(sealed)
   if (o.v !== 1 || o.kdf !== 'scrypt') throw new Error('formato del vault sconosciuto')
+  if (!(Number.isInteger(o.N) && Number.isInteger(o.r) && Number.isInteger(o.p)) ||
+      o.N < SCRYPT_MIN.N || o.r < SCRYPT_MIN.r || o.p < SCRYPT_MIN.p || o.N > 2 ** 22 || o.r > 32 || o.p > 16)
+    throw new Error('vault con parametri scrypt fuori dai limiti (minimo N=2^17, r=8, p=1)')
   const key = crypto.scryptSync(String(passphrase).normalize('NFKC'), Buffer.from(o.salt, 'base64'), 32, { N: o.N, r: o.r, p: o.p, maxmem: 256 * 1024 * 1024 })
   const d = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(o.iv, 'base64'))
   d.setAAD(Buffer.from('m4tr1x/vault/v1'))
@@ -144,7 +149,7 @@ function roleKeyFromSecret(role, version, secret) {
 }
 
 module.exports = {
-  ROLES, PERMISSIONS, RoleKey,
+  ROLES, PERMISSIONS, SCRYPT_MIN, RoleKey,
   generateMnemonic, validateMnemonic, seedFromMnemonic, deriveRoleKey,
   exportSecret, signDigest, sealSecret, openSecret, roleKeyFromSecret,
 }
