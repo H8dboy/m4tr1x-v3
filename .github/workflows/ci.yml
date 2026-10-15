@@ -21,10 +21,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
       # Versioni esatte del lockfile, senza eseguire script d'installazione (supply chain)
       - name: Dipendenze
         run: npm ci --ignore-scripts
+      - name: Controllo dei tipi (ADR-0012)
+        run: npx tsc -p tsconfig.json
       - name: Invarianti
         run: node --test "tests/**/*.test.js"
 
@@ -36,7 +38,7 @@ jobs:
           fetch-depth: 0          # storia intera, non solo l'ultimo commit
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
       - name: Scanner M4TR1X (I-28)
         run: node tools/security/scan-secrets.js
       - name: gitleaks (storia intera)
@@ -50,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
       - name: npm audit (I-25)
         run: |
           found=0
@@ -60,6 +62,22 @@ jobs:
           done
           [ "$found" = 0 ] && echo "nessuna dipendenza npm: niente da controllare" || true
 
+  # Prova di accettazione F2 via Tor vero: due nodi si scambiano evento e file
+  tor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Tor dai pacchetti Ubuntu
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tor && tor --version | head -1
+      - run: npm ci --ignore-scripts
+      - name: Due nodi via Tor
+        env:
+          M4TR1X_TOR_BIN: /usr/bin/tor
+        run: node --test tests/integration/two-nodes.test.js
+
   release-gate:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test, secrets, deps]
@@ -68,7 +86,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
       # I pacchetti e il release.json firmato offline vengono messi in release/
       # dal processo di build (dalla F8). Senza firma valida il job fallisce e
       # nessun passo di pubblicazione può seguirlo.

@@ -24,6 +24,10 @@ const APPROVED = new Set([
   // F1: firme Schnorr secp256k1 (Nostr), hash, HKDF, BIP-39. Librerie con audit
   // indipendenti, zero dipendenze esterne oltre @noble/hashes.
   '@noble/curves', '@noble/hashes', '@scure/bip39',
+  // F2: WebSocket del relay Nostr (zero dipendenze).
+  'ws',
+  // F2, solo sviluppo: controllo dei tipi in CI (ADR-0012), non finiscono nei pacchetti.
+  'typescript', '@types/node', '@types/ws',
 ])
 
 function packageJsons() {
