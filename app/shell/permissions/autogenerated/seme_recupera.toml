@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-seme-recupera"
+description = "Enables the seme_recupera command without any pre-configured scope."
+commands.allow = ["seme_recupera"]
+
+[[permission]]
+identifier = "deny-seme-recupera"
+description = "Denies the seme_recupera command without any pre-configured scope."
+commands.deny = ["seme_recupera"]

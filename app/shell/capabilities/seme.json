@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "seme",
+  "description": "Finestra del seme: solo i tre comandi del seme. È l'unico posto dove le 24 parole compaiono (I-58)",
+  "windows": ["seme"],
+  "permissions": ["allow-seme-nuovo", "allow-seme-conferma", "allow-seme-recupera"]
+}

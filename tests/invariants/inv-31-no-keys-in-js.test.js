@@ -86,14 +86,22 @@ test('il JavaScript può chiamare solo i comandi elencati, e i permessi sono sol
   }
 })
 
-test('i comandi restituiscono solo tipi di api.rs, senza campi che sembrino chiavi', () => {
+test('i comandi restituiscono solo tipi di api.rs (le parole solo ai comandi del seme), senza campi che sembrino chiavi', () => {
   const api = read(path.join(SHELL, 'src', 'api.rs'))
   const apiTypes = [...api.matchAll(/pub\s+(?:struct|enum)\s+(\w+)/g)].map(m => m[1])
+  const semeTypes = [...read(path.join(SHELL, 'src', 'api_seme.rs')).matchAll(/pub\s+(?:struct|enum)\s+(\w+)/g)].map(m => m[1])
   const SIMPLE = /^(?:\(\)|bool|u8|u16|u32|u64|i32|i64|String)$/
   for (const c of commandFns()) {
-    const inner = c.ret.replace(/^Result<\s*/, '').replace(/\s*,\s*String\s*>$/, '').replace(/^Vec<(.*)>$/, '$1').trim()
+    const inner = c.ret.replace(/^Result<\s*/, '').replace(/\s*,\s*String\s*>$/, '')
+      .replace(/^Option<(.*)>$/, '$1').replace(/^Vec<(.*)>$/, '$1').trim()
+    // I-58: il tipo con le 24 parole lo restituiscono solo i comandi seme_* (finestra del seme)
+    if (semeTypes.includes(inner)) {
+      assert.ok(/^seme_/.test(c.name), `${c.file}: il comando ${c.name} restituisce le parole del seme ma non è un comando seme_*`)
+      continue
+    }
     assert.ok(SIMPLE.test(inner) || apiTypes.includes(inner), `${c.file}: il comando ${c.name} restituisce ${c.ret}, non un tipo di api.rs`)
   }
+  assert.ok(!semeTypes.some(t => apiTypes.includes(t)), 'il tipo delle parole è anche in api.rs')
   const fields = [...api.matchAll(/^\s*pub\s+(\w+)\s*:/gm)].map(m => m[1])
   for (const f of fields)
     assert.ok(!/seed|seme|secret|segret|priv|mnemonic|nsec|key|chiav|token|passphrase|cookie/i.test(f), `campo sospetto in api.rs: ${f}`)

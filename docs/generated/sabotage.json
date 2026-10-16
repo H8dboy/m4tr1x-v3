@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-16T07:43:16.795Z",
+  "date": "2026-10-16T08:32:03.116Z",
   "node": "22.23.3",
   "platform": "win32 10.0.26200",
   "partial": false,
@@ -442,8 +442,8 @@
       "name": "permessi core di Tauri al JavaScript",
       "file": "app/shell/capabilities/main.json",
       "test": "tests/invariants/inv-31-no-keys-in-js.test.js",
-      "outcome": "presa",
-      "detail": "fail 1"
+      "outcome": "non-applicabile",
+      "detail": "testo da sostituire trovato 0 volte: aggiornare la prova"
     },
     {
       "id": "i31-manifest",
@@ -451,8 +451,8 @@
       "name": "comando dichiarato senza funzione (elenco e codice divergono)",
       "file": "app/shell/build.rs",
       "test": "tests/invariants/inv-31-no-keys-in-js.test.js",
-      "outcome": "presa",
-      "detail": "fail 1"
+      "outcome": "non-applicabile",
+      "detail": "testo da sostituire trovato 0 volte: aggiornare la prova"
     },
     {
       "id": "i31-field",
@@ -505,6 +505,87 @@
       "name": "il trasporto accetta un host in chiaro",
       "file": "app/transport/src/lib.rs",
       "test": "tests/invariants/inv-36-transport-only.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i37-nowait",
+      "rule": "I-37",
+      "name": "bootstrap non aspetta la rete Tor (la prova dell'onion non dimostrerebbe più niente)",
+      "file": "app/transport/src/tor_process.rs",
+      "test": "tests/invariants/inv-37-tor-process.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i58-perm-extra",
+      "rule": "I-58",
+      "name": "la finestra del seme può chiamare altri comandi",
+      "file": "app/shell/capabilities/seme.json",
+      "test": "tests/invariants/inv-58-seed-window.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i58-main-seed",
+      "rule": "I-58",
+      "name": "la finestra principale può chiamare i comandi del seme",
+      "file": "app/shell/capabilities/main.json",
+      "test": "tests/invariants/inv-58-seed-window.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i58-label",
+      "rule": "I-58",
+      "name": "i comandi del seme non controllano la finestra",
+      "file": "app/shell/src/lib.rs",
+      "test": "tests/invariants/inv-58-seed-window.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i58-paste",
+      "rule": "I-58",
+      "name": "incolla permesso nella finestra del seme",
+      "file": "app/ui/seme.js",
+      "test": "tests/invariants/inv-58-seed-window.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i58-capture",
+      "rule": "I-58",
+      "name": "finestra del seme catturabile negli screenshot",
+      "file": "app/shell/src/lib.rs",
+      "test": "tests/invariants/inv-58-seed-window.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i58-visible",
+      "rule": "I-58",
+      "name": "finestra del seme visibile prima della protezione",
+      "file": "app/shell/src/lib.rs",
+      "test": "tests/invariants/inv-58-seed-window.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i58-confirm",
+      "rule": "I-58",
+      "name": "conferma accettata con parole sbagliate",
+      "file": "app/identity/src/creazione.rs",
+      "test": "tests/invariants/inv-58-seed-window.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i58-revoke",
+      "rule": "I-58",
+      "name": "la revoca finisce nel portachiavi",
+      "file": "app/identity/src/portachiavi.rs",
+      "test": "tests/invariants/inv-58-seed-window.test.js",
       "outcome": "presa",
       "detail": "fail 1"
     },

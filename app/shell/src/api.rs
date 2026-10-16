@@ -1,9 +1,11 @@
-//! Tipi che attraversano il confine Rust → JavaScript (I-31).
+//! Tipi che attraversano il confine Rust → JavaScript della finestra PRINCIPALE (I-31).
 //!
-//! Regola: ogni comando Tauri restituisce SOLO tipi definiti qui, e qui non
-//! entrano chiavi, semi, segreti di sessione o indirizzi onion interi.
+//! Regola: i comandi della finestra principale restituiscono SOLO tipi definiti qui, e
+//! qui non entrano chiavi, semi, parole, segreti di sessione o indirizzi onion interi.
 //! Il test `inv-31-no-keys-in-js` controlla che `lib.rs` non esponga altro.
+//! (Le parole del seme hanno un tipo a parte, in `api_seme.rs`, solo per la finestra del seme.)
 
+use m4tr1x_identity::creazione::IdentitaPubblica;
 use m4tr1x_transport::TransportStatus;
 use serde::Serialize;
 
@@ -26,6 +28,20 @@ impl Stato {
             TransportStatus::Errore(_) => ("errore", 0),
         };
         Self { versione: versione.to_string(), trasporto: trasporto.to_string(), percento }
+    }
+}
+
+/// Solo chiavi PUBBLICHE: identità (Nostr), DM, impronta del wallet.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Identita {
+    pub identity: String,
+    pub dm: String,
+    pub wallet_impronta: String,
+}
+
+impl From<IdentitaPubblica> for Identita {
+    fn from(i: IdentitaPubblica) -> Self {
+        Self { identity: i.identity, dm: i.dm, wallet_impronta: i.wallet_impronta }
     }
 }
 

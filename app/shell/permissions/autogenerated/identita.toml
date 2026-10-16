@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-identita"
+description = "Enables the identita command without any pre-configured scope."
+commands.allow = ["identita"]
+
+[[permission]]
+identifier = "deny-identita"
+description = "Denies the identita command without any pre-configured scope."
+commands.deny = ["identita"]

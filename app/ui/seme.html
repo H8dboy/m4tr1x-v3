@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Le tue 24 parole</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="seme.css">
+  <!-- Finestra del seme (I-58): solo questo script, nessun altro. Copia, incolla,
+       trascina e menu contestuale disattivati; finestra esclusa dalle catture. -->
+  <script src="seme.js" defer></script>
+</head>
+<body class="seme">
+  <main class="guscio">
+    <section id="passo-mostra" hidden>
+      <h1>Le tue 24 parole</h1>
+      <p class="avviso">Scrivile <strong>su carta</strong>, nell'ordine. Sono l'unico modo per recuperare la tua identità. Non fotografarle, non salvarle sul computer, non darle a nessuno: chi le ha <strong>è</strong> te.</p>
+      <ol id="parole" class="parole"></ol>
+      <label class="spunta"><input type="checkbox" id="scritte"> Le ho scritte su carta</label>
+      <button id="avanti" disabled>Avanti</button>
+    </section>
+
+    <section id="passo-verifica" hidden>
+      <h1>Verifica</h1>
+      <p>Riscrivi le parole in queste posizioni, guardando il foglio.</p>
+      <div id="domande" class="domande"></div>
+      <p id="errore-verifica" class="errore" hidden>Non corrispondono. Controlla il foglio e riprova.</p>
+      <button id="indietro" class="secondario">Rivedi le parole</button>
+      <button id="conferma">Conferma</button>
+    </section>
+
+    <section id="passo-recupera" hidden>
+      <h1>Recupera la tua identità</h1>
+      <p>Scrivi le 24 parole nell'ordine, separate da uno spazio.</p>
+      <textarea id="parole-recupero" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="24 parole"></textarea>
+      <p id="errore-recupero" class="errore" hidden>Parole non valide. Controlla l'ordine e l'ortografia.</p>
+      <button id="recupera">Recupera</button>
+    </section>
+  </main>
+</body>
+</html>

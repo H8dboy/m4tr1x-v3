@@ -4,7 +4,7 @@
 
 ## Stato
 - Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3): **135 verdi, 0 falliti**, 21 regole attive, 0 divergenze doc↔codice (`npm run report`).
-- Sabotaggio completo: **57/57 prese** (16/10, con tor vero) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
+- Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
 ## Fatto il 16/10
@@ -26,10 +26,17 @@
 12. CI rossa su e3974f1 per email nella bozza DSA (scanner lanciato PRIMA di git add: errore mio) → corretta in 7adcbf0, CI verde; I-37 verde anche su Linux con tor vero. **Regola: scanner sempre DOPO git add.**
 13. **Guscio Tauri `app/shell` + `app/ui`:** CSP stretta (oggetto, niente unsafe-*), freezePrototype, devtools spenti, app manifest con elenco comandi (solo `stato`), capability senza core/plugin; si avvia e mostra lo stato via invoke. **I-31 e I-36 attive (parte statica)**, 9 sabotaggi nuovi. Report: 147 verdi, 24 regole attive; sabotaggio **57/57**.
 
+## Fatto il 16/10, quarta parte (identità)
+14. **`app/identity`** (Rust): BIP-39 + HKDF, stesse chiavi di packages/keys su tutti i vettori congelati (wallet ML-DSA-65 compreso); portachiavi di Windows solo identity/dm/wallet (mai seme, parole, revoca); creazione con verifica di **3 parole a caso**; recupero.
+15. **Finestra del seme (I-58, opzione A del fondatore):** capability e pagina proprie, controllo dell'etichetta nel lato Rust, copia/incolla/menu bloccati, **screenshot bloccati** (affinità 0x11 letta da Windows, finestra assente dalla cattura). Provata a mano dal fondatore: identità creata, poi cancellata dal portachiavi. Rischio residuo scritto: l'accessibilità (e un malware dello stesso utente) legge le parole. I-31 con l'eccezione unica.
+16. Bug trovato provando l'app: su Windows il comando che apre una finestra deve essere `async`.
+17. Sabotaggio: campagna salvata **64/66** (2 prove di I-31 non più applicabili dopo il cambio dei permessi: aggiornate e prese da sole, entrano nella prossima campagna).
+18. **Debito:** `tests/integration/two-nodes.test.js` via Tor è instabile nei giorni di rete lenta (2 fallimenti il 16/10, poi 2/2 verde): allungare la finestra o misurare i tempi.
+
 ## Prossimo
 - OK del fondatore sulla bozza PEZZI_MANCANTI (tabella in fondo) → numeri I-42…I-50, K16, K17 entrano in SECURITY_INVARIANTS/KEYS.
 - Scrivere la procedura DSA (precondizione di F6).
-- **F4 continua:** identità dal seme nel lato Rust (portachiavi di sistema, prova dinamica di I-31), collegare `TorProcessTransport` al guscio (stato reale), feed/post/profilo verso un nodo di prova, I-01 dinamica (namespace su Linux), `ArtiTransport` per Linux, build del guscio e `cargo deny` in CI.
+- **F4 continua:** feed/post/profilo verso un nodo di prova (firma nel lato Rust con l'identità salvata), collegare `TorProcessTransport` al guscio (stato reale), prova dinamica di I-31 con seme di prova, I-01 dinamica (namespace su Linux), `ArtiTransport` per Linux, build del guscio e `cargo deny` in CI.
 
 ## Fuori dal repo, ancora aperto
 - Sito nderja.com: correggere "identità ML-DSA", "codice pubblico", download Kalendae rotto.

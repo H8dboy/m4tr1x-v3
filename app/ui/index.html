@@ -16,6 +16,18 @@
       <p class="sotto">v<span id="versione">—</span></p>
     </header>
     <section class="scheda" aria-live="polite">
+      <h2>Identità</h2>
+      <div id="senza-identita" hidden>
+        <p>Non hai ancora un'identità su questo computer.</p>
+        <button id="crea">Crea una nuova identità</button>
+        <button id="recupera" class="secondario">Recupera dalle 24 parole</button>
+      </div>
+      <div id="con-identita" hidden>
+        <p>La tua chiave pubblica:</p>
+        <p class="chiave" id="chiave-identita"></p>
+      </div>
+    </section>
+    <section class="scheda" aria-live="polite">
       <h2>Rete</h2>
       <p>Tor: <strong id="trasporto">—</strong> <span id="percento"></span></p>
     </section>

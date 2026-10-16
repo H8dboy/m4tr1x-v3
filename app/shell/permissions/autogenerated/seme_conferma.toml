@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-seme-conferma"
+description = "Enables the seme_conferma command without any pre-configured scope."
+commands.allow = ["seme_conferma"]
+
+[[permission]]
+identifier = "deny-seme-conferma"
+description = "Denies the seme_conferma command without any pre-configured scope."
+commands.deny = ["seme_conferma"]

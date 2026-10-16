@@ -56,6 +56,11 @@
 - **Rotazione:** riga `ricodifica_conto` firmata dalla K2 vecchia, o da K0 se K2 è persa.
 - **Se rubata:** può spendere fino al saldo. Mitigazione: conferma con PIN/biometria sopra una soglia.
 
+### K1, K1d, K2 nell'app desktop (F4, 16/10/2026)
+- **Dove vivono:** Gestione credenziali di Windows (`keyring`, voci `identity-v1`, `dm-v1`, `wallet-v1` del servizio `org.m4tr1x.app`), 32 byte ciascuna. Il seme e le parole **non si salvano mai**; K1r si ricava dal seme quando serve.
+- **Come nascono:** dalla finestra del seme (I-58), dopo la verifica di 3 parole a caso; oppure dal recupero con le 24 parole. Stesse chiavi di `packages/keys` (vettori congelati verificati anche in Rust).
+- **Compromesso:** Gestione credenziali è protetta dall'accesso dell'utente (DPAPI): basta contro una copia del disco o un altro utente del PC, **non** contro un programma che gira come lo stesso utente. Lo stesso vale per le parole mentre la finestra del seme è aperta: il blocco degli screenshot non ferma i programmi di accessibilità.
+
 ### K5 / K6 — Nodo e onion
 - **Scopo:** K5 firma il descrittore nella directory; K6 è la chiave di Tor dell'indirizzo onion.
 - **Dove vivono:** sul nodo, fuori dal repo. **Dal 15/10/2026** K5 sta nel vault `secrets.vault.json` della cartella dati (scrypt N=2^17 + AES-GCM, permessi 600). Il nodo **non parte senza passphrase** (`keyPassphrase`, `keyPassphraseFile` fuori dalla cartella dati, o `M4TR1X_KEY_PASSPHRASE`). I vecchi file in chiaro vengono sigillati nel vault, sovrascritti e cancellati al primo avvio. Test: `inv-06b-node-secrets`.

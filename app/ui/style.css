@@ -30,3 +30,11 @@ body {
 }
 .scheda h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--tenue); }
 .scheda strong { color: var(--accento); }
+
+.scheda + .scheda { margin-top: 16px; }
+.scheda button {
+  background: var(--accento); color: #06140d; border: 0; border-radius: 8px;
+  padding: 9px 18px; font-weight: 600; cursor: pointer; margin-right: 8px;
+}
+.scheda button.secondario { background: transparent; color: var(--tenue); border: 1px solid var(--bordo); }
+.chiave { font: 13px ui-monospace, "Cascadia Mono", Consolas, monospace; word-break: break-all; color: var(--accento); }

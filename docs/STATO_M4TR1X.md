@@ -120,7 +120,7 @@ flowchart TB
 <!-- AUTO:REGOLE:INIZIO -->
 _Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
 
-**24 regole attive, 27 in attesa, 0 assenti.** Prove di sabotaggio: 57/57 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
+**25 regole attive, 27 in attesa, 0 assenti.** Prove di sabotaggio: 64/66 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
 
 | Regola | Cosa garantisce | Stato | Fase | Test | Sabotaggio |
 |---|---|---|---|---|---|
@@ -154,13 +154,13 @@ _Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/i
 | I-28 | Nessun segreto nel repo (chiavi, .env, .db, chiavi onion, IP, email personali) | attiva | F0 | `inv-28-secrets.test.js` ✅ 19 verdi | 2/2 prese |
 | I-29 | I descrittori della directory contengono solo onion v3 | attiva | F3 | `inv-29-descriptor.test.js` ✅ 7 verdi | 3/3 prese |
 | I-30 | L'indirizzo onion di un nodo utente è visibile solo al suo proprietario | attiva | F2 | `inv-30-33-admin-onion.test.js` ✅ 7 verdi | 1/1 prese |
-| I-31 | Nessuna chiave privata utente raggiunge il codice JavaScript dell'app; | attiva | F4 | `inv-31-no-keys-in-js.test.js` ✅ 4 verdi | 5/5 prese |
+| I-31 | Nessuna chiave privata utente raggiunge il codice JavaScript dell'app; | attiva | F4 | `inv-31-no-keys-in-js.test.js` ✅ 4 verdi | 3/5 prese ⚠ permessi core di Tauri al JavaScript: non-applicabile; comando dichiarato senza funzione (elenco e codice divergono): non-applicabile |
 | I-32 | Buoni offline entro il tetto: un edge non accetta più del tetto giornaliero per conto, anche offline | in attesa | F10 | — | — |
 | I-33 | L'admin del nodo è raggiungibile solo da loopback con la chiave admin (K13) | attiva | F2 | `inv-30-33-admin-onion.test.js` ✅ 7 verdi | 1/1 prese |
 | I-34 | Nessun trasferimento tra utenti: | in attesa | F7 | — | — |
 | I-35 | Buono cieco: l'emittente non può collegare un buono riscattato al bonifico che l'ha pagato | in attesa | F7b | — | — |
 | I-36 | Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016) | attiva | F4 | `inv-36-transport-only.test.js` ✅ 4 verdi | 4/4 prese |
-| I-37 | Il Tor di Windows serve solo onion e non presta i circuiti dell'app: | attiva | F4 | `inv-37-tor-process.test.js` ✅ 2 verdi | 4/4 prese |
+| I-37 | Il Tor di Windows serve solo onion e non presta i circuiti dell'app: | attiva | F4 | `inv-37-tor-process.test.js` ✅ 2 verdi | 5/5 prese |
 | I-38 | Le schede della directory scadono e si rinnovano: | attiva | F3 | `inv-38-expiry.test.js` ✅ 5 verdi | 4/4 prese |
 | I-39 | Limiti sulle ancore senza porte chiudibili: | attiva | F3 | `inv-39-anchor-limits.test.js` ✅ 8 verdi | 6/6 prese |
 | I-40 | Due famiglie di firme (ADR-0017): | attiva | F1 | `inv-40-signature-families.test.js` ✅ 6 verdi | 3/3 prese |
@@ -175,6 +175,7 @@ _Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/i
 | I-49 | Un boost conta solo se la riga è nel registro firmato (K10) e non è scaduta. | in attesa | F7 | — | — |
 | I-50 | La mappa creator contiene solo HMAC(K17, pubkey) e il conto cifrato; | in attesa | F7 | — | — |
 | I-57 | Un ordine di ritiro al distributore non contiene dati personali; | in attesa | F10 | — | — |
+| I-58 | Finestra del seme: le 24 parole compaiono solo nella finestra del seme (pagina, script e capability propri; il lato Rust controlla anche … | attiva | F4 | `inv-58-seed-window.test.js` ✅ 5 verdi | 8/8 prese |
 
 **Divergenze tra documento e codice:** nessuna trovata.
 <!-- AUTO:REGOLE:FINE -->
@@ -290,38 +291,39 @@ Decise il 15/10/2026: Q1 (mance solo ai creator con split), Q2 (SEPA manuale a 1
 <!-- AUTO:TEST:INIZIO -->
 _Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-16._
 
-**Totale: 147 verdi, 0 falliti, 0 saltati, 27 in attesa.**
+**Totale: 152 verdi, 0 falliti, 0 saltati, 27 in attesa.**
 
 | File | Verdi | Falliti | Saltati | In attesa | Durata |
 |---|---|---|---|---|---|
 | `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.2 s |
-| `tests/integration/two-nodes.test.js` | 2 | 0 | 0 | 0 | 29.9 s |
+| `tests/integration/two-nodes.test.js` | 2 | 0 | 0 | 0 | 31.3 s |
 | `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 7.0 s |
 | `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
 | `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.9 s |
 | `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.4 s |
-| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 6.7 s |
-| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 3.1 s |
-| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.5 s |
+| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 5.0 s |
+| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.5 s |
+| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
 | `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.5 s |
-| `tests/invariants/inv-15-no-h8-in-events.test.js` | 9 | 0 | 0 | 0 | 0.4 s |
-| `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 1.2 s |
-| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.4 s |
-| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.7 s |
-| `tests/invariants/inv-25-deps.test.js` | 3 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 7.1 s |
+| `tests/invariants/inv-15-no-h8-in-events.test.js` | 9 | 0 | 0 | 0 | 0.3 s |
+| `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 1.0 s |
+| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.2 s |
+| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.6 s |
+| `tests/invariants/inv-25-deps.test.js` | 3 | 0 | 0 | 0 | 0.2 s |
+| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 7.0 s |
 | `tests/invariants/inv-28-secrets.test.js` | 19 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.5 s |
-| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 1.1 s |
+| `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
 | `tests/invariants/inv-31-no-keys-in-js.test.js` | 4 | 0 | 0 | 0 | 0.2 s |
 | `tests/invariants/inv-36-transport-only.test.js` | 4 | 0 | 0 | 0 | 0.2 s |
-| `tests/invariants/inv-37-tor-process.test.js` | 2 | 0 | 0 | 0 | 27.2 s |
-| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 14.2 s |
-| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 8.9 s |
+| `tests/invariants/inv-37-tor-process.test.js` | 2 | 0 | 0 | 0 | 20.5 s |
+| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 8.4 s |
+| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 9.4 s |
 | `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.4 s |
-| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 6.2 s |
+| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 6.0 s |
+| `tests/invariants/inv-58-seed-window.test.js` | 5 | 0 | 0 | 0 | 1.0 s |
 | `tests/invariants/pending.test.js` | 0 | 0 | 0 | 27 | 0.2 s |
-| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.4 s |
+| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.5 s |
 | `tests/unit/runtime-sqlite.test.js` | 3 | 0 | 0 | 0 | 0.2 s |
 <!-- AUTO:TEST:FINE -->
 

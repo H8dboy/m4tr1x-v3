@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-apri-finestra-seme"
+description = "Enables the apri_finestra_seme command without any pre-configured scope."
+commands.allow = ["apri_finestra_seme"]
+
+[[permission]]
+identifier = "deny-apri-finestra-seme"
+description = "Denies the apri_finestra_seme command without any pre-configured scope."
+commands.deny = ["apri_finestra_seme"]
