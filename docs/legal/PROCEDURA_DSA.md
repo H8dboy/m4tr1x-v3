@@ -45,12 +45,12 @@
 ## 2. Punto di contatto
 
 **Cosa serve (verificato in parte).**
-- **Art. 11** — un punto di contatto per le **autorità** (AGCOM come coordinatore italiano, Commissione, Comitato). AGCOM chiede di comunicarlo a `dsa@agcom.it` o via PEC a `agcom@cert.agcom.it` con oggetto "COMUNICAZIONE PUNTO DI CONTATTO ex art. 11 DSA". Vanno indicate le lingue (proposta: italiano e inglese).
+- **Art. 11** — un punto di contatto per le **autorità** (AGCOM come coordinatore italiano, Commissione, Comitato). AGCOM chiede di comunicarlo alla casella DSA o alla PEC indicate nella sua comunicazione dell'08/03/2024 (fonte in fondo; gli indirizzi email non si scrivono nel repo, regola dello scanner I-28), con oggetto "COMUNICAZIONE PUNTO DI CONTATTO ex art. 11 DSA". Vanno indicate le lingue (proposta: italiano e inglese).
 - **Art. 12** — un punto di contatto per gli **utenti**, raggiungibile rapidamente e per via elettronica, con informazioni pubbliche e aggiornate. **Da verificare:** il testo chiede che l'utente possa scegliere un mezzo che non sia **solo** automatico.
 - **Art. 13** — rappresentante legale nell'UE **solo** per chi non ha stabilimento nell'UE (riguarda Albania se gestito da un soggetto albanese, vedi §1).
 
 **Come (proposta).**
-1. Una **casella email dedicata** (es. `segnalazioni@nderja.com`), letta da una persona, mai inoltrata a un servizio di terzi con analisi automatica.
+1. Una **casella email dedicata** su nderja.com (nome da decidere; gli indirizzi non si scrivono nel repo, regola I-28), letta da una persona, mai inoltrata a un servizio di terzi con analisi automatica.
 2. Un **modulo di segnalazione** raggiungibile in due modi:
    - su **nderja.com** (rete normale): chi segnala da lì espone il proprio IP al server del sito, come per ogni sito. Configurare l'hosting del sito perché **non conservi** l'IP nei log del modulo (da verificare cosa permette il fornitore attuale);
    - **dentro l'app e sull'onion dell'hub** (`/segnala`), via Tor: nessun IP.
