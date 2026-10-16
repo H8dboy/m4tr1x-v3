@@ -106,3 +106,19 @@ Con un bonifico l'emittente vede **nome e IBAN** di chi paga. Se poi accredita g
 - Raccomandazione: B al lancio in rete di prova, C prima di aprire la vendita reale.
 
 > **DECISO (15/10/2026):** buoni con firma cieca (opzione C) prima di qualsiasi vendita reale (fase F7b).
+
+## Nate il 16/10
+
+### Musica e topic nella v3.0
+> **DECISO dal fondatore (15/10/2026):** entrano entrambi nella v3.0. Musica = Blossom + HLS audio dentro F6; topic = comunità pubbliche NIP-72 in una fase F6b. Vedi ARCHITECTURE §2 e MIGRATION_PLAN.
+
+### Q18 — Diritti d'autore della musica caricata
+Gli hub che convertono e servono brani ospitano opere di terzi: oltre al DSA (Q12) c'è la direttiva copyright UE (art. 17 per le piattaforme di condivisione). Con pochi utenti l'obbligo pratico è avere una procedura di segnalazione e rimozione che funzioni.
+- **A (raccomandata):** stessa procedura "notice and action" di Q12, estesa ai brani; nel testo di caricamento l'utente dichiara di avere i diritti; da chiedere nello stesso parere legale di Q2/Q12.
+
+> **DECISO (16/10/2026):** la procedura DSA (punto di contatto, segnalazione, rimozione, risposta a chi ha caricato) va **scritta e approvata prima di iniziare F6**, non solo prima del lancio: la fase che costruisce l'upload di video e musica parte già con la rimozione progettata dentro.
+- B: musica solo da creator registrati (vedi registrazione creator), meno rischio, meno apertura.
+
+### Q19 — Chi modera i topic
+- **A (raccomandata):** chi crea la comunità ne è moderatore e può aggiungerne altri; nessun moderatore "di sistema". I client possono nascondere localmente comunità o autori.
+- B: le comunità "ufficiali" di H8-Group con moderatori di H8-Group accanto a quelle libere.

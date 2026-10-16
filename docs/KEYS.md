@@ -14,7 +14,7 @@
 | K1d | Chiave DM | secp256k1 (NIP-44) | Portachiavi del dispositivo | Sì | Leggere i DM del suo periodo |
 | K1r | Revoca | secp256k1 | **Solo dal seme**, mai salvata | No | Revocare l'identità (solo con il seme) |
 | K2 | Wallet | **ML-DSA-65** | Portachiavi del dispositivo | Sì | Spendere il saldo |
-| K5 | Nodo | secp256k1 Schnorr | Disco del nodo, cifrata | Sì | Impersonare il nodo nella directory |
+| K5 | Nodo | secp256k1 Schnorr | Vault del nodo (`secrets.vault.json`, scrypt + AES-GCM) | Sì | Impersonare il nodo nella directory |
 | K6 | Servizio onion | Ed25519 (gestita solo da Tor) | Cartella di Tor del nodo | Sì | Impersonare l'indirizzo onion |
 | K7 | Ancora | secp256k1 Schnorr | Disco dell'ancora | Sì | Firmare istantanee della directory a nome dell'ancora |
 | K8 | Hub | secp256k1 Schnorr | Disco dell'hub | Sì | Firmare manifest video falsi |
@@ -22,7 +22,7 @@
 | K10 | Emittente operativo H8 | ML-DSA-65 | Server dell'emittente | Sì | Ordinare/censurare le spese (non rubare, non coniare) |
 | K11 | **Firma release** | **ML-DSA-65** | **Offline**, dal fondatore | No | Aggiornamenti malevoli (insieme a K12 su Android) |
 | K12 | Keystore Android | RSA/EC (imposto da Android, fuori dalla regola) | Offline + segreto CI cifrato (OPEN_QUESTIONS Q9) | Solo in build | APK con la stessa firma |
-| K13 | Admin del nodo | Token casuale 256 bit | File del nodo (permessi 600) | Sì | Amministrare quel nodo |
+| K13 | Admin del nodo | Token casuale 256 bit | Vault del nodo (`secrets.vault.json`) | Sì | Amministrare quel nodo |
 | K14 | ~~Pagamenti~~ | — | **Non serve** (bonifico manuale, ADR-0015) | — | — |
 | K15 | Firma cieca dei buoni H8 | RSA-PSS 3072 (RFC 9474) | Server dell'emittente | Sì | Emettere buoni falsi (limitato: i coni restano con K9 e la conservazione è verificata) |
 
@@ -56,7 +56,8 @@
 
 ### K5 / K6 — Nodo e onion
 - **Scopo:** K5 firma il descrittore nella directory; K6 è la chiave di Tor dell'indirizzo onion.
-- **Dove vivono:** sul nodo, fuori dal repo, permessi 600. **Stato F3:** K5 è un file con permessi 600 (`node.key` nella cartella dati), **non ancora cifrato** con una chiave della macchina: da fare prima del lancio.
+- **Dove vivono:** sul nodo, fuori dal repo. **Dal 15/10/2026** K5 sta nel vault `secrets.vault.json` della cartella dati (scrypt N=2^17 + AES-GCM, permessi 600). Il nodo **non parte senza passphrase** (`keyPassphrase`, `keyPassphraseFile` fuori dalla cartella dati, o `M4TR1X_KEY_PASSPHRASE`). I vecchi file in chiaro vengono sigillati nel vault, sovrascritti e cancellati al primo avvio. Test: `inv-06b-node-secrets`.
+- **Compromesso:** chi ha la macchina **e** la passphrase ha le chiavi (se la passphrase sta in un file sulla stessa macchina, protegge solo dalle copie della cartella dati); una copia della sola cartella dati (backup, disco rubato) **non** basta.
 - **Rotazione:** nuovo descrittore con nuova chiave + evento di revoca firmato con la vecchia; nuovo onion.
 - **Se rubate:** impersonazione del nodo. I client verificano sempre gli hash dei blob (I-17): un nodo falso può non servire, non può servire contenuti alterati.
 
@@ -93,6 +94,7 @@
 
 ### K13 — Admin del nodo
 - **Scopo:** API di amministrazione del singolo nodo, solo da loopback (I-33). Non viene mai stampata nei log (correzione B1 del 15/10).
+- **Dove vive:** nello stesso vault di K5 (`secrets.vault.json`), stessa passphrase obbligatoria e stesso compromesso.
 
 ### K14 — Fornitore di pagamenti
 - **Non serve:** l'acquisto avviene con bonifico SEPA manuale (ADR-0015). Le coordinate bancarie di H8-Group non sono una chiave e non stanno nel codice.

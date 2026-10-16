@@ -1,7 +1,7 @@
 // @ts-check
 'use strict'
 /**
- * Avvio del nodo M4TR1X v3 (ruolo user in F2; edge, hub, anchor dalle fasi successive).
+ * Avvio del nodo M4TR1X v3 (ruoli user e anchor; edge e hub dalle fasi successive).
  */
 const fs = require('fs')
 const path = require('path')

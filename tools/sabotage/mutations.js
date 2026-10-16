@@ -93,7 +93,7 @@ module.exports = [
   { id: 'i38-query', rule: 'I-38', name: 'scheda scaduta ancora restituita', file: 'node/src/relay.js',
     find: "    where.push('(e.expires_at IS NULL OR e.expires_at > ?)'); params.push(nowSec())", replace: '', test: T('inv-38-expiry') },
   { id: 'i38-purge', rule: 'I-38', name: 'scheda scaduta mai cancellata', file: 'node/src/relay.js',
-    find: '  function purgeExpired() { return Number(purgeStmt.run(nowSec()).changes) }', replace: '  function purgeExpired() { return 0 }', test: T('inv-38-expiry') },
+    find: '  function purgeExpired() { const n = Number(purgeStmt.run(nowSec()).changes); totals = /** @type {any} */ (totalUse.get()); return n }', replace: '  function purgeExpired() { return 0 }', test: T('inv-38-expiry') },
   { id: 'i38-replace', rule: 'I-38', name: 'il rinnovo non sostituisce la scheda', file: 'node/src/relay.js',
     find: '    const repl = isReplaceable(ev.kind) || isParamReplaceable(ev.kind)', replace: '    const repl = false', test: T('inv-38-expiry') },
   { id: 'i38-renew', rule: 'I-38', name: 'il nodo non rinnova', file: 'node/src/directory.js',

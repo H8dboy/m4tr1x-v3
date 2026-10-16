@@ -20,8 +20,8 @@ Stati: **fatta** (codice + test), **in corso** (una parte c'è), **prevista** (n
 | Messaggi privati | prevista | F5 | NIP-17 (busta cifrata, mittente nascosto). ⚠ Nei documenti risulta "già implementato il 15/10": era nel **vecchio** nodo v2; in v3 **non c'è codice**. Esiste solo la chiave DM ricavata dal seme. |
 | Reels (video brevi) | prevista | F6 | Come i video lunghi, stessa pipeline. Nessun piano specifico per i reels. |
 | Video lunghi | in corso (solo archivio) | F6 | Oggi il nodo archivia file per hash e li replica tra nodi verificandoli. Mancano upload a pezzi, pulizia metadati sul dispositivo, conversione HLS sugli hub, cache sugli edge. |
-| Musica | **non pianificata** | — | ⚠ Il v2 aveva musica (con Funkwhale, tolto da ADR-0010). Nei documenti v3 la musica non compare: decisione da prendere (sezione 10). |
-| Topic / forum | **non pianificata** | — | ⚠ Il v2 aveva i forum. Nei documenti v3 non compaiono: decisione da prendere. |
+| Musica | prevista | F6 | Brani come HLS audio sugli hub (segmenti-blob, manifest firmato), copertina come blob, album e playlist NIP-51; pulizia dei tag ID3/Vorbis sul dispositivo. Decisa il 15/10, nessun codice. |
+| Topic / forum | prevista | F6b | Comunità pubbliche NIP-72: definizione con moderatori, post NIP-22, approvazioni firmate. Nessun gruppo privato. Decisa il 15/10, nessun codice. |
 | Mance | prevista | F7 | Solo verso creator, divise nello split (50/30/20), quota nodo al fondo nodi. Registro firmato dall'emittente. Nessun codice. |
 | Shop | prevista (solo acquisto H8) | F7b | Acquisto H8 con bonifico SEPA → buono a firma cieca. Uno shop di oggetti fisici **non è progettato**. Vendita reale solo dopo parere legale. |
 | Boost | prevista, non progettata | F7 | Citato come spesa verso H8-Group; nessun dettaglio su come un boost cambia la visibilità. |
@@ -65,7 +65,7 @@ Regola (ADR-0017): **Schnorr** per il social, **ML-DSA-65** (anti-quantistico) p
 | K1d DM | secp256k1 (NIP-44) | ricevere messaggi | come K1 | **No** | ricavata, **mai usata** (F5) |
 | K1r revoca | Schnorr secp256k1 | revocare l'identità | solo dal seme | **No** | ricavata, **nessun flusso di revoca** |
 | K2 wallet | **ML-DSA-65** | autorizzare spese H8 | come K1 | **Sì** | **Sì**, usata solo nei test (niente registro) |
-| K5 nodo | Schnorr secp256k1 | firma la scheda di directory | file `node.key`, permessi 600 | **No** | **Sì**, ⚠ **non cifrata** (KEYS.md dice "cifrata": non è vero oggi) |
+| K5 nodo | Schnorr secp256k1 | firma la scheda di directory | vault `secrets.vault.json` (scrypt + AES-GCM), passphrase obbligatoria | **No** | **Sì**, cifrata (dal 15/10, `inv-06b-node-secrets`) |
 | K6 onion | Ed25519 | indirizzo onion | cartella di Tor | **No** | **Sì** (la crea Tor) |
 | K7 ancora | Schnorr secp256k1 | firma istantanee della directory | disco dell'ancora | **No** | ⚠ **non esiste**: l'ancora usa K5; istantanee non implementate |
 | K8 hub | Schnorr secp256k1 | firma manifest video | disco dell'hub | **No** | No (F6) |
@@ -73,7 +73,7 @@ Regola (ADR-0017): **Schnorr** per il social, **ML-DSA-65** (anti-quantistico) p
 | K10 emittente operativo | **ML-DSA-65** | firma righe del registro | server emittente | **Sì** | come K9 |
 | K11 release | **ML-DSA-65** | firma `release.json` | offline | **Sì** | strumenti pronti; **chiave mai generata** (cerimonia da fare) |
 | K12 keystore Android | RSA/EC (imposto da Android) | firma APK | offline | **No** | No |
-| K13 admin nodo | token casuale 256 bit | API admin locale | file `admin.key`, permessi 600 | n/a | **Sì** |
+| K13 admin nodo | token casuale 256 bit | API admin locale | stesso vault di K5 | n/a | **Sì**, cifrata |
 | K14 pagamenti | — | non serve (SEPA manuale) | — | — | — |
 | K15 buoni ciechi | RSA-PSS 3072 (RFC 9474) | buoni anonimi | server emittente | **No** | No (F7b) |
 
@@ -118,9 +118,9 @@ flowchart TB
 ## 5. Difese (regole I-xx)
 
 <!-- AUTO:REGOLE:INIZIO -->
-_Generato da `npm run report` il 2026-10-15. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
+_Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
 
-**20 regole attive, 20 in attesa, 0 assenti.** Prove di sabotaggio: 37/37 prese, eseguite il 2026-10-15 (Node 22.23.3, win32 10.0.26200).
+**21 regole attive, 20 in attesa, 0 assenti.** Prove di sabotaggio: 43/43 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
 
 | Regola | Cosa garantisce | Stato | Fase | Test | Sabotaggio |
 |---|---|---|---|---|---|
@@ -129,7 +129,7 @@ _Generato da `npm run report` il 2026-10-15. Fonte: il codice dei test (`tests/i
 | I-03 | Il nodo rifiuta richieste con Host non ammesso | attiva | F2 | `inv-03-host.test.js` ✅ 7 verdi | 1/1 prese |
 | I-04 | Nessun Access-Control-Allow-Origin: * | attiva | F2 | `inv-04-cors.test.js` ✅ 10 verdi | 1/1 prese |
 | I-05 | Il nodo non contatta mai un peer che non sia .onion | attiva | F3 | `inv-05-onion-only.test.js` ✅ 3 verdi | 2/2 prese |
-| I-06 | Nessuna chiave privata finisce su disco in chiaro. | attiva | F1 | `inv-06-keys-at-rest.test.js` ✅ 5 verdi | 2/2 prese |
+| I-06 | Nessuna chiave privata finisce su disco in chiaro | attiva | F1 | `inv-06-keys-at-rest.test.js` ✅ 5 verdi | 4/4 prese |
 | I-07 | Ruoli separati: una firma fatta con la chiave di un ruolo viene rifiutata dove serve un altro ruolo | attiva | F1 | `inv-07-role-separation.test.js` ✅ 7 verdi | 2/2 prese |
 | I-08 | Ogni firma ha un'etichetta di dominio e l'identificativo di rete | attiva | F1 | `inv-08-domain-sep.test.js` ✅ 5 verdi | 1/1 prese |
 | I-09 | Un conio senza firma della radice dell'emittente (K9) viene rifiutato | in attesa | F7 | — | — |
@@ -162,8 +162,9 @@ _Generato da `npm run report` il 2026-10-15. Fonte: il codice dei test (`tests/i
 | I-36 | Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016) | in attesa | F4 | — | — |
 | I-37 | Il Tor di Windows è solo dell'app: | in attesa | F4 | — | — |
 | I-38 | Le schede della directory scadono e si rinnovano: | attiva | F3 | `inv-38-expiry.test.js` ✅ 5 verdi | 4/4 prese |
-| I-39 | Limiti sulle ancore senza porte chiudibili: | attiva | F3 | `inv-39-anchor-limits.test.js` ✅ 7 verdi | 5/5 prese |
+| I-39 | Limiti sulle ancore senza porte chiudibili: | attiva | F3 | `inv-39-anchor-limits.test.js` ✅ 8 verdi | 6/6 prese |
 | I-40 | Due famiglie di firme (ADR-0017): | attiva | F1 | `inv-40-signature-families.test.js` ✅ 6 verdi | 3/3 prese |
+| I-41 | Spazio del relay limitato: dimensione massima per evento, quota per autore, tetto globale (gli autori fidati del nodo sono esenti); la si… | attiva | F2 | `inv-41-relay-space.test.js` ✅ 4 verdi | 3/3 prese |
 
 **Divergenze tra documento e codice:** nessuna trovata.
 <!-- AUTO:REGOLE:FINE -->
@@ -183,7 +184,7 @@ _Generato da `npm run report` il 2026-10-15. Fonte: il codice dei test (`tests/i
 | Sito web malevolo | il nodo non risponde a Host estranei (DNS rebinding) né a origini CORS non configurate; admin solo locale con chiave | — (lato app: niente da proteggere, l'app non c'è) |
 | Nodo ostile | eventi e file verificati (firma, hash); frame malformati non fanno cadere il nodo; schede false rifiutate | **spam di eventi validi**: nessun limite di spazio per gli eventi; un nodo scarica tutto ciò che i peer gli mandano |
 | Osservatore di rete | il nodo contatta solo onion via Tor; nessun IP nelle schede né nei log | che il nodo usi Tor resta visibile (nessun bridge configurato) |
-| Stato | come sopra | correlazione temporale globale (mai promessa); sequestro del server: chiave del nodo e chiave admin **in chiaro** sul disco |
+| Stato | come sopra | correlazione temporale globale (mai promessa); sequestro del server: chiave del nodo e chiave admin sono nel vault cifrato, ma chi ha **anche** la passphrase (o il file che la contiene sulla stessa macchina) le apre |
 | Ladro del dispositivo | vault scrypt per le chiavi utente (solo libreria) | nessuna app, nessun blocco con PIN, nessun portachiavi del sistema |
 | Insider (operatore di ancora) | un'ancora non può inventare nodi; l'unione lato client compensa un'ancora che nasconde | un'ancora compromessa può **riempire le altre** fino al tetto (le schede tra ancore saltano i limiti di frequenza) |
 | Computer quantistico | wallet e release in ML-DSA-65 (libreria e test) | identità e social in Schnorr (scelta voluta: Nostr) |
@@ -196,9 +197,9 @@ Cosa M4TR1X non promette: vedi `THREAT_MODEL.md` §5 (resta valido).
 
 1. **Nessuna app**: tutto il valore per l'utente è ancora da costruire (F4–F9).
 2. **Arti non regge su Windows** (diagnosi completa, causa interna non trovata) e **non è stato provato su un telefono**: la scelta Tauri + Arti per il mobile non è confermata.
-3. **Chiavi del nodo e admin in chiaro** su disco (K5, K13): chi prende il disco impersona il nodo.
-4. **Nessun limite di spazio per gli eventi** nel relay, e **sincronizzazione senza filtro** tra peer: un peer può riempire un nodo di eventi validi.
-5. **Le ancore si fidano delle altre ancore** per la frequenza: un'ancora compromessa può riempire le altre fino al tetto di 10.000 schede.
+3. ~~Chiavi del nodo e admin in chiaro~~ — **chiusa il 15/10**: K5 e K13 nel vault, il nodo non parte senza passphrase. Resta: se la passphrase sta in un file sulla stessa macchina, protegge solo dalle copie della cartella dati.
+4. ~~Nessun limite di spazio nel relay~~ — **chiusa il 15/10** (I-41): 64 KB per evento, quota per autore, tetto globale; la sincronizzazione dai peer rispetta gli stessi limiti.
+5. ~~Le ancore si fidano delle altre ancore~~ — **chiusa il 15/10**: budget di 500 chiavi nuove all'ora per ancora-peer.
 6. **Registro H8 inesistente**: mance, shop, distributori non si possono provare.
 7. **Il sito nderja.com dice cose non vere su v3**: identità "ML-DSA-65", "tutto il codice è pubblico" (i repo sono privati), link di download di Kalendae rotto.
 8. **Repo v2 privati ma con segreti nella storia** (`h8identity.enc` nei tag, email personale, onion del nodo alpha): chi li ha copiati quando erano pubblici li conserva. Rotazione della chiave mai fatta.
@@ -206,7 +207,7 @@ Cosa M4TR1X non promette: vedi `THREAT_MODEL.md` §5 (resta valido).
 10. **Prova di lavoro in JavaScript**: 18 bit ≈ 1 s su un PC, su un N150 probabilmente molto di più (non misurato).
 11. **`node:sqlite` sperimentale**: mitigato fissando Node 22.23.3 e testando le funzioni usate.
 12. **Controllo dei tipi non rigoroso** (`strict: false`).
-13. **Il commento in testa a `node/src/node.js`** dice "anchor dalle fasi successive" ma il ruolo ancora c'è: piccolo, ma è un documento sbagliato.
+13. ~~Commento sbagliato in testa a `node/src/node.js`~~ — **corretto il 16/10**.
 14. **Nessun limite all'archivio file oltre la quota per chiave**; nessuna pulizia dei file non più citati.
 
 ---
@@ -254,7 +255,8 @@ Cosa M4TR1X non promette: vedi `THREAT_MODEL.md` §5 (resta valido).
 
 | # | Decisione | Raccomandazione | Blocca |
 |---|---|---|---|
-| — | **Musica e topic/forum**: nel v2 c'erano, nei piani v3 no | decidere se entrano in v3.0 o dopo | il perimetro di F4–F6 |
+| Q18 | Diritti d'autore della musica caricata | **deciso**: procedura DSA notice and action scritta prima di iniziare F6 | l'inizio di F6 |
+| Q19 | Chi modera i topic | chi crea la comunità; niente moderatori di sistema | F6b |
 | Q6 | Dirette | nessuna in v3.0; quasi-diretta HLS dopo | — |
 | Q7 | Ponte verso Mastodon/PeerTube | nessuno al lancio | — |
 | Q8 | Chi gestisce le 3 ancore (Slovenia da trovare) | almeno una non gestita dal fondatore | F11 |
@@ -276,36 +278,38 @@ Decise il 15/10/2026: Q1 (mance solo ai creator con split), Q2 (SEPA manuale a 1
 ### 11.1 Test automatici
 
 <!-- AUTO:TEST:INIZIO -->
-_Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-15._
+_Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-16._
 
-**Totale: 127 verdi, 0 falliti, 1 saltati, 20 in attesa.**
+**Totale: 135 verdi, 0 falliti, 1 saltati, 20 in attesa.**
 
 | File | Verdi | Falliti | Saltati | In attesa | Durata |
 |---|---|---|---|---|---|
-| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 1.0 s |
-| `tests/integration/two-nodes.test.js` | 1 | 0 | 1 (M4TR1X_TOR_BIN non impostato: prova via Tor saltata) | 0 | 0.7 s |
-| `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 9.7 s |
-| `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.0 s |
-| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 9.0 s |
-| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-15-no-h8-in-events.test.js` | 9 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.0 s |
-| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-25-deps.test.js` | 2 | 0 | 0 | 0 | 0.4 s |
-| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 6.6 s |
+| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.2 s |
+| `tests/integration/two-nodes.test.js` | 1 | 0 | 1 (M4TR1X_TOR_BIN non impostato: prova via Tor saltata) | 0 | 1.5 s |
+| `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 6.9 s |
+| `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
+| `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.9 s |
+| `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.4 s |
+| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 4.9 s |
+| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.5 s |
+| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-15-no-h8-in-events.test.js` | 9 | 0 | 0 | 0 | 0.3 s |
+| `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 1.0 s |
+| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.2 s |
+| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.6 s |
+| `tests/invariants/inv-25-deps.test.js` | 2 | 0 | 0 | 0 | 0.2 s |
+| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 6.9 s |
 | `tests/invariants/inv-28-secrets.test.js` | 19 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 0.5 s |
-| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 6.8 s |
-| `tests/invariants/inv-39-anchor-limits.test.js` | 7 | 0 | 0 | 0 | 1.8 s |
-| `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.6 s |
+| `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
+| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 8.1 s |
+| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 8.9 s |
+| `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.5 s |
+| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 6.6 s |
 | `tests/invariants/pending.test.js` | 0 | 0 | 0 | 20 | 0.2 s |
-| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.6 s |
-| `tests/unit/runtime-sqlite.test.js` | 3 | 0 | 0 | 0 | 0.3 s |
+| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 1.2 s |
+| `tests/unit/runtime-sqlite.test.js` | 3 | 0 | 0 | 0 | 0.2 s |
 <!-- AUTO:TEST:FINE -->
 
 ### 11.2 Prove di accettazione e diagnosi (registro scritto a mano)
@@ -358,7 +362,7 @@ _Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Nod
 ## 12. Dipendenze
 
 <!-- AUTO:DIPENDENZE:INIZIO -->
-_Generato da `npm run report` il 2026-10-15, dal lockfile e da `npm audit`._
+_Generato da `npm run report` il 2026-10-16, dal lockfile e da `npm audit`._
 
 | Pacchetto | Uso | Dichiarata | Installata |
 |---|---|---|---|

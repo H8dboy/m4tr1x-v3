@@ -59,8 +59,10 @@ Stime in **giornate di lavoro** (una giornata = una sessione lunga con Claude, c
 | Aggiornamenti firmati | Non esistono oggi | 3–4 |
 | Upload a pezzi + pulizia metadati sul dispositivo | Oggi l'upload è un blocco unico; la pulizia è solo sul server | 3–4 |
 | Buoni offline per i distributori | Non esistono | 2–3 |
+| Musica (brani, album, playlist sulla pipeline video) | Nel v2 passava da Funkwhale, tolto | 2–3 |
+| Topic / comunità NIP-72 | Nel v2 erano forum su server | 3–4 |
 | CI completa | Oggi la CI non esegue test (build.yml con 0 esecuzioni sul nodo) | 2 |
-| **Totale riscrittura** | | **~29–41** |
+| **Totale riscrittura** | | **~34–48** |
 
 ### Si butta
 
@@ -78,7 +80,7 @@ Stime in **giornate di lavoro** (una giornata = una sessione lunga con Claude, c
 | NIP-04 | Si riparte da zero, nessun messaggio vecchio da leggere |
 | Tag `h8` sui post, `deriveSigningKey` | Identità e denaro separati (ADR-0008) |
 
-**Totale stimato: ~40–52 giornate di lavoro**, cioè, con il lavoro in officina, indicativamente **4–7 mesi** a 2–3 sessioni a settimana. L'incertezza maggiore sta nel guscio Tauri + Arti su mobile (F4a/F9).
+**Totale stimato: ~45–59 giornate di lavoro** (musica e topic aggiunti il 16/10/2026), cioè, con il lavoro in officina, indicativamente **5–8 mesi** a 2–3 sessioni a settimana. L'incertezza maggiore sta nel guscio Tauri + Arti su mobile (F4a/F9).
 
 ## 3. Ordine di costruzione
 
@@ -96,7 +98,8 @@ Regole per ogni fase:
 | **F4a — Prototipo Tauri + Arti** (rischio) | Prova minima: app desktop + Android che apre un servizio onion via Arti e scarica un blob | **Passa se, su Windows e sul tuo telefono Android reale:** (1) primo avvio a freddo: connessione a un onion di prova entro 60 s nel 90% di 10 tentativi; (2) download di un blob da 10 MB via onion a ≥ 0,5 MB/s medi; (3) 30 minuti di uso senza crash né perdita di circuito non recuperata; (4) APK con Arti incluso ≤ 40 MB; (5) un'analisi del traffico (PCAPdroid su Android, Wireshark su PC) non mostra connessioni fuori da Tor | Decisione documentata in un ADR: Arti va, oppure piano B (tor nativo) |
 | **F4 — App base** | Guscio Tauri desktop con modulo `transport` unico (ADR-0016: Arti su Linux/macOS, `tor` classico su Windows): identità (crea/recupera dal seme), feed, post, profilo, firma nel lato Rust | Flusso completo su desktop con nodo di prova; nessun pacchetto esce fuori da Tor | I-01, I-31, I-36, I-37 verdi |
 | **F5 — DM** | NIP-17 nell'app, chiave DM separata e ruotabile | Due utenti di prova si scrivono; sul relay solo kind 1059 | I-19, I-20 verdi |
-| **F6 — Video** | Pulizia metadati sul dispositivo, upload a pezzi, ruolo `hub` (HLS, manifest firmato, backup tra 2 hub), ruolo `edge` (cache) | Video di prova con GPS: caricato, convertito, visto da un'altra app tramite edge; GPS assente ovunque | I-16, I-27 verdi |
+| **F6 — Video e musica** | Pulizia metadati sul dispositivo, upload a pezzi, ruolo `hub` (HLS video e audio, manifest firmato, backup tra 2 hub), ruolo `edge` (cache); brani con copertina, album e playlist (NIP-51) | Video di prova con GPS: caricato, convertito, visto da un'altra app tramite edge; GPS assente ovunque. Brano di prova con tag ID3 (autore, programma, data) e copertina con EXIF: dopo l'upload nessun tag identificativo, ascolto da un'altra app tramite edge | I-16 (esteso ai file audio), I-27 verdi. **Precondizione per iniziare:** procedura DSA "notice and action" scritta e approvata (Q12, Q18) e rimozione di un contenuto dagli hub inclusa nei test di accettazione |
+| **F6b — Topic** | Comunità NIP-72 nell'app e nel relay: crea comunità, scrivi nella comunità, approvazioni dei moderatori, vista "solo approvati" di default | Un post approvato da una chiave **non** in elenco moderatori non compare come approvato; un moderatore tolto dalla definizione nuova non approva più; nessuna comunità privata | Nuova invariante (proposta I-42: "un'approvazione conta solo se firmata da un moderatore della versione corrente della comunità") scritta prima del codice e verde |
 | **F7 — H8** | `packages/ledger` (pubblico), `m4tr1x-issuer` (privato), repliche su nodi ed edge, spese e mance (split) dall'app con K2. **Solo rete di prova**, coni di prova, buoni semplici | Doppia spesa concorrente → una sola riga; registro manomesso → replica lo rifiuta; equivocazione → allarme; trasferimento utente → utente rifiutato | I-09…I-14, I-34 verdi |
 | **F7b — Buoni ciechi** | Buoni RSA Blind Signatures (RFC 9474) + flusso di riconciliazione dei bonifici. Prima della vendita reale | Il riscatto non è collegabile al bonifico; buono riusato → rifiutato | I-35 verde; parere legale ricevuto prima di accendere la vendita |
 | **F8 — Aggiornamenti e release** | `tools/release`, `release.json` firmato offline, updater nell'app e nel nodo, build doppia in CI | Firma falsa → rifiutata; versione vecchia → rifiutata; due build → stessi hash (dove previsto) | I-21, I-22, I-24 verdi |

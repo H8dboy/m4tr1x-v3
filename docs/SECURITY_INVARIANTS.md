@@ -44,7 +44,7 @@
 
 | # | Invariante | Test | Fase |
 |---|---|---|---|
-| I-16 | **Nessun metadato identificativo lascia il dispositivo** (GPS, modello, numero di serie, data originale, nome file). | `inv-16-strip`: file di prova JPEG/HEIC/MP4/MOV con GPS e modello → dopo la preparazione all'upload, nessun campo presente (lettura con exiftool in CI) | F6 |
+| I-16 | **Nessun metadato identificativo lascia il dispositivo** (GPS, modello, numero di serie, data originale, nome file). | `inv-16-strip`: file di prova JPEG/HEIC/MP4/MOV con GPS e modello, MP3/FLAC/OGG con tag ID3/Vorbis (autore, programma, data) e copertina con EXIF → dopo la preparazione all'upload, nessun campo presente (lettura con exiftool in CI) | F6 |
 | I-17 | **Un blob si accetta solo se il suo SHA-256 corrisponde.** Vale per app, nodo, edge. | `inv-17-blob-hash`: un nodo che serve byte alterati → l'app rifiuta e passa a un'altra fonte | F2 |
 | I-18 | **Hub, edge e nodi non scrivono indirizzi IP nei log.** | `inv-18-no-ip-logs`: si eseguono le operazioni con client da indirizzi di prova; i log non contengono pattern IPv4/IPv6 | F2 |
 | I-26 | **Un input malformato non fa cadere il nodo** (frame WS, JSON, eventi, filtri, blob troppo grandi); memoria e risposte hanno un tetto. | `inv-26-fuzz`: fuzzing del relay e delle API per N minuti in CI → processo vivo, memoria sotto soglia | F2 |

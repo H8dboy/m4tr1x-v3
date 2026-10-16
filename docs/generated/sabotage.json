@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-15T12:35:54.094Z",
+  "date": "2026-10-16T05:57:26.328Z",
   "node": "22.23.3",
   "platform": "win32 10.0.26200",
   "partial": false,
@@ -336,6 +336,60 @@
       "test": "tests/invariants/inv-39-anchor-limits.test.js",
       "outcome": "presa",
       "detail": "fail 3"
+    },
+    {
+      "id": "i06-nopass",
+      "rule": "I-06",
+      "name": "il nodo parte con una passphrase di default",
+      "file": "node/src/node.js",
+      "test": "tests/invariants/inv-06b-node-secrets.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i06-plainleft",
+      "rule": "I-06",
+      "name": "i file in chiaro vecchi restano sul disco",
+      "file": "node/src/node.js",
+      "test": "tests/invariants/inv-06b-node-secrets.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i41-size",
+      "rule": "I-41",
+      "name": "nessun limite di dimensione per evento",
+      "file": "node/src/relay.js",
+      "test": "tests/invariants/inv-41-relay-space.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i41-author",
+      "rule": "I-41",
+      "name": "nessuna quota per autore",
+      "file": "node/src/relay.js",
+      "test": "tests/invariants/inv-41-relay-space.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i41-total",
+      "rule": "I-41",
+      "name": "nessun tetto globale",
+      "file": "node/src/relay.js",
+      "test": "tests/invariants/inv-41-relay-space.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i39-peerbudget",
+      "rule": "I-39",
+      "name": "nessun budget per ancora-peer",
+      "file": "node/src/directory.js",
+      "test": "tests/invariants/inv-39-anchor-limits.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
     }
   ]
 }
