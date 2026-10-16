@@ -70,7 +70,7 @@
 
 | # | Invariante | Test | Fase |
 |---|---|---|---|
-| I-25 | **Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti.** | `inv-25-deps`: `npm audit --audit-level=high`, `cargo deny check`, elenco vietati (es. `request`, `node-fetch` nelle app, `webtorrent`) | F0 |
+| I-25 | **Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti; GitHub Actions fissate per hash del commit.** | `inv-25-deps`: `npm audit --audit-level=high`, `cargo deny check`, elenco vietati (es. `request`, `node-fetch` nelle app, `webtorrent`), ogni `uses:` dei workflow con hash di 40 caratteri (non tag né ramo) | F0 |
 | I-28 | **Nessun segreto nel repo** (chiavi, `.env`, `.db`, chiavi onion, IP, email personali). | `inv-28-secrets`: gitleaks con regole extra (onion key `hs_ed25519_secret_key`, `nsec1`, IP privati, indirizzi email non `noreply`) su ogni commit e sulla storia intera | F0 |
 
 ## Amministrazione e directory

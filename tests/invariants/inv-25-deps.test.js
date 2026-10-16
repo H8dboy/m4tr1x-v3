@@ -52,3 +52,24 @@ test('ogni dipendenza è approvata', () => {
     for (const name of Object.keys(all)) assert.ok(APPROVED.has(name), `${path.relative(ROOT, p)}: ${name} non è nell'elenco approvato`)
   }
 })
+
+/** Ogni GitHub Action è fissata per hash del commit (40 hex), mai per tag o ramo:
+ *  un tag si può spostare su codice nuovo, un hash no. Il commento "# vX.Y.Z" serve solo a chi legge. */
+test('GitHub Actions fissate per hash del commit', () => {
+  const files = execFileSync('git', ['ls-files', '-z', '--', '.github/workflows/*.yml', '.github/workflows/*.yaml', '.github/actions/**'], { cwd: ROOT })
+    .toString('utf8').split('\0').filter(Boolean)
+  assert.ok(files.length > 0, 'nessun workflow trovato')
+  let seen = 0
+  for (const f of files) {
+    const lines = fs.readFileSync(path.join(ROOT, f), 'utf8').split(/\r?\n/)
+    lines.forEach((line, i) => {
+      const m = line.match(/^\s*(?:-\s*)?uses:\s*['"]?([^'"\s#]+)/)
+      if (!m) return
+      seen++
+      const ref = m[1]
+      if (ref.startsWith('./')) return // action locale del repo: segue il commit stesso
+      assert.match(ref, /^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/, `${f}:${i + 1}: "${ref}" non è fissata per hash del commit`)
+    })
+  }
+  assert.ok(seen > 0, 'nessun "uses:" trovato: il controllo non sta guardando niente')
+})

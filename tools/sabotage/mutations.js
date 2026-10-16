@@ -20,6 +20,10 @@ module.exports = [
     replace: "  if (!protocol.verifyDomain(pubHex, String(sig.sig), DOMAIN, sig.network, manifestBytes))", test: T('inv-23-release-gate') },
   { id: 'i23-hash', rule: 'I-23', name: 'hash dei pacchetti non controllato', file: 'tools/release/verify-release.js',
     find: "    if (actual !== String(sha).toLowerCase()) throw new Error(`hash diverso per ${name}`)", replace: '', test: T('inv-23-release-gate') },
+  { id: 'i25-action-tag', rule: 'I-25', name: 'action fissata per tag invece che per hash', file: '.github/workflows/ci.yml',
+    // il checkout con fetch-depth è l'unico: la prova vuole un testo che compaia una volta sola
+    find: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          persist-credentials: false\n          fetch-depth: 0',
+    replace: 'actions/checkout@v7\n        with:\n          persist-credentials: false\n          fetch-depth: 0', test: T('inv-25-deps') },
   { id: 'i25-banned', rule: 'I-25', name: 'pacchetto vietato e non approvato tra le dipendenze', file: 'package.json',
     find: '  "dependencies": {\n', replace: '  "dependencies": {\n    "axios": "1.7.9",\n', test: T('inv-25-deps') },
   { id: 'i28-doc', rule: 'I-28', name: 'IP vero ammesso se accanto a uno di documentazione', file: 'tools/security/scan-secrets.js',
