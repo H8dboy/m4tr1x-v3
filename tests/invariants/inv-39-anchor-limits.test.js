@@ -80,7 +80,9 @@ test('sotto pressione la prova si fa più difficile, ma chi la paga entra sempre
 })
 
 test('il nodo legge la difficoltà richiesta e riprova da solo', async () => {
-  const anchor = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 8 } })
+  // 16 bit chiesti, 1 calcolato al primo tentativo: la probabilità che il primo passi
+  // per fortuna è 2^-15 (con 8 bit era 1 su 128 e la prova di sabotaggio a volte sfuggiva).
+  const anchor = await startTestNode({ role: 'anchor', anchorLimits: { powBitsNewKey: 16 } })
   const n = await startTestNode({
     anchors: [`http://127.0.0.1:${anchor.node.port}`], allowLoopbackPeersForTests: true,
     descriptorOnionForTests: 'f'.repeat(56) + '.onion', descriptorPowBits: 1,
@@ -95,7 +97,9 @@ test('il nodo legge la difficoltà richiesta e riprova da solo', async () => {
       found = m.find(x => x[0] === 'EVENT')
     }
     assert.ok(found, 'la scheda non è mai entrata')
-    assert.ok(protocol.leadingZeroBits(found[2].id) >= 8)
+    assert.ok(protocol.leadingZeroBits(found[2].id) >= 16)
+    // non basta che la scheda sia entrata: deve esserci stato il secondo tentativo
+    assert.ok(n.logs.some(l => l.includes('chiede una prova di lavoro di 16 bit')), 'il nodo non ha riletto la difficoltà')
   } finally { await n.close(); await anchor.close() }
 })
 

@@ -1,0 +1,24 @@
+[package]
+name = "m4tr1x-transport"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Unico modulo di rete dell'app M4TR1X (ADR-0016): solo onion v3, via Arti o tor classico"
+
+# Versioni esatte: aggiungerne o cambiarne una è una scelta esplicita in review (I-25).
+[dependencies]
+# checksum degli indirizzi onion v3 (rend-spec-v3, "ONION ADDRESS")
+sha3 = "=0.10.9"
+# base32 minuscolo degli indirizzi onion
+data-encoding = "=2.11.1"
+thiserror = "=2.0.21"
+# processo tor, socket verso 127.0.0.1 (SOCKS e controllo), timer
+tokio = { version = "=1.53.3", default-features = false, features = ["process", "net", "io-util", "time", "sync"] }
+# hash fissato del binario tor (I-37)
+sha2 = "=0.10.9"
+# credenziali SOCKS casuali per sessione
+getrandom = "=0.3.4"
+
+[dev-dependencies]
+tokio = { version = "=1.53.3", default-features = false, features = ["process", "net", "io-util", "time", "sync", "rt-multi-thread", "macros"] }

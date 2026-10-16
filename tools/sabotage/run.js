@@ -49,12 +49,17 @@ for (const m of MUTATIONS.filter(x => x.id.includes(filter))) {
   fs.writeFileSync(file, edits.reduce((s, e) => s.replace(e.find, e.replace), orig))
   let outcome, detail
   try {
-    const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-force-exit', '--test-timeout=90000', m.test],
-      { cwd: ROOT, encoding: 'utf8', timeout: 400000, maxBuffer: 64 * 1024 * 1024 })
+    // Le prove con tor vero (I-37) durano minuti: ognuna può dichiarare il suo tempo massimo.
+    const testTimeout = m.timeoutMs || 90000
+    const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-force-exit', `--test-timeout=${testTimeout}`, m.test],
+      { cwd: ROOT, encoding: 'utf8', timeout: Math.max(400000, testTimeout * 2), maxBuffer: 64 * 1024 * 1024 })
     const out = (r.stdout || '') + (r.stderr || '')
     const fails = out.split('\n').filter(l => l.startsWith('# fail '))
     const last = fails.at(-1)
-    if (r.error) { outcome = 'presa'; detail = `test interrotto (${r.error.message})` }
+    // Un test fermato dal tempo massimo NON ha preso il sabotaggio: non si sa cosa avrebbe detto.
+    const timedOut = /testTimeoutFailure|timed out after/.test(out)
+    if (r.error) { outcome = 'interrotta'; detail = `test interrotto (${r.error.message}): alzare timeoutMs della prova` }
+    else if (timedOut) { outcome = 'interrotta'; detail = `tempo massimo (${testTimeout} ms) superato: alzare timeoutMs della prova` }
     else if (!last) { outcome = 'presa'; detail = 'il test è caduto' }
     else if (last.trim() === '# fail 0') { outcome = 'sfuggita'; detail = 'tutti i test verdi con la regola rotta' }
     else { outcome = 'presa'; detail = last.replace('# ', '') }
@@ -64,7 +69,7 @@ for (const m of MUTATIONS.filter(x => x.id.includes(filter))) {
   }
   if (sha(fs.readFileSync(file, 'utf8')) !== sha(orig)) throw new Error(`ripristino fallito: ${m.file}`)
   results.push({ ...pick(m), outcome, detail })
-  console.log(`${outcome === 'presa' ? 'PRESA   ' : 'SFUGGITA'}  ${m.rule} ${m.name} — ${detail}`)
+  console.log(`${outcome === 'presa' ? 'PRESA     ' : outcome === 'interrotta' ? 'INTERROTTA' : 'SFUGGITA  '}  ${m.rule} ${m.name} — ${detail}`)
 }
 
 /** @param {any} m */

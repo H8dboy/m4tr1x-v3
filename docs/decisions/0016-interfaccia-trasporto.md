@@ -24,7 +24,8 @@
 
 **Regole per `TorProcessTransport` (Windows)** — tutte con test:
 - Il binario `tor.exe` viene dal Tor Expert Bundle ufficiale, con **hash SHA-256 fissato nel repo** e verificato in build; entra nel pacchetto firmato (il suo hash finisce anche nel `release.json`).
-- `SocksPort` e `ControlPort` solo su `127.0.0.1`, porte casuali scelte all'avvio; **autenticazione SOCKS obbligatoria** con credenziali casuali per sessione (e `IsolateSOCKSAuth`), così un altro programma del PC non può usare il nostro Tor; porta di controllo con **cookie**; `__OwningControllerProcess` legato al processo dell'app, così `tor` muore con l'app.
+- `SocksPort` e `ControlPort` solo su `127.0.0.1`, porte casuali scelte all'avvio; `SocksPort` con **`OnionTrafficOnly`**; credenziali SOCKS casuali per sessione con `IsolateSOCKSAuth`; porta di controllo con **cookie**; `__OwningControllerProcess` legato al processo dell'app, così `tor` muore con l'app.
+- **Correzione del 16/10/2026 (decisione del fondatore, opzione A).** Questa ADR prometteva "autenticazione SOCKS obbligatoria, così un altro programma del PC non può usare il nostro Tor". **Non è vero:** `tor` C (0.4.9.11) non ha un'opzione che renda obbligatoria l'autenticazione SOCKS, e una prova dal vivo l'ha confermato (handshake senza credenziali accettato). Le credenziali **isolano** i circuiti, non chiudono la porta. Garanzie reali: (1) con `OnionTrafficOnly` chi usa il nostro SOCKS raggiunge **solo onion**, mai host in chiaro (provato: dominio e IP rifiutati con risposta 2); (2) senza le nostre credenziali non condivide i nostri circuiti; (3) solo 127.0.0.1, porte casuali. Rischio residuo: un programma già presente sul PC può usare il nostro `tor` per raggiungere onion; un programma così ha già in mano l'utente ed è fuori dal modello delle minacce. Un controllo d'accesso vero arriverà solo con Arti su Windows (cambio di una riga, punto 4). I-37 riscritta di conseguenza.
 - `DataDirectory` nella cartella dati dell'app, mai condivisa con altri Tor.
 - Nessun servizio onion ospitato dall'app (l'app è solo client).
 
@@ -34,4 +35,6 @@
 - (−) Su Windows due cose in più da mantenere: il binario `tor` (aggiornamenti di sicurezza da seguire) e la gestione del processo. Pacchetto Windows più grande di ~10 MB.
 - (−) Due implementazioni da testare: la stessa suite di test del trasporto gira su entrambe.
 
-**Invarianti nuove** (in `SECURITY_INVARIANTS.md`): I-36 (solo `transport` apre connessioni, trasporto unico), I-37 (il Tor di Windows non è usabile da altri processi).
+**Invarianti nuove** (in `SECURITY_INVARIANTS.md`): I-36 (solo il crate `app/transport` apre connessioni, trasporto unico), I-37 (il Tor di Windows serve solo onion e non presta i circuiti dell'app; corretta il 16/10/2026).
+
+**Struttura (16/10/2026).** `transport` è un **crate separato** (`app/transport/`) e non una cartella del guscio: gli altri crate non dipendono da librerie di rete, quindi è il compilatore a impedire connessioni fuori dal trasporto.

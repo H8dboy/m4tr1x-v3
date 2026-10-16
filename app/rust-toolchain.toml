@@ -1,0 +1,4 @@
+# Stesso compilatore in locale e in CI (come Node fissato a 22.23.3 per il nodo).
+[toolchain]
+channel = "1.94.0"
+profile = "minimal"

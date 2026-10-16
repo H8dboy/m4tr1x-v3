@@ -12,7 +12,7 @@
  */
 const T = (/** @type {string} */ n) => `tests/invariants/${n}.test.js`
 
-/** @type {Array<{ id: string, rule: string, name: string, file: string, test: string, find?: string, replace?: string, edits?: Array<{ find: string, replace: string }> }>} */
+/** @type {Array<{ id: string, rule: string, name: string, file: string, test: string, timeoutMs?: number, find?: string, replace?: string, edits?: Array<{ find: string, replace: string }> }>} */
 module.exports = [
   // ─── F0 ───────────────────────────────────────────────────────────────────
   { id: 'i23-rete', rule: 'I-23', name: 'rete della firma non controllata', file: 'tools/release/verify-release.js',
@@ -126,4 +126,17 @@ module.exports = [
     find: "      if (totals.n >= L.maxTotalEvents || totals.b + size > L.maxTotalBytes) return [false, 'blocked: relay pieno']", replace: '', test: T('inv-41-relay-space') },
   { id: 'i39-peerbudget', rule: 'I-39', name: 'nessun budget per ancora-peer', file: 'node/src/directory.js',
     find: "      if (recent.length >= L.peerNewKeysPerHour) { peerBudget.set(key, recent); return [false, 'rate-limited: budget di chiavi nuove di questa ancora-peer esaurito'] }", replace: '', test: T('inv-39-anchor-limits') },
+
+  // ─── F4 (Rust: il test JS lancia cargo; le prove con tor vero servono M4TR1X_TOR_BIN) ──
+  { id: 'i37-hash', rule: 'I-37', name: 'hash del binario tor non controllato', file: 'app/transport/src/tor_process.rs',
+    find: '        if actual != self.cfg.tor_sha256.to_ascii_lowercase() {', replace: '        if false && actual != self.cfg.tor_sha256.to_ascii_lowercase() {', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-onlyonion', rule: 'I-37', name: 'SOCKS senza OnionTrafficOnly (host in chiaro raggiungibili)', file: 'app/transport/src/tor_process.rs',
+    find: '"127.0.0.1:auto OnionTrafficOnly IsolateSOCKSAuth"', replace: '"127.0.0.1:auto IsolateSOCKSAuth"', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-owner', rule: 'I-37', name: 'tor non legato all\'app (sopravvive se l\'app muore)', file: 'app/transport/src/tor_process.rs',
+    edits: [
+      { find: '            .args(["--__OwningControllerProcess", &std::process::id().to_string()])\n', replace: '' },
+      { find: '        command(&mut control, "TAKEOWNERSHIP").await?;\n', replace: '' },
+    ], test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-loopback', rule: 'I-37', name: 'file della porta di controllo accettato da qualsiasi interfaccia', file: 'app/transport/src/tor_process.rs',
+    find: '    if host != "127.0.0.1" {\n        return None; // qualsiasi altra interfaccia è un errore di configurazione\n    }\n', replace: '', test: T('inv-37-tor-process'), timeoutMs: 900000 },
 ]

@@ -120,7 +120,7 @@ flowchart TB
 <!-- AUTO:REGOLE:INIZIO -->
 _Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
 
-**21 regole attive, 20 in attesa, 0 assenti.** Prove di sabotaggio: 43/43 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
+**22 regole attive, 19 in attesa, 0 assenti.** Prove di sabotaggio: 48/48 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
 
 | Regola | Cosa garantisce | Stato | Fase | Test | Sabotaggio |
 |---|---|---|---|---|---|
@@ -148,7 +148,7 @@ _Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/i
 | I-22 | Niente rollback: versione più bassa o seq del manifest più basso dell'ultimo visto → rifiutato | in attesa | F8 | — | — |
 | I-23 | La CI non pubblica release senza manifest firmato valido | attiva | F0 | `inv-23-release-gate.test.js` ✅ 10 verdi | 2/2 prese |
 | I-24 | Build riproducibile (dove possibile): due build dello stesso tag danno gli stessi hash per frontend, binari Rust e contenuto dell'APK | in attesa | F8 | — | — |
-| I-25 | Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti. | attiva | F0 | `inv-25-deps.test.js` ✅ 2 verdi | 1/1 prese |
+| I-25 | Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti; GitHub Actions fissate per hash del c… | attiva | F0 | `inv-25-deps.test.js` ✅ 3 verdi | 2/2 prese |
 | I-26 | Un input malformato non fa cadere il nodo | attiva | F2 | `inv-26-fuzz.test.js` ✅ 1 verdi | 1/1 prese |
 | I-27 | Ogni processo esterno (ffmpeg, exiftool) ha un timeout | in attesa | F6 | — | — |
 | I-28 | Nessun segreto nel repo (chiavi, .env, .db, chiavi onion, IP, email personali) | attiva | F0 | `inv-28-secrets.test.js` ✅ 19 verdi | 2/2 prese |
@@ -160,7 +160,7 @@ _Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/i
 | I-34 | Nessun trasferimento tra utenti: | in attesa | F7 | — | — |
 | I-35 | Buono cieco: l'emittente non può collegare un buono riscattato al bonifico che l'ha pagato | in attesa | F7b | — | — |
 | I-36 | Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016) | in attesa | F4 | — | — |
-| I-37 | Il Tor di Windows è solo dell'app: | in attesa | F4 | — | — |
+| I-37 | Il Tor di Windows serve solo onion e non presta i circuiti dell'app: | attiva | F4 | `inv-37-tor-process.test.js` ✅ 2 verdi | 4/4 prese |
 | I-38 | Le schede della directory scadono e si rinnovano: | attiva | F3 | `inv-38-expiry.test.js` ✅ 5 verdi | 4/4 prese |
 | I-39 | Limiti sulle ancore senza porte chiudibili: | attiva | F3 | `inv-39-anchor-limits.test.js` ✅ 8 verdi | 6/6 prese |
 | I-40 | Due famiglie di firme (ADR-0017): | attiva | F1 | `inv-40-signature-families.test.js` ✅ 6 verdi | 3/3 prese |
@@ -280,35 +280,36 @@ Decise il 15/10/2026: Q1 (mance solo ai creator con split), Q2 (SEPA manuale a 1
 <!-- AUTO:TEST:INIZIO -->
 _Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-16._
 
-**Totale: 135 verdi, 0 falliti, 1 saltati, 20 in attesa.**
+**Totale: 138 verdi, 0 falliti, 0 saltati, 19 in attesa.**
 
 | File | Verdi | Falliti | Saltati | In attesa | Durata |
 |---|---|---|---|---|---|
-| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.2 s |
-| `tests/integration/two-nodes.test.js` | 1 | 0 | 1 (M4TR1X_TOR_BIN non impostato: prova via Tor saltata) | 0 | 1.5 s |
+| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.4 s |
+| `tests/integration/two-nodes.test.js` | 1 | 0 | 0 | 0 | 120.1 s |
 | `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 6.9 s |
 | `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
 | `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.4 s |
-| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 4.9 s |
-| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.5 s |
+| `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.3 s |
+| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 4.8 s |
+| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.4 s |
 | `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
 | `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.4 s |
 | `tests/invariants/inv-15-no-h8-in-events.test.js` | 9 | 0 | 0 | 0 | 0.3 s |
 | `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 1.0 s |
 | `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.2 s |
 | `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-25-deps.test.js` | 2 | 0 | 0 | 0 | 0.2 s |
+| `tests/invariants/inv-25-deps.test.js` | 3 | 0 | 0 | 0 | 0.2 s |
 | `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 6.9 s |
 | `tests/invariants/inv-28-secrets.test.js` | 19 | 0 | 0 | 0 | 0.3 s |
 | `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
 | `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 8.1 s |
-| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 8.9 s |
-| `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.5 s |
-| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 6.6 s |
-| `tests/invariants/pending.test.js` | 0 | 0 | 0 | 20 | 0.2 s |
-| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 1.2 s |
+| `tests/invariants/inv-37-tor-process.test.js` | 2 | 0 | 0 | 0 | 55.3 s |
+| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 9.5 s |
+| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 8.5 s |
+| `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 5.8 s |
+| `tests/invariants/pending.test.js` | 0 | 0 | 0 | 19 | 0.2 s |
+| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.3 s |
 | `tests/unit/runtime-sqlite.test.js` | 3 | 0 | 0 | 0 | 0.2 s |
 <!-- AUTO:TEST:FINE -->
 

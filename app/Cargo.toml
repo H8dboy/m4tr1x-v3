@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["transport"]
+
+[workspace.package]
+edition = "2021"
+publish = false
+license = "AGPL-3.0-only"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

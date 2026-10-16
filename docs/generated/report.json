@@ -1,12 +1,12 @@
 {
-  "date": "2026-10-16T05:57:35.037Z",
+  "date": "2026-10-16T07:14:12.608Z",
   "env": "Node 22.23.3 · win32 10.0.26200 · 2026-10-16",
   "pinnedOk": true,
   "totals": {
-    "pass": 135,
+    "pass": 138,
     "fail": 0,
-    "todo": 20,
-    "skipped": 1
+    "todo": 19,
+    "skipped": 0
   },
   "tests": [
     {
@@ -16,18 +16,16 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 2187
+      "ms": 2352
     },
     {
       "file": "tests/integration/two-nodes.test.js",
       "pass": 1,
       "fail": 0,
       "todo": 0,
-      "skipped": 1,
-      "skipReasons": [
-        "M4TR1X_TOR_BIN non impostato: prova via Tor saltata"
-      ],
-      "ms": 1466
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 120106
     },
     {
       "file": "tests/invariants/inv-02-bind.test.js",
@@ -36,7 +34,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 6903
+      "ms": 6917
     },
     {
       "file": "tests/invariants/inv-03-host.test.js",
@@ -45,7 +43,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 862
+      "ms": 879
     },
     {
       "file": "tests/invariants/inv-04-cors.test.js",
@@ -54,7 +52,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 867
+      "ms": 856
     },
     {
       "file": "tests/invariants/inv-05-onion-only.test.js",
@@ -63,7 +61,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 3368
+      "ms": 3346
     },
     {
       "file": "tests/invariants/inv-06-keys-at-rest.test.js",
@@ -72,7 +70,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 4879
+      "ms": 4770
     },
     {
       "file": "tests/invariants/inv-06b-node-secrets.test.js",
@@ -81,7 +79,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 2455
+      "ms": 2402
     },
     {
       "file": "tests/invariants/inv-07-role-separation.test.js",
@@ -90,7 +88,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 376
+      "ms": 365
     },
     {
       "file": "tests/invariants/inv-08-domain-sep.test.js",
@@ -99,7 +97,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 386
+      "ms": 380
     },
     {
       "file": "tests/invariants/inv-15-no-h8-in-events.test.js",
@@ -108,7 +106,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 329
+      "ms": 337
     },
     {
       "file": "tests/invariants/inv-17-blob-hash.test.js",
@@ -117,7 +115,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 977
+      "ms": 956
     },
     {
       "file": "tests/invariants/inv-18-no-ip-logs.test.js",
@@ -126,7 +124,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 1172
+      "ms": 1152
     },
     {
       "file": "tests/invariants/inv-23-release-gate.test.js",
@@ -135,16 +133,16 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 645
+      "ms": 598
     },
     {
       "file": "tests/invariants/inv-25-deps.test.js",
-      "pass": 2,
+      "pass": 3,
       "fail": 0,
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 239
+      "ms": 230
     },
     {
       "file": "tests/invariants/inv-26-fuzz.test.js",
@@ -153,7 +151,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 6910
+      "ms": 6879
     },
     {
       "file": "tests/invariants/inv-28-secrets.test.js",
@@ -162,7 +160,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 307
+      "ms": 277
     },
     {
       "file": "tests/invariants/inv-29-descriptor.test.js",
@@ -171,7 +169,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 379
+      "ms": 360
     },
     {
       "file": "tests/invariants/inv-30-33-admin-onion.test.js",
@@ -180,7 +178,16 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 918
+      "ms": 906
+    },
+    {
+      "file": "tests/invariants/inv-37-tor-process.test.js",
+      "pass": 2,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 55333
     },
     {
       "file": "tests/invariants/inv-38-expiry.test.js",
@@ -189,7 +196,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 8068
+      "ms": 9469
     },
     {
       "file": "tests/invariants/inv-39-anchor-limits.test.js",
@@ -198,7 +205,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 8947
+      "ms": 8483
     },
     {
       "file": "tests/invariants/inv-40-signature-families.test.js",
@@ -207,7 +214,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 483
+      "ms": 409
     },
     {
       "file": "tests/invariants/inv-41-relay-space.test.js",
@@ -216,16 +223,16 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 6621
+      "ms": 5833
     },
     {
       "file": "tests/invariants/pending.test.js",
       "pass": 0,
       "fail": 0,
-      "todo": 20,
+      "todo": 19,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 204
+      "ms": 157
     },
     {
       "file": "tests/unit/keys-vectors.test.js",
@@ -234,7 +241,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 1225
+      "ms": 350
     },
     {
       "file": "tests/unit/runtime-sqlite.test.js",
@@ -243,7 +250,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 231
+      "ms": 166
     }
   ],
   "rules": [
@@ -441,11 +448,11 @@
     ],
     [
       "I-25",
-      "Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti.",
+      "Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti; GitHub Actions fissate per hash del c…",
       "attiva",
       "F0",
-      "`inv-25-deps.test.js` ✅ 2 verdi",
-      "1/1 prese"
+      "`inv-25-deps.test.js` ✅ 3 verdi",
+      "2/2 prese"
     ],
     [
       "I-26",
@@ -537,11 +544,11 @@
     ],
     [
       "I-37",
-      "Il Tor di Windows è solo dell'app:",
-      "in attesa",
+      "Il Tor di Windows serve solo onion e non presta i circuiti dell'app:",
+      "attiva",
       "F4",
-      "—",
-      "—"
+      "`inv-37-tor-process.test.js` ✅ 2 verdi",
+      "4/4 prese"
     ],
     [
       "I-38",

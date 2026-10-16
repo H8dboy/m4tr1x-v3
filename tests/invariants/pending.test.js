@@ -27,7 +27,6 @@ const PENDING = [
   ['I-34', 'nessun trasferimento tra utenti; split della mancia', 'F7'],
   ['I-35', 'buono cieco non collegabile al bonifico', 'F7b'],
   ['I-36', 'solo il modulo transport apre connessioni; solo onion v3', 'F4'],
-  ["I-37", "Tor di Windows usabile solo dall'app", "F4"],
 ]
 
 for (const [id, what, phase] of PENDING) test(`${id} — ${what}`, { todo: `attiva in ${phase}` }, () => {})

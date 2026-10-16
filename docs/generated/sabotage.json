@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-16T05:57:26.328Z",
+  "date": "2026-10-16T07:13:53.325Z",
   "node": "22.23.3",
   "platform": "win32 10.0.26200",
   "partial": false,
@@ -19,6 +19,15 @@
       "name": "hash dei pacchetti non controllato",
       "file": "tools/release/verify-release.js",
       "test": "tests/invariants/inv-23-release-gate.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i25-action-tag",
+      "rule": "I-25",
+      "name": "action fissata per tag invece che per hash",
+      "file": ".github/workflows/ci.yml",
+      "test": "tests/invariants/inv-25-deps.test.js",
       "outcome": "presa",
       "detail": "fail 1"
     },
@@ -388,6 +397,42 @@
       "name": "nessun budget per ancora-peer",
       "file": "node/src/directory.js",
       "test": "tests/invariants/inv-39-anchor-limits.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i37-hash",
+      "rule": "I-37",
+      "name": "hash del binario tor non controllato",
+      "file": "app/transport/src/tor_process.rs",
+      "test": "tests/invariants/inv-37-tor-process.test.js",
+      "outcome": "presa",
+      "detail": "fail 2"
+    },
+    {
+      "id": "i37-onlyonion",
+      "rule": "I-37",
+      "name": "SOCKS senza OnionTrafficOnly (host in chiaro raggiungibili)",
+      "file": "app/transport/src/tor_process.rs",
+      "test": "tests/invariants/inv-37-tor-process.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i37-owner",
+      "rule": "I-37",
+      "name": "tor non legato all'app (sopravvive se l'app muore)",
+      "file": "app/transport/src/tor_process.rs",
+      "test": "tests/invariants/inv-37-tor-process.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i37-loopback",
+      "rule": "I-37",
+      "name": "file della porta di controllo accettato da qualsiasi interfaccia",
+      "file": "app/transport/src/tor_process.rs",
+      "test": "tests/invariants/inv-37-tor-process.test.js",
       "outcome": "presa",
       "detail": "fail 1"
     }

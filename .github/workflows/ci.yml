@@ -88,6 +88,10 @@ jobs:
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
         run: node --test tests/integration/two-nodes.test.js
+      - name: Trasporto dell'app con tor vero (I-37)
+        env:
+          M4TR1X_TOR_BIN: /usr/bin/tor
+        run: node --test --test-timeout=900000 tests/invariants/inv-37-tor-process.test.js
 
   release-gate:
     if: startsWith(github.ref, 'refs/tags/v')

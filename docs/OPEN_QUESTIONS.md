@@ -6,6 +6,10 @@
 
 ## Bloccanti
 
+### Q20 — La società che risponde (SRLS)
+Senza una società costituita non c'è un soggetto che risponde degli obblighi DSA (hub, segnalazioni, punto di contatto), della vendita di H8 e dello shop. La P.IVA che si pensava di usare è chiusa.
+> **Punto chiave secondo il fondatore (16/10/2026):** senza la SRLS non c'è chi risponde. Costituirla viene **prima** di accendere hub con contenuti di terzi (F6 in rete reale), della vendita di H8 (F7b) e dello shop (F7c). Forma, sede e costi: con il commercialista/avvocato, nello stesso giro del parere legale (Q2, Q12, Q18).
+
 ### Q1 — Mance ai creator e regola "H8 non scambiabile tra utenti"
 Una mancia è un passaggio di H8 da un utente a un altro: le due regole si scontrano.
 - **A (raccomandata):** mance permesse solo verso conti "creator" registrati; il creator può spendere gli H8 ricevuti solo nell'ecosistema (shop, distributori, boost), mai convertirli né passarli ad altri utenti.
