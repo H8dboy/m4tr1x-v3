@@ -155,6 +155,8 @@ module.exports = [
     find: 'pub mod api;\n', replace: 'pub mod api;\n#[allow(unused_imports)]\nuse std::net::TcpStream;\n', test: T('inv-36-transport-only') },
   { id: 'i36-trait', rule: 'I-36', name: 'il trasporto accetta un host in chiaro', file: 'app/transport/src/lib.rs',
     find: '        host: &OnionV3,\n', replace: '        host: &str,\n', test: T('inv-36-transport-only') },
+  { id: 'i37-nowait', rule: 'I-37', name: 'bootstrap non aspetta la rete Tor (la prova dell\'onion non dimostrerebbe più niente)', file: 'app/transport/src/tor_process.rs',
+    find: '            if p >= 100 {\n                break;\n            }\n', replace: '            break;\n', test: T('inv-37-tor-process'), timeoutMs: 900000 },
   { id: 'i37-loopback', rule: 'I-37', name: 'file della porta di controllo accettato da qualsiasi interfaccia', file: 'app/transport/src/tor_process.rs',
     find: '    if host != "127.0.0.1" {\n        return None; // qualsiasi altra interfaccia è un errore di configurazione\n    }\n', replace: '', test: T('inv-37-tor-process'), timeoutMs: 900000 },
 ]

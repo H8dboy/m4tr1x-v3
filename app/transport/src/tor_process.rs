@@ -270,9 +270,10 @@ async fn socks5_connect(socks_port: u16, user: &str, pass: &str, host: &str, por
     Ok(s)
 }
 
-impl Transport for TorProcessTransport {
-    async fn bootstrap(&self) -> Result<BootstrapInfo> {
-        let t0 = Instant::now();
+impl TorProcessTransport {
+    /// Avvia tor e lo mette in sicurezza (hash, porte, cookie, possesso) SENZA aspettare
+    /// la rete Tor. Le garanzie di I-37 valgono già da qui; `bootstrap` aspetta poi il 100%.
+    pub async fn avvia(&self) -> Result<()> {
         let mut guard = self.running.lock().await;
         if guard.is_none() {
             self.set_status(TransportStatus::Avvio { percento: 0 });
@@ -284,7 +285,16 @@ impl Transport for TorProcessTransport {
                 }
             }
         }
-        let r = guard.as_mut().expect("appena avviato");
+        Ok(())
+    }
+}
+
+impl Transport for TorProcessTransport {
+    async fn bootstrap(&self) -> Result<BootstrapInfo> {
+        let t0 = Instant::now();
+        self.avvia().await?;
+        let mut guard = self.running.lock().await;
+        let r = guard.as_mut().ok_or(TransportError::NonPronto)?;
         loop {
             let p = Self::bootstrap_progress(r).await?;
             self.set_status(if p >= 100 { TransportStatus::Pronto } else { TransportStatus::Avvio { percento: p } });

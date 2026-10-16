@@ -5,7 +5,7 @@
 //! (in CI: job "tor"). Senza, vengono saltate e lo dicono.
 
 use m4tr1x_transport::tor_process::sha256_file;
-use m4tr1x_transport::{Isolation, OnionV3, TorProcessConfig, TorProcessTransport, Transport};
+use m4tr1x_transport::{Isolation, OnionV3, TorProcessConfig, TorProcessTransport, Transport, TransportStatus};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -113,7 +113,9 @@ async fn tor_vero_solo_onion_solo_loopback_cookie_e_chiusura() {
     let Some(bin) = tor_bin() else { return };
     let dir = tmpdir("vero");
     let t = transport(&bin, &dir);
-    t.bootstrap().await.expect("bootstrap");
+    // Le garanzie di I-37 valgono appena tor è partito: non serve aspettare la rete
+    // Tor (in CI il bootstrap a volte si ferma a metà per minuti e falsava la prova).
+    t.avvia().await.expect("avvio di tor");
     let socks = t.socks_port().await.unwrap();
 
     // 1. senza credenziali: host in chiaro rifiutati PER REGOLA (dominio e IPv4).
@@ -204,7 +206,7 @@ async fn aiuto_fa_l_app() {
         data_dir: dir.into(),
         bootstrap_timeout: Duration::from_secs(1),
     });
-    let _ = t.bootstrap().await; // basta che tor sia partito, non serve il 100%
+    t.avvia().await.expect("avvio di tor"); // basta che tor sia partito, non serve la rete
     println!("PID {}", t.tor_pid().await.expect("tor avviato"));
     loop {
         tokio::time::sleep(Duration::from_secs(3600)).await;
@@ -263,7 +265,10 @@ async fn connect_onion_raggiunge_un_servizio_onion() {
     let onion = OnionV3::parse(&host).expect("tor ha scritto un onion v3 valido");
 
     let t = transport(&bin, &dir.join("app"));
+    // Questa è la prova che il trasporto funziona davvero: qui si aspetta il bootstrap
+    // COMPLETO della rete Tor (mai `avvia()`), e si controlla che sia arrivato al 100%.
     t.bootstrap().await.expect("bootstrap");
+    assert_eq!(t.status(), TransportStatus::Pronto, "bootstrap() è tornato prima del 100%");
     // il descrittore del servizio impiega un po' a essere pubblicato: si riprova
     let t1 = Instant::now();
     let ok = loop {
