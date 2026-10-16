@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M4TR1X</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Regole (I-31, I-01): nessuno script inline, nessun gestore on*=, nessuna
+       risorsa esterna. Il JavaScript parla solo con il lato Rust via invoke. -->
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <main class="guscio">
+    <header class="testata">
+      <h1>M4TR1X</h1>
+      <p class="sotto">v<span id="versione">—</span></p>
+    </header>
+    <section class="scheda" aria-live="polite">
+      <h2>Rete</h2>
+      <p>Tor: <strong id="trasporto">—</strong> <span id="percento"></span></p>
+    </section>
+  </main>
+</body>
+</html>

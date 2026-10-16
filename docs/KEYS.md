@@ -25,6 +25,8 @@
 | K13 | Admin del nodo | Token casuale 256 bit | Vault del nodo (`secrets.vault.json`) | Sì | Amministrare quel nodo |
 | K14 | ~~Pagamenti~~ | — | **Non serve** (bonifico manuale, ADR-0015) | — | — |
 | K15 | Firma cieca dei buoni H8 | RSA-PSS 3072 (RFC 9474) | Server dell'emittente | Sì | Emettere buoni falsi (limitato: i coni restano con K9 e la conservazione è verificata) |
+| K16 | Shop (firma catalogo + cifratura ordini) | secp256k1 Schnorr + NIP-44 (stessa libreria del social) | Vault del server dello shop | Sì | Leggere gli indirizzi degli ordini **non ancora cancellati**; pubblicare un catalogo falso |
+| K17 | Mappa creator | 256 bit casuali (HMAC-SHA256 per l'indice, AES-GCM per il conto) | Vault del server dell'emittente, fuori dal database | Sì | Insieme al database: tutti i collegamenti creator ↔ conto |
 
 ## Dettaglio
 
@@ -103,6 +105,17 @@
 - **Scopo:** firmare i buoni senza vederli, così il riscatto non è collegabile al bonifico (I-35).
 - **Dove vive:** server dell'emittente. Ruotata a ogni lotto di vendita; i buoni firmati con una chiave scaduta non si riscattano più dopo un periodo di grazia.
 - **Se rubata:** si possono creare buoni falsi. Danno limitato: ogni riscatto consuma H8 da un lotto coniato con K9, quindi i buoni falsi esauriscono il lotto e la differenza con i bonifici incassati si vede alla riconciliazione.
+
+### K16 — Shop
+- **Scopo:** firmare il catalogo e l'elenco dei distributori di ritiro; ricevere gli ordini cifrati (NIP-44) con l'indirizzo di spedizione. Gli ordini di ritiro al distributore non contengono dati personali (I-57).
+- **Dove vive:** vault del server dello shop (separato dall'emittente). Ruotabile: chiave pubblica nuova pubblicata nel catalogo firmato con la vecchia.
+- **Se rubata:** si leggono gli indirizzi degli ordini ancora conservati (al massimo 30 giorni dopo la consegna, I-47). Per questo la conservazione breve conta più della chiave.
+
+### K17 — Mappa creator
+- **Scopo:** indice `HMAC(K17, pubkey)` e cifratura del conto nella mappa privata creator ↔ conto (I-50).
+- **Dove vive:** vault del server dell'emittente con passphrase, mai nel database né nei backup.
+- **Rotazione:** chiave nuova → tutte le righe ricifrate in un passaggio → vecchia distrutta.
+- **Se rubata da sola:** niente (serve anche il database). **Insieme al database:** tutti i collegamenti creator ↔ conto. Chi controlla il server acceso la legge comunque in memoria.
 
 ## Cerimonia di avvio (una volta, prima del lancio)
 

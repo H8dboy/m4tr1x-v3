@@ -4,7 +4,7 @@
 
 ## Stato
 - Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3): **135 verdi, 0 falliti**, 21 regole attive, 0 divergenze doc↔codice (`npm run report`).
-- Sabotaggio completo: **48/48 prese** (16/10, con tor vero); prima 43/43 (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
+- Sabotaggio completo: **57/57 prese** (16/10, con tor vero) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
 ## Fatto il 16/10
@@ -21,10 +21,15 @@
 9. **Sabotaggio irrobustito:** timeout = "interrotta" (non più "presa"), `timeoutMs` per prova; test I-37 "solo onion" ora pretende il codice 2; prova "muore con l'app" senza esempio di cargo (non veniva ricompilato); test I-39 riprova irrobustito (16 bit + log). **48/48 prese** da campagna vera con tor.
 10. Prove locali con tor: `M4TR1X_TOR_BIN=<tor.exe verificato>`; il tor di F4a è nello scratchpad della sessione del 15/10 (non nel repo).
 
+## Fatto il 16/10, terza parte
+11. **Pezzi mancanti APPROVATI** (monitoraggio 6 prove/giorno, 2 ancore su 3; creator; shop 30 gg + **ritiro al distributore Elea senza indirizzo**, I-57; boost 10 posizioni, dimezza in 24 h, solo "scopri"). I-42…I-50, I-57, K16, K17 ufficiali (pending); fasi nuove F2b, F3b, F7c.
+12. CI rossa su e3974f1 per email nella bozza DSA (scanner lanciato PRIMA di git add: errore mio) → corretta in 7adcbf0, CI verde; I-37 verde anche su Linux con tor vero. **Regola: scanner sempre DOPO git add.**
+13. **Guscio Tauri `app/shell` + `app/ui`:** CSP stretta (oggetto, niente unsafe-*), freezePrototype, devtools spenti, app manifest con elenco comandi (solo `stato`), capability senza core/plugin; si avvia e mostra lo stato via invoke. **I-31 e I-36 attive (parte statica)**, 9 sabotaggi nuovi. Report: 147 verdi, 24 regole attive; sabotaggio **57/57**.
+
 ## Prossimo
 - OK del fondatore sulla bozza PEZZI_MANCANTI (tabella in fondo) → numeri I-42…I-50, K16, K17 entrano in SECURITY_INVARIANTS/KEYS.
 - Scrivere la procedura DSA (precondizione di F6).
-- **F4 continua:** guscio Tauri (I-31, CSP), identità dal seme, feed/post/profilo, I-01; `ArtiTransport` per Linux; `cargo deny` in CI.
+- **F4 continua:** identità dal seme nel lato Rust (portachiavi di sistema, prova dinamica di I-31), collegare `TorProcessTransport` al guscio (stato reale), feed/post/profilo verso un nodo di prova, I-01 dinamica (namespace su Linux), `ArtiTransport` per Linux, build del guscio e `cargo deny` in CI.
 
 ## Fuori dal repo, ancora aperto
 - Sito nderja.com: correggere "identità ML-DSA", "codice pubblico", download Kalendae rotto.

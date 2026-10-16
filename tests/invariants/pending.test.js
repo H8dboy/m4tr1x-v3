@@ -22,11 +22,19 @@ const PENDING = [
   ['I-22', 'niente rollback di versione o seq', 'F8'],
   ['I-24', 'build riproducibile dove possibile', 'F8'],
   ['I-27', 'processi esterni con timeout', 'F6'],
-  ['I-31', 'nessuna chiave privata nel JavaScript dell\'app; CSP stretta', 'F4'],
   ['I-32', 'buoni offline entro il tetto', 'F10'],
   ['I-34', 'nessun trasferimento tra utenti; split della mancia', 'F7'],
   ['I-35', 'buono cieco non collegabile al bonifico', 'F7b'],
-  ['I-36', 'solo il modulo transport apre connessioni; solo onion v3', 'F4'],
+  ['I-42', 'approvazioni dei topic solo da moderatori correnti', 'F6b'],
+  ['I-43', 'metriche del nodo senza IP, pubkey, onion, id', 'F2b'],
+  ['I-44', 'raggiungibilita firmata da 2 ancore su 3', 'F3b'],
+  ['I-45', 'registrazione creator con doppia firma', 'F7'],
+  ['I-46', 'mance senza pubkey creator ne id conto in pubblico', 'F7'],
+  ['I-47', 'indirizzo cifrato per K16 e cancellato dopo 30 giorni', 'F7c'],
+  ['I-48', 'boost etichettato, max 10 posizioni, solo scopri', 'F7'],
+  ['I-49', 'boost solo con riga firmata nel registro', 'F7'],
+  ['I-50', 'mappa creator minima e cifrata (K17)', 'F7'],
+  ['I-57', 'ritiro al distributore senza dati personali, codice monouso', 'F10'],
 ]
 
 for (const [id, what, phase] of PENDING) test(`${id} — ${what}`, { todo: `attiva in ${phase}` }, () => {})

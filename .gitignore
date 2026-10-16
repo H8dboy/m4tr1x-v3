@@ -47,3 +47,6 @@ spikes/*/src-tauri/gen/
 spikes/*/src-tauri/target/
 *.log
 spikes/*/icon-src.png
+
+# App: cartelle generate da Tauri
+app/shell/gen/

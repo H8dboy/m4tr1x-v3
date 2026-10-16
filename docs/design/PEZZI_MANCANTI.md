@@ -1,7 +1,9 @@
 # Pezzi mancanti — proposta di progetto (16/10/2026)
 
-> **Stato: BOZZA da approvare.** Nessun codice. Ogni pezzo diventa codice solo con l'OK del fondatore, dentro la fase indicata, con le invarianti scritte prima.
-> Numeri proposti (I-43…I-50, K16, K17; I-42 è già proposta per i topic in MIGRATION_PLAN) **non** sono ancora in SECURITY_INVARIANTS.md / KEYS.md: entrano lì all'approvazione.
+> **Stato: APPROVATO dal fondatore il 16/10/2026** (con l'aggiunta del ritiro al distributore Elea, §3b). Nessun codice: ogni pezzo diventa codice dentro la sua fase, con le invarianti scritte prima.
+> I numeri I-42…I-50, I-57, K16, K17 sono ora in SECURITY_INVARIANTS.md e KEYS.md (stato `pending` fino alla loro fase).
+>
+> **Parametri decisi:** monitoraggio 6 prove al giorno per nodo, riepilogo valido con 2 ancore su 3; shop: indirizzo cancellato 30 giorni dopo la consegna; boost: al massimo 10 posizioni, dimezzamento in 24 h, solo nelle viste "scopri".
 
 Quattro pezzi chiesti dal fondatore il 15/10: monitoraggio, registrazione dei creator, shop fisico, boost. Per ognuno: cosa fa, come, perché così, il compromesso, cosa si potrebbe sbagliare.
 
@@ -86,6 +88,25 @@ Quattro pezzi chiesti dal fondatore il 15/10: monitoraggio, registrazione dei cr
 
 **Fase:** nuova **F7c**, dopo le mance e dopo il parere legale.
 
+## 3b. Ritiro al distributore Elea (aggiunto dal fondatore il 16/10/2026)
+
+**Cosa.** Al posto della spedizione, l'ordine si ritira a un distributore Elea scelto dall'utente. **Nessun indirizzo, nessun nome, nessun telefono.**
+
+**Come.**
+1. Nell'ordine l'utente sceglie un distributore (elenco pubblico, firmato dallo shop) invece dell'indirizzo. L'ordine di ritiro **non ha campi di dati personali**.
+2. Lo shop genera un **codice di ritiro monouso** casuale (128 bit) e lo manda all'utente con un messaggio cifrato NIP-17. Lo shop e il distributore conservano **solo l'hash** del codice.
+3. Il pacco viene caricato nello scomparto del distributore insieme all'hash del codice. All'apertura l'utente mostra il codice (QR o tastierino): il distributore confronta l'hash **anche senza rete** e lo segna come usato. Un codice vale **una volta sola**.
+4. Scadenza del ritiro (proposta: 14 giorni): poi il pacco torna allo shop e il codice viene invalidato.
+
+**Perché.** È la scelta più riservata: lo shop sa solo *quale* distributore, non *chi* ritira né dove abita.
+
+**Compromesso.** Il distributore scelto dice comunque in che zona si trova l'utente; un distributore con telecamera vedrebbe chi ritira (le macchine Elea **non** devono avere telecamere rivolte all'utente: da scrivere nelle specifiche di H8-Vending). Chi ruba il codice (es. da uno screenshot) ritira il pacco al posto suo.
+
+**Invariante.**
+- **I-57** — Un ordine di ritiro non contiene dati personali; il codice di ritiro è conservato solo come hash, vale una volta e scade. Test: ordine di ritiro con campi personali → rifiutato; secondo uso dello stesso codice → rifiutato, anche offline; codice scaduto → rifiutato; database di shop e distributore senza codici in chiaro.
+
+**Fase:** **F10** (distributori), dopo F7c.
+
 ---
 
 ## 4. Boost
@@ -115,7 +136,7 @@ Contraddizione da guardare: l'id dell'evento nel registro **non** è un id conto
 
 | Pezzo | Cosa decidere | Raccomandazione |
 |---|---|---|
-| Monitoraggio | prove di raggiungibilità dalle ancore come base del fondo nodi | sì |
-| Registrazione creator | l'emittente conosce creator ↔ conto (dichiarato) | sì, con revoca e mappa cifrata |
-| Shop fisico | servizio separato di H8-Group, indirizzi cancellati dopo 30 gg | sì, acceso solo dopo parere legale |
-| Boost | ordinamento solo nell'app, etichetta "Promosso", tetto di posizioni, disattivabile | sì; N e decadimento da fissare (proposta: max 10 posizioni, dimezza ogni 24 h) |
+| Monitoraggio | prove di raggiungibilità dalle ancore come base del fondo nodi | **APPROVATO**: 6 prove al giorno, 2 ancore su 3 |
+| Registrazione creator | l'emittente conosce creator ↔ conto (dichiarato) | **APPROVATO**, con revoca e mappa minima cifrata (K17) |
+| Shop fisico | servizio separato di H8-Group, indirizzi cancellati dopo 30 gg; **ritiro al distributore Elea senza indirizzo** | **APPROVATO**, acceso solo dopo parere legale e SRLS (Q20) |
+| Boost | ordinamento solo nell'app, etichetta "Promosso", tetto di posizioni, disattivabile | **APPROVATO**: max 10 posizioni, dimezza in 24 h, solo in "scopri" |

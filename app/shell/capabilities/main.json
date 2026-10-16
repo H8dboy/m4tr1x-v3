@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Solo i comandi dell'app elencati in build.rs: nessun plugin, nessuna API core di file, shell, rete o finestre (I-31)",
+  "windows": ["main"],
+  "permissions": ["allow-stato"]
+}

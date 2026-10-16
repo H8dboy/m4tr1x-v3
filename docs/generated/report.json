@@ -1,11 +1,11 @@
 {
-  "date": "2026-10-16T07:14:12.608Z",
+  "date": "2026-10-16T07:43:28.056Z",
   "env": "Node 22.23.3 · win32 10.0.26200 · 2026-10-16",
   "pinnedOk": true,
   "totals": {
-    "pass": 138,
+    "pass": 147,
     "fail": 0,
-    "todo": 19,
+    "todo": 27,
     "skipped": 0
   },
   "tests": [
@@ -16,16 +16,16 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 2352
+      "ms": 2198
     },
     {
       "file": "tests/integration/two-nodes.test.js",
-      "pass": 1,
+      "pass": 2,
       "fail": 0,
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 120106
+      "ms": 29898
     },
     {
       "file": "tests/invariants/inv-02-bind.test.js",
@@ -34,7 +34,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 6917
+      "ms": 6995
     },
     {
       "file": "tests/invariants/inv-03-host.test.js",
@@ -43,7 +43,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 879
+      "ms": 875
     },
     {
       "file": "tests/invariants/inv-04-cors.test.js",
@@ -52,7 +52,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 856
+      "ms": 859
     },
     {
       "file": "tests/invariants/inv-05-onion-only.test.js",
@@ -61,7 +61,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 3346
+      "ms": 3368
     },
     {
       "file": "tests/invariants/inv-06-keys-at-rest.test.js",
@@ -70,7 +70,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 4770
+      "ms": 6682
     },
     {
       "file": "tests/invariants/inv-06b-node-secrets.test.js",
@@ -79,7 +79,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 2402
+      "ms": 3101
     },
     {
       "file": "tests/invariants/inv-07-role-separation.test.js",
@@ -88,7 +88,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 365
+      "ms": 476
     },
     {
       "file": "tests/invariants/inv-08-domain-sep.test.js",
@@ -97,7 +97,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 380
+      "ms": 494
     },
     {
       "file": "tests/invariants/inv-15-no-h8-in-events.test.js",
@@ -106,7 +106,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 337
+      "ms": 424
     },
     {
       "file": "tests/invariants/inv-17-blob-hash.test.js",
@@ -115,7 +115,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 956
+      "ms": 1232
     },
     {
       "file": "tests/invariants/inv-18-no-ip-logs.test.js",
@@ -124,7 +124,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 1152
+      "ms": 1400
     },
     {
       "file": "tests/invariants/inv-23-release-gate.test.js",
@@ -133,7 +133,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 598
+      "ms": 699
     },
     {
       "file": "tests/invariants/inv-25-deps.test.js",
@@ -142,7 +142,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 230
+      "ms": 346
     },
     {
       "file": "tests/invariants/inv-26-fuzz.test.js",
@@ -151,7 +151,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 6879
+      "ms": 7058
     },
     {
       "file": "tests/invariants/inv-28-secrets.test.js",
@@ -160,7 +160,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 277
+      "ms": 341
     },
     {
       "file": "tests/invariants/inv-29-descriptor.test.js",
@@ -169,7 +169,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 360
+      "ms": 500
     },
     {
       "file": "tests/invariants/inv-30-33-admin-onion.test.js",
@@ -178,7 +178,25 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 906
+      "ms": 1053
+    },
+    {
+      "file": "tests/invariants/inv-31-no-keys-in-js.test.js",
+      "pass": 4,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 204
+    },
+    {
+      "file": "tests/invariants/inv-36-transport-only.test.js",
+      "pass": 4,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "ms": 208
     },
     {
       "file": "tests/invariants/inv-37-tor-process.test.js",
@@ -187,7 +205,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 55333
+      "ms": 27245
     },
     {
       "file": "tests/invariants/inv-38-expiry.test.js",
@@ -196,7 +214,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 9469
+      "ms": 14167
     },
     {
       "file": "tests/invariants/inv-39-anchor-limits.test.js",
@@ -205,7 +223,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 8483
+      "ms": 8860
     },
     {
       "file": "tests/invariants/inv-40-signature-families.test.js",
@@ -214,7 +232,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 409
+      "ms": 382
     },
     {
       "file": "tests/invariants/inv-41-relay-space.test.js",
@@ -223,16 +241,16 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 5833
+      "ms": 6212
     },
     {
       "file": "tests/invariants/pending.test.js",
       "pass": 0,
       "fail": 0,
-      "todo": 19,
+      "todo": 27,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 157
+      "ms": 183
     },
     {
       "file": "tests/unit/keys-vectors.test.js",
@@ -241,7 +259,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 350
+      "ms": 377
     },
     {
       "file": "tests/unit/runtime-sqlite.test.js",
@@ -250,7 +268,7 @@
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
-      "ms": 166
+      "ms": 182
     }
   ],
   "rules": [
@@ -497,10 +515,10 @@
     [
       "I-31",
       "Nessuna chiave privata utente raggiunge il codice JavaScript dell'app;",
-      "in attesa",
+      "attiva",
       "F4",
-      "—",
-      "—"
+      "`inv-31-no-keys-in-js.test.js` ✅ 4 verdi",
+      "5/5 prese"
     ],
     [
       "I-32",
@@ -537,10 +555,10 @@
     [
       "I-36",
       "Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016)",
-      "in attesa",
+      "attiva",
       "F4",
-      "—",
-      "—"
+      "`inv-36-transport-only.test.js` ✅ 4 verdi",
+      "4/4 prese"
     ],
     [
       "I-37",
@@ -581,6 +599,86 @@
       "F2",
       "`inv-41-relay-space.test.js` ✅ 4 verdi",
       "3/3 prese"
+    ],
+    [
+      "I-42",
+      "Un'approvazione di topic conta solo se firmata da un moderatore della versione corrente della comunità",
+      "in attesa",
+      "F6b",
+      "—",
+      "—"
+    ],
+    [
+      "I-43",
+      "Le metriche del nodo non contengono IP, pubkey, onion o id di contenuti",
+      "in attesa",
+      "F2b",
+      "—",
+      "—"
+    ],
+    [
+      "I-44",
+      "Il riepilogo di raggiungibilità che paga i nodi è firmato da almeno 2 ancore su 3",
+      "in attesa",
+      "F3b",
+      "—",
+      "—"
+    ],
+    [
+      "I-45",
+      "La registrazione di un creator richiede entrambe le firme",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-46",
+      "Né la pubkey del creator né l'id del conto compaiono negli eventi Nostr o nelle righe pubbliche delle mance.",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-47",
+      "L'indirizzo di spedizione esce dal dispositivo solo cifrato per K16",
+      "in attesa",
+      "F7c",
+      "—",
+      "—"
+    ],
+    [
+      "I-48",
+      "Un post promosso è sempre etichettato \"Promosso\", sale al massimo di 10 posizioni, il punteggio dimezza in 24 h e agisce solo nelle viste…",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-49",
+      "Un boost conta solo se la riga è nel registro firmato (K10) e non è scaduta.",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-50",
+      "La mappa creator contiene solo HMAC(K17, pubkey) e il conto cifrato;",
+      "in attesa",
+      "F7",
+      "—",
+      "—"
+    ],
+    [
+      "I-57",
+      "Un ordine di ritiro al distributore non contiene dati personali;",
+      "in attesa",
+      "F10",
+      "—",
+      "—"
     ]
   ],
   "divergences": [],

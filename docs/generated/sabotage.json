@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-16T07:13:53.325Z",
+  "date": "2026-10-16T07:43:16.795Z",
   "node": "22.23.3",
   "platform": "win32 10.0.26200",
   "partial": false,
@@ -424,6 +424,87 @@
       "name": "tor non legato all'app (sopravvive se l'app muore)",
       "file": "app/transport/src/tor_process.rs",
       "test": "tests/invariants/inv-37-tor-process.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i31-csp",
+      "rule": "I-31",
+      "name": "CSP con 'unsafe-inline'",
+      "file": "app/shell/tauri.conf.json",
+      "test": "tests/invariants/inv-31-no-keys-in-js.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i31-core",
+      "rule": "I-31",
+      "name": "permessi core di Tauri al JavaScript",
+      "file": "app/shell/capabilities/main.json",
+      "test": "tests/invariants/inv-31-no-keys-in-js.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i31-manifest",
+      "rule": "I-31",
+      "name": "comando dichiarato senza funzione (elenco e codice divergono)",
+      "file": "app/shell/build.rs",
+      "test": "tests/invariants/inv-31-no-keys-in-js.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i31-field",
+      "rule": "I-31",
+      "name": "campo segreto nei tipi verso il JavaScript",
+      "file": "app/shell/src/api.rs",
+      "test": "tests/invariants/inv-31-no-keys-in-js.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i31-innerhtml",
+      "rule": "I-31",
+      "name": "innerHTML con dati nell'interfaccia",
+      "file": "app/ui/main.js",
+      "test": "tests/invariants/inv-31-no-keys-in-js.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i36-fetch",
+      "rule": "I-36",
+      "name": "richiesta di rete dall'interfaccia",
+      "file": "app/ui/main.js",
+      "test": "tests/invariants/inv-36-transport-only.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i36-dep",
+      "rule": "I-36",
+      "name": "libreria HTTP nel guscio",
+      "file": "app/shell/Cargo.toml",
+      "test": "tests/invariants/inv-36-transport-only.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i36-socket",
+      "rule": "I-36",
+      "name": "socket nel codice del guscio",
+      "file": "app/shell/src/lib.rs",
+      "test": "tests/invariants/inv-36-transport-only.test.js",
+      "outcome": "presa",
+      "detail": "fail 1"
+    },
+    {
+      "id": "i36-trait",
+      "rule": "I-36",
+      "name": "il trasporto accetta un host in chiaro",
+      "file": "app/transport/src/lib.rs",
+      "test": "tests/invariants/inv-36-transport-only.test.js",
       "outcome": "presa",
       "detail": "fail 1"
     },

@@ -1,0 +1,117 @@
+// @ts-check
+'use strict'
+/**
+ * I-31 — Nessuna chiave privata utente raggiunge il codice JavaScript dell'app;
+ * CSP senza `unsafe-inline`.
+ *
+ * Parte statica (attiva da F4, guscio Tauri):
+ *  (1) CSP stretta in tauri.conf.json, prototipi congelati, devtools spenti, niente URL remoti;
+ *  (2) il JavaScript può chiamare SOLO i comandi elencati in build.rs (app manifest), e
+ *      i permessi delle capability sono solo quelli: nessun plugin, nessuna API core;
+ *  (3) i comandi restituiscono solo tipi di `api.rs` (o tipi semplici), e in `api.rs`
+ *      non c'è nessun campo che sembri una chiave o un segreto;
+ *  (4) interfaccia senza script inline, gestori on*=, javascript:, eval, innerHTML.
+ * Parte dinamica (con l'identità, F4): ogni comando chiamato con un seme di prova
+ * non restituisce mai byte del seme o delle chiavi — test aggiunto con i comandi di identità.
+ */
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('fs')
+const path = require('path')
+
+const ROOT = path.resolve(__dirname, '..', '..')
+const SHELL = path.join(ROOT, 'app', 'shell')
+const UI = path.join(ROOT, 'app', 'ui')
+const read = (/** @type {string} */ p) => fs.readFileSync(p, 'utf8')
+const walk = (/** @type {string} */ d) => fs.readdirSync(d, { withFileTypes: true })
+  .flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)])
+
+/** Comandi dichiarati in build.rs */
+function manifestCommands() {
+  const m = /const COMMANDS: &\[&str\] = &\[([^\]]*)\]/.exec(read(path.join(SHELL, 'build.rs')))
+  assert.ok(m, 'COMMANDS non trovato in build.rs')
+  return [...m[1].matchAll(/"([a-z_]+)"/g)].map(x => x[1])
+}
+
+/** Funzioni #[tauri::command] nel sorgente del guscio, con il tipo restituito */
+function commandFns() {
+  /** @type {{ name: string, ret: string, file: string }[]} */ const out = []
+  for (const f of walk(path.join(SHELL, 'src')).filter(f => f.endsWith('.rs'))) {
+    const src = read(f)
+    for (const m of src.matchAll(/#\[tauri::command[^\]]*\]\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\([^)]*\)\s*(?:->\s*([^{]+))?\{/g)) {
+      out.push({ name: m[1], ret: (m[2] || '()').trim(), file: path.relative(ROOT, f) })
+    }
+  }
+  return out
+}
+
+test('CSP stretta, prototipi congelati, niente devtools né URL remoti', () => {
+  const conf = JSON.parse(read(path.join(SHELL, 'tauri.conf.json')))
+  const sec = conf.app.security
+  const csp = sec.csp
+  assert.equal(typeof csp, 'object', 'CSP come oggetto (direttiva per direttiva)')
+  const all = Object.values(csp).join(' ')
+  for (const bad of ["'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'", 'http:', 'https:', 'ws:', 'wss:', 'data:', '*'])
+    assert.ok(!all.split(/\s+/).includes(bad), `CSP contiene ${bad}`)
+  assert.equal(csp['default-src'], "'self'")
+  assert.equal(csp['script-src'], "'self'")
+  assert.equal(csp['object-src'], "'none'")
+  assert.equal(csp['base-uri'], "'none'")
+  assert.deepEqual(csp['connect-src'].split(/\s+/).sort(), ['http://ipc.localhost', 'ipc:'])
+  assert.equal(sec.freezePrototype, true)
+  assert.ok(!sec.dangerousDisableAssetCspModification, 'modifica della CSP degli asset disattivata')
+  assert.ok(!sec.dangerousRemoteDomainIpcAccess, 'nessun dominio remoto con accesso IPC')
+  for (const w of conf.app.windows) {
+    assert.equal(w.devtools, false, `devtools accesi sulla finestra ${w.label}`)
+    assert.ok(!w.url || !/^[a-z]+:/i.test(w.url), `finestra ${w.label} carica un URL remoto`)
+  }
+})
+
+test('il JavaScript può chiamare solo i comandi elencati, e i permessi sono solo quelli', () => {
+  const cmds = manifestCommands()
+  const fns = commandFns().map(c => c.name).sort()
+  assert.deepEqual([...cmds].sort(), fns, 'build.rs e #[tauri::command] non coincidono')
+  const lib = read(path.join(SHELL, 'src', 'lib.rs'))
+  const h = /generate_handler!\[([^\]]*)\]/.exec(lib)
+  assert.ok(h, 'generate_handler! non trovato')
+  assert.deepEqual(h[1].split(',').map(s => s.trim()).filter(Boolean).sort(), fns, 'generate_handler! espone altro')
+  const allowed = new Set(cmds.map(c => `allow-${c.replace(/_/g, '-')}`))
+  for (const f of walk(path.join(SHELL, 'capabilities')).filter(f => f.endsWith('.json'))) {
+    const cap = JSON.parse(read(f))
+    assert.ok(!cap.remote, `${path.basename(f)}: capability con accesso remoto`)
+    for (const p of cap.permissions) {
+      const id = typeof p === 'string' ? p : p.identifier
+      assert.ok(allowed.has(id), `${path.basename(f)}: permesso non ammesso "${id}" (plugin o API core)`)
+    }
+  }
+})
+
+test('i comandi restituiscono solo tipi di api.rs, senza campi che sembrino chiavi', () => {
+  const api = read(path.join(SHELL, 'src', 'api.rs'))
+  const apiTypes = [...api.matchAll(/pub\s+(?:struct|enum)\s+(\w+)/g)].map(m => m[1])
+  const SIMPLE = /^(?:\(\)|bool|u8|u16|u32|u64|i32|i64|String)$/
+  for (const c of commandFns()) {
+    const inner = c.ret.replace(/^Result<\s*/, '').replace(/\s*,\s*String\s*>$/, '').replace(/^Vec<(.*)>$/, '$1').trim()
+    assert.ok(SIMPLE.test(inner) || apiTypes.includes(inner), `${c.file}: il comando ${c.name} restituisce ${c.ret}, non un tipo di api.rs`)
+  }
+  const fields = [...api.matchAll(/^\s*pub\s+(\w+)\s*:/gm)].map(m => m[1])
+  for (const f of fields)
+    assert.ok(!/seed|seme|secret|segret|priv|mnemonic|nsec|key|chiav|token|passphrase|cookie/i.test(f), `campo sospetto in api.rs: ${f}`)
+})
+
+test('interfaccia senza script inline, gestori on*=, eval o innerHTML', () => {
+  for (const f of walk(UI)) {
+    const src = read(f), rel = path.relative(ROOT, f)
+    if (f.endsWith('.html')) {
+      assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/i.test(src), `${rel}: script inline`)
+      assert.ok(!/\son[a-z]+\s*=/i.test(src), `${rel}: gestore on*= nell'HTML`)
+      assert.ok(!/javascript:/i.test(src), `${rel}: URL javascript:`)
+      assert.ok(!/\sstyle\s*=/i.test(src), `${rel}: stile inline (bloccato dalla CSP)`)
+    }
+    if (f.endsWith('.js')) {
+      for (const [re, what] of [[/\beval\s*\(/, 'eval'], [/new\s+Function\s*\(/, 'new Function'], [/\.innerHTML\s*=/, 'innerHTML'],
+        [/\.outerHTML\s*=/, 'outerHTML'], [/insertAdjacentHTML/, 'insertAdjacentHTML'], [/document\.write/, 'document.write']])
+        assert.ok(!(/** @type {RegExp} */ (re)).test(src), `${rel}: ${what}`)
+    }
+  }
+})

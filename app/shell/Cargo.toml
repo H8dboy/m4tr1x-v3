@@ -1,0 +1,22 @@
+[package]
+name = "m4tr1x-shell"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Guscio desktop di M4TR1X (Tauri 2): interfaccia + lato Rust con chiavi e firma (I-31)"
+
+[lib]
+name = "m4tr1x_shell_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Versioni esatte (I-25). Nessuna libreria di rete qui: la rete passa SOLO da
+# m4tr1x-transport (I-36), controllato da tests/invariants/inv-36-transport-only.test.js.
+[build-dependencies]
+tauri-build = { version = "=2.7.3", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.4", features = [] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+m4tr1x-transport = { path = "../transport" }
