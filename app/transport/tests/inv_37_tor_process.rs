@@ -28,7 +28,47 @@ fn tmpdir(nome: &str) -> PathBuf {
     d
 }
 
+/// Cache del consenso di Tor tra i test (stessa cartella e stesse regole di
+/// tests/helpers/node.js): solo i file `cached-*`, firmati dalle autorità e verificati
+/// da tor al caricamento; mai chiavi né `state`. M4TR1X_TOR_CACHE=0 la spegne.
+const CACHE_FILES: [&str; 5] = ["cached-certs", "cached-microdesc-consensus", "cached-microdescs", "cached-microdescs.new", "cached-consensus"];
+
+fn cache_dir() -> Option<PathBuf> {
+    (std::env::var("M4TR1X_TOR_CACHE").as_deref() != Ok("0")).then(|| std::env::temp_dir().join("m4tr1x-tor-cache"))
+}
+
+/// Copia la cache nella DataDirectory di tor. true se c'era qualcosa.
+fn cache_semina(data: &Path) -> bool {
+    let Some(c) = cache_dir() else { return false };
+    std::fs::create_dir_all(data).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(data, std::fs::Permissions::from_mode(0o700));
+    }
+    CACHE_FILES.iter().filter(|f| std::fs::copy(c.join(f), data.join(f)).is_ok()).count() > 0
+}
+
+/// Salva i file freschi nella cache (copia + rinomina: scrittura atomica).
+fn cache_salva(data: &Path) {
+    let Some(c) = cache_dir() else { return };
+    let _ = std::fs::create_dir_all(&c);
+    for f in CACHE_FILES {
+        let tmp = c.join(format!("{f}.{}.tmp", std::process::id()));
+        if std::fs::copy(data.join(f), &tmp).is_ok() && std::fs::rename(&tmp, c.join(f)).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+    }
+}
+
+/// DataDirectory usata da TorProcessTransport: <data_dir>/tor/data.
+fn data_tor(dir: &Path) -> PathBuf {
+    dir.join("tor").join("data")
+}
+
 fn transport(bin: &Path, dir: &Path) -> TorProcessTransport {
+    let calda = cache_semina(&data_tor(dir));
+    eprintln!("cache di tor: {}", if calda { "calda" } else { "fredda" });
     TorProcessTransport::new(TorProcessConfig {
         tor_bin: bin.to_path_buf(),
         tor_sha256: sha256_file(bin).unwrap(),
@@ -150,6 +190,7 @@ async fn tor_vero_solo_onion_solo_loopback_cookie_e_chiusura() {
     // 4. shutdown: il processo tor sparisce
     let pid = t.tor_pid().await.unwrap();
     t.shutdown().await;
+    cache_salva(&data_tor(&dir));
     assert!(aspetta_morte(pid, Duration::from_secs(15)).await, "tor ancora vivo dopo shutdown");
 }
 
@@ -241,6 +282,7 @@ async fn connect_onion_raggiunge_un_servizio_onion() {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&hs, std::fs::Permissions::from_mode(0o700)).unwrap();
     }
+    cache_semina(&dir.join("hs-data"));
     let mut servizio = tokio::process::Command::new(&bin)
         .args(["-f", &dir.join("nessun-torrc").to_string_lossy()])
         .arg("--ignore-missing-torrc")
@@ -286,5 +328,6 @@ async fn connect_onion_raggiunge_un_servizio_onion() {
     assert!(ok, "l'eco non torna uguale");
     eprintln!("onion raggiunto in {} s", t1.elapsed().as_secs());
     t.shutdown().await;
+    cache_salva(&data_tor(&dir.join("app")));
     let _ = servizio.kill().await;
 }

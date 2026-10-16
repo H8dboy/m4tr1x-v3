@@ -15,7 +15,7 @@
 | K1r | Revoca | secp256k1 | **Solo dal seme**, mai salvata | No | Revocare l'identità (solo con il seme) |
 | K2 | Wallet | **ML-DSA-65** | Portachiavi del dispositivo | Sì | Spendere il saldo |
 | K5 | Nodo | secp256k1 Schnorr | Vault del nodo (`secrets.vault.json`, scrypt + AES-GCM) | Sì | Impersonare il nodo nella directory |
-| K6 | Servizio onion | Ed25519 (gestita solo da Tor) | Cartella di Tor del nodo | Sì | Impersonare l'indirizzo onion |
+| K6 | Servizio onion | Ed25519 (usata solo da Tor; per il nodo è un blob opaco) | Vault del nodo (`secrets.vault.json`), passata a Tor con ADD_ONION | Sì | Impersonare l'indirizzo onion |
 | K7 | Ancora | secp256k1 Schnorr | Disco dell'ancora | Sì | Firmare istantanee della directory a nome dell'ancora |
 | K8 | Hub | secp256k1 Schnorr | Disco dell'hub | Sì | Firmare manifest video falsi |
 | K9 | **Radice emittente H8** | ML-DSA-65 | **Offline**, backup diviso | No | Coniare H8, certificare emittenti |
@@ -60,6 +60,10 @@
 - **Dove vivono:** Gestione credenziali di Windows (`keyring`, voci `identity-v1`, `dm-v1`, `wallet-v1` del servizio `org.m4tr1x.app`), 32 byte ciascuna. Il seme e le parole **non si salvano mai**; K1r si ricava dal seme quando serve.
 - **Come nascono:** dalla finestra del seme (I-58), dopo la verifica di 3 parole a caso; oppure dal recupero con le 24 parole. Stesse chiavi di `packages/keys` (vettori congelati verificati anche in Rust).
 - **Compromesso:** Gestione credenziali è protetta dall'accesso dell'utente (DPAPI): basta contro una copia del disco o un altro utente del PC, **non** contro un programma che gira come lo stesso utente. Lo stesso vale per le parole mentre la finestra del seme è aperta: il blocco degli screenshot non ferma i programmi di accessibilità.
+
+### K6 — chiave dell'onion del nodo (dal 16/10/2026)
+- **Dove vive:** nel vault del nodo (`secrets.vault.json`, stessa passphrase di K5 e K13), non più in chiaro nella cartella di tor (`hs/`). Al primo avvio la genera tor (ADD_ONION NEW) e il nodo la sigilla subito; agli avvii successivi il nodo la passa a tor con ADD_ONION (Flags=DiscardPK), come blob opaco.
+- **Compromesso:** mentre il nodo gira, la chiave è nella memoria del nodo e di tor; su disco solo cifrata. Chi ha la cartella dati **e** la passphrase può impersonare l'onion.
 
 ### K5 / K6 — Nodo e onion
 - **Scopo:** K5 firma il descrittore nella directory; K6 è la chiave di Tor dell'indirizzo onion.

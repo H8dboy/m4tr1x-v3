@@ -68,8 +68,16 @@ test('statico: Ed25519, RSA e minisign non compaiono nel codice fuori dai recint
   const allowRsa = (/** @type {string} */ f) => f.includes(path.join('packages', 'vouchers'))
   // lo scanner dei segreti CERCA chiavi minisign trapelate: le nomina, non le usa
   const detectors = new Set([path.join(root, 'tools', 'security', 'scan-secrets.js')])
+  // eccezione stretta (16/10/2026): tor.js LEGGE i byte del certificato del descrittore che tor
+  // stesso produce (etichetta PEM "ED25519 CERT"), per sapere quale descrittore è l'attuale.
+  // Nessuna operazione Ed25519: si tolgono solo le due etichette, e il file non deve importare
+  // nessuna libreria Ed25519.
+  const torJs = path.join(root, 'node', 'src', 'tor.js')
+  // e passa a tor la chiave dell'onion come blob opaco con l'etichetta di tipo "ED25519-V3" (ADD_ONION)
+  const etichette = (/** @type {string} */ f, /** @type {string} */ s) => f === torJs ? s.replace(/-----(BEGIN|END) ED25519 CERT-----/g, '').replace(/\bED25519-V3\b/g, '') : s
+  if (fs.existsSync(torJs)) assert.ok(!/require\([^)]*(ed25519|curves|tweetnacl|sodium)/i.test(fs.readFileSync(torJs, 'utf8')), 'tor.js importa una libreria Ed25519')
   for (const f of files.filter(x => !detectors.has(x))) {
-    const src = fs.readFileSync(f, 'utf8').replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '')
+    const src = etichette(f, fs.readFileSync(f, 'utf8').replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, ''))
     assert.ok(!/ed25519|minisign/i.test(src), `Ed25519/minisign nel codice: ${path.relative(root, f)}`)
     if (!allowRsa(f)) assert.ok(!/['"`]rsa['"`]|rsa-pss|RSA_PKCS|createSign\(/i.test(src), `RSA fuori dal modulo buoni: ${path.relative(root, f)}`)
   }

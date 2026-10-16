@@ -165,8 +165,21 @@ function main() {
     d.audit ? `Vulnerabilità (npm audit): critiche **${d.audit.critical}**, alte **${d.audit.high}**, medie ${d.audit.moderate}, basse ${d.audit.low}.` : 'Vulnerabilità: `npm audit` non eseguito (rete assente?) — **non verificato**.',
   ].join('\n')
 
+  // misure a freddo della rete Tor (tools/tor/misura.js): non sono test, servono a vedere se peggiora
+  const torFile = path.join(ROOT, 'docs', 'generated', 'tor-tempi.json')
+  const misure = fs.existsSync(torFile) ? JSON.parse(fs.readFileSync(torFile, 'utf8')).misure || [] : []
+  const torSec = [
+    `_Generato da \`npm run report\` dallo storico di \`npm run misura:tor\` (misura a freddo: nodo nuovo al primo avvio). Non è un test: non blocca niente._`,
+    '',
+    misure.length ? table(['Data', 'Ambiente', 'Riusciti', 'Riserva 5 min', 'tor-a', 'pubblicazione', 'rete', 'evento+file'],
+      misure.slice(-10).map((/** @type {any} */ m) => [m.data.slice(0, 16).replace('T', ' '), m.ambiente, `${m.riusciti}/${m.giri}`, `${m.riserve}/${m.giri}`,
+        ...['tor-a', 'pubblicazione', 'rete'].map(k => m.mediane[k] == null ? '—' : `${m.mediane[k]} s`),
+        m.mediane.evento == null ? '—' : `${(m.mediane.evento + (m.mediane.file || 0)).toFixed(1)} s`])) : 'Nessuna misura ancora: `M4TR1X_TOR_BIN=… npm run misura:tor`.',
+  ].join('\n')
+
   let md = fs.readFileSync(DOC, 'utf8')
-  for (const [name, body] of [['REGOLE', regole], ['TEST', testSec], ['DIPENDENZE', depSec]]) {
+  if (!md.includes('<!-- AUTO:TOR:INIZIO -->')) md = md.replace('### 11.3 Prove che mancano', '### 11.2b Misure a freddo della rete Tor (storico)\n\n<!-- AUTO:TOR:INIZIO -->\n<!-- AUTO:TOR:FINE -->\n\n### 11.3 Prove che mancano')
+  for (const [name, body] of [['REGOLE', regole], ['TEST', testSec], ['DIPENDENZE', depSec], ['TOR', torSec]]) {
     const re = new RegExp(`(<!-- AUTO:${name}:INIZIO -->)[\\s\\S]*?(<!-- AUTO:${name}:FINE -->)`)
     if (!re.test(md)) throw new Error(`marcatori AUTO:${name} assenti in STATO_M4TR1X.md`)
     md = md.replace(re, `$1\n${body}\n$2`)

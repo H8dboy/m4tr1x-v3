@@ -84,14 +84,32 @@ jobs:
       - name: Tor dai pacchetti Ubuntu
         run: sudo apt-get update -qq && sudo apt-get install -y -qq tor && tor --version | head -1
       - run: npm ci --ignore-scripts
+      # Riscaldamento: tor senza onion fino al 100%, consenso salvato nella cache del job
+      # (solo file pubblici firmati, mai chiavi; cache dentro questo job, mai tra job).
+      # Così un rosso nei passi sotto vuol dire "il nostro codice è rotto", non "rete lenta".
+      - name: Riscaldamento della cache di tor
+        env:
+          M4TR1X_TOR_BIN: /usr/bin/tor
+        run: node tools/tor/riscalda.js
       - name: Due nodi via Tor
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
         run: node --test tests/integration/two-nodes.test.js
+      - name: Porta di controllo, pubblicazione, riconnessione del tor del nodo (I-59)
+        env:
+          M4TR1X_TOR_BIN: /usr/bin/tor
+        run: node --test --test-timeout=1800000 tests/invariants/inv-59-node-tor-control.test.js
       - name: Trasporto dell'app con tor vero (I-37)
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
         run: node --test --test-timeout=900000 tests/invariants/inv-37-tor-process.test.js
+      # Misura a freddo (nodo nuovo al primo avvio): NON bloccante, finisce nel riepilogo del job.
+      - name: Misura a freddo della rete Tor (non bloccante)
+        if: always()
+        continue-on-error: true
+        env:
+          M4TR1X_TOR_BIN: /usr/bin/tor
+        run: node tools/tor/misura.js 1
 
   release-gate:
     if: startsWith(github.ref, 'refs/tags/v')

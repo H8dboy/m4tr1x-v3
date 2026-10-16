@@ -13,7 +13,7 @@ const { openDb } = require('./db')
 const { createRelay } = require('./relay')
 const { createHttp } = require('./http')
 const { startPeers } = require('./peers')
-const { startTor } = require('./tor')
+const { startTor, attendiAnnuncio } = require('./tor')
 const { assertPinnedNode } = require('./runtime')
 const keys = require('../../packages/keys')
 const directory = require('./directory')
@@ -34,7 +34,8 @@ function keyPassphrase(cfg) {
 }
 
 /**
- * Chiavi del nodo K5 (scheda della directory) e K13 (admin), in un vault cifrato
+ * Chiavi del nodo K5 (scheda della directory), K13 (admin) e K6 (chiave dell'onion, dal
+ * 16/10/2026: prima era un file in chiaro nella cartella di tor), in un vault cifrato
  * (scrypt N=2^17 + AES-GCM). Mai in chiaro nella cartella dati (I-06). I file in
  * chiaro di versioni precedenti vengono sigillati e cancellati.
  * @param {string} dataDir @param {string} pass
@@ -42,7 +43,7 @@ function keyPassphrase(cfg) {
 function loadSecrets(dataDir, pass) {
   const vault = path.join(dataDir, 'secrets.vault.json')
   const oldNode = path.join(dataDir, 'node.key'), oldAdmin = path.join(dataDir, 'admin.key')
-  /** @type {{ node: string, admin: string }} */ let s
+  /** @type {{ node: string, admin: string, onion?: string }} */ let s
   if (fs.existsSync(vault)) {
     try { s = JSON.parse(Buffer.from(keys.openSecret(fs.readFileSync(vault, 'utf8'), pass)).toString('utf8')) }
     catch { throw new Error('vault delle chiavi: passphrase sbagliata o file alterato') }
@@ -51,16 +52,27 @@ function loadSecrets(dataDir, pass) {
       node: fs.existsSync(oldNode) ? fs.readFileSync(oldNode, 'utf8').trim() : Buffer.from(keys.exportSecret(keys.generateNodeKey())).toString('hex'),
       admin: fs.existsSync(oldAdmin) ? fs.readFileSync(oldAdmin, 'utf8').trim() : crypto.randomBytes(32).toString('hex'),
     }
-    const tmp = vault + '.tmp'
-    fs.writeFileSync(tmp, keys.sealSecret(Buffer.from(JSON.stringify(s)), pass), { mode: 0o600 })
-    fs.renameSync(tmp, vault)
+    sigilla(vault, s, pass)
   }
   for (const f of [oldNode, oldAdmin]) {
     if (!fs.existsSync(f)) continue
     try { fs.writeFileSync(f, crypto.randomBytes(fs.statSync(f).size)) } catch {}   // sovrascrittura prima di cancellare
     fs.rmSync(f, { force: true })
   }
-  return { nodeKey: keys.roleKeyFromSecret(keys.NODE_ROLE, 1, Buffer.from(s.node, 'hex')), adminKey: s.admin }
+  return {
+    nodeKey: keys.roleKeyFromSecret(keys.NODE_ROLE, 1, Buffer.from(s.node, 'hex')), adminKey: s.admin,
+    /** K6: chiave dell'onion per ADD_ONION (blob di tor), o null al primo avvio */
+    onionKey: s.onion || null,
+    /** Al primo avvio tor genera K6: la si sigilla subito nel vault. @param {string} k */
+    saveOnionKey: k => { s.onion = k; sigilla(vault, s, pass) },
+  }
+}
+
+/** Scrive il vault in modo atomico (file temporaneo + rinomina), permessi 600. */
+function sigilla(/** @type {string} */ vault, /** @type {object} */ s, /** @type {string} */ pass) {
+  const tmp = vault + '.tmp'
+  fs.writeFileSync(tmp, keys.sealSecret(Buffer.from(JSON.stringify(s)), pass), { mode: 0o600 })
+  fs.renameSync(tmp, vault)
 }
 
 /** @param {http.Server} srv @param {string} host @param {number} port @returns {Promise<number>} */
@@ -111,27 +123,71 @@ async function startNode(input) {
   log(`nodo avviato: ruolo ${cfg.role}, rete ${cfg.network}, porta ${port}${cfg.host === '127.0.0.1' || cfg.host === 'localhost' || cfg.host === '::1' ? ' (solo locale)' : ' (ESPOSTO)'}`)
 
   let tor = /** @type {Awaited<ReturnType<typeof startTor>> | null} */ (null)
+  /** @type {any} */ let api = null
   if (cfg.tor) {
     if (!cfg.torBin) throw new Error('tor: indicare torBin (binario tor verificato)')
-    tor = await startTor({ bin: cfg.torBin, dataDir: cfg.dataDir, ingressPort, log })
+    try {
+      tor = await startTor({
+        bin: cfg.torBin, dataDir: cfg.dataDir, ingressPort, log, timeoutMs: cfg.torBootstrapTimeoutSec * 1000,
+        chiaveOnion: secrets.onionKey, salvaChiaveOnion: secrets.saveOnionKey,
+        // tor morto con il nodo acceso: niente riavvio qui dentro, il nodo si chiude con errore
+        // e lo riavvia il sistema (systemd Restart=on-failure, servizio Windows)
+        onMorto: codice => {
+          log('nodo: tor terminato, il nodo si chiude con errore (lo riavvia il sistema)')
+          const err = new Error(`tor terminato con il nodo acceso (codice ${codice})`)
+          Promise.resolve(api?.close()).catch(() => {}).finally(() => cfg.onFatal?.(err))
+        },
+      })
+    } catch (e) {
+      // bootstrap non completato o onion rifiutato: si chiude ciò che era già aperto, poi errore
+      log(`nodo: avvio di tor fallito (${/** @type {Error} */ (e).message}), il nodo non parte (lo riavvia il sistema)`)
+      relay.close()
+      await Promise.all([owner, pub].map(s => new Promise(r => { s.closeAllConnections?.(); s.close(() => r(undefined)) })))
+      try { db.close() } catch {}
+      throw e
+    }
     onion = tor.onion
     socksPort = tor.socksPort
   }
 
   const peers = startPeers({ cfg, db, relay, log, socksPort: () => socksPort })
-  const publisher = directory.startPublisher({ cfg, nodeKey, onion: () => onion, socksPort: () => socksPort, log, version: VERSION })
+  // La scheda nella directory parte solo quando l'onion è davvero trovabile (tor.js:
+  // ogni UPLOAD con risposta e almeno 6 HSDir con UPLOADED). Senza tor, subito.
+  /** @type {ReturnType<typeof directory.startPublisher> | null} */ let publisher = null
+  let closed = false
+  /** @type {ReturnType<typeof attendiAnnuncio> | null} */ let attesaAnnuncio = null
+  const avviaPublisher = () => {
+    if (!closed && !publisher) publisher = directory.startPublisher({ cfg, nodeKey, onion: () => onion, socksPort: () => socksPort, log, version: VERSION })
+  }
+  if (tor) {
+    log(`directory: scheda in attesa della pubblicazione dell'onion (al massimo ${cfg.announceFallbackSec} s)`)
+    attesaAnnuncio = attendiAnnuncio(tor.published, cfg.announceFallbackSec * 1000)
+    attesaAnnuncio.esito.then(esito => {
+      if (esito === 'scadenza') log('directory: pubblicazione dell\'onion non confermata, annuncio comunque la scheda')
+      avviaPublisher()
+    })
+  } else avviaPublisher()
 
-  return {
+  api = {
     port, ingressPort, adminKey,
     get onion() { return onion },
+    /** Si risolve quando il descrittore del nostro onion è pubblicato (tor.js: almeno 6 HSDir del periodo attuale). */
+    onionPublished: tor ? tor.published : Promise.resolve(),
+    /** Solo per i test (I-59): stato della pubblicazione e porta di controllo del tor del nodo. */
+    _torForTests: tor ? { stato: tor.statoPubblicazione, attualeNoto: tor.attualeNoto, controlPort: tor.controlPort, cookieFile: tor.cookieFile, chiudiControllo: tor.chiudiControlloPerProva, pid: tor.pid } : null,
+    /** Quando e perché la scheda viene annunciata: 'confermata' (pubblicazione) o 'scadenza' (riserva). Senza tor: subito. */
+    announceDecision: attesaAnnuncio ? attesaAnnuncio.esito : Promise.resolve(/** @type {'confermata'|'scadenza'} */ ('confermata')),
     relay, db,
     nodePubkey: nodeKey.publicKey,
     /** Solo per i test (I-06): il segreto della chiave del nodo, per cercarlo su disco. */
     _nodeSecretHexForTests: () => Buffer.from(keys.exportSecret(nodeKey)).toString('hex'),
-    directory: { purgeExpired: () => relay.purgeExpired(), publishNow: () => publisher.publishOnce() },
+    directory: { purgeExpired: () => relay.purgeExpired(), publishNow: () => publisher ? publisher.publishOnce() : Promise.resolve(false) },
     /** @param {string[]} list */ addPeers: list => peers.add(list),
     async close() {
-      publisher.stop()
+      if (closed) return   // può chiamarla sia chi ha avviato il nodo sia la morte di tor
+      closed = true
+      attesaAnnuncio?.annulla()
+      publisher?.stop()
       peers.stop()
       relay.close()
       await Promise.all([owner, pub].map(s => new Promise(r => { s.closeAllConnections?.(); s.close(() => r(undefined)) })))
@@ -140,6 +196,7 @@ async function startNode(input) {
       log('nodo fermato')
     },
   }
+  return api
 }
 
 module.exports = { startNode, VERSION }

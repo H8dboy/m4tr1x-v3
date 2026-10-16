@@ -33,6 +33,15 @@
 17. Sabotaggio: campagna salvata **64/66** (2 prove di I-31 non più applicabili dopo il cambio dei permessi: aggiornate e prese da sole, entrano nella prossima campagna).
 18. **Debito:** `tests/integration/two-nodes.test.js` via Tor è instabile nei giorni di rete lenta (2 fallimenti il 16/10, poi 2/2 verde): allungare la finestra o misurare i tempi.
 
+## Fatto il 16/10, quinta parte (prova dei due nodi e tor del nodo affidabili)
+19. **Prova dei due nodi via Tor a fasi misurate** (tor-a, pubblicazione, tor-b, rete, evento, file) con limiti scelti sui tempi misurati e log della fase che si blocca; eventi HS_DESC riassunti a ogni giro.
+20. **Cache del consenso di tor tra i test** (idea del fondatore): solo `cached-*`, mai chiavi né `state`; M4TR1X_TOR_CACHE=0 la spegne.
+21. **Nodo: riscaldamento in produzione** (decisione del fondatore): tor senza onion → bootstrap 100% → ADD_ONION con **K6 nel vault** (prima in chiaro in `hs/`). Pubblicazione = almeno 6 UPLOADED del periodo **attuale** (l'attuale lo dice tor via GETINFO: in 1 prova su 3 tor carica prima il prossimo, l'assunzione sull'ordine era FALSA); UPLOAD appesi non bloccano; annuncio di riserva dopo 300 s; riconnessione automatica della porta di controllo; tor morto o bootstrap non completato → il nodo si chiude con errore (`onFatal`), lo riavvia il sistema.
+22. **I-59** nuova (porta di controllo: 127.0.0.1, cookie solo dell'utente, onion mai nei log, + tutto il punto 21): 10 prove con tor vero; I-40 con eccezione stretta per tor.js (etichette PEM e `ED25519-V3`, nessuna libreria Ed25519).
+23. **Misure:** riserva dei 5 minuti 2/12 sia prima sia dopo il riscaldamento, ma a freddo la pubblicazione passa da minuti a secondi. Il periodo attuale a volte resta sotto 6 conferme per minuti: comportamento della rete Tor, coperto dalla riserva (il fondatore: non inseguire oltre).
+24. **CI:** passo di riscaldamento, I-59 con tor vero, misura a freddo NON bloccante nel riepilogo del job; `npm run misura:tor` aggiunge allo storico `docs/generated/tor-tempi.json`, mostrato nel report (sez. 11.2b).
+25. **Da fare con l'installer del nodo:** programma da riga di comando con `onFatal` → uscita con codice 1, unità systemd con `Restart=on-failure`, servizio Windows con ripristino.
+
 ## Prossimo
 - OK del fondatore sulla bozza PEZZI_MANCANTI (tabella in fondo) → numeri I-42…I-50, K16, K17 entrano in SECURITY_INVARIANTS/KEYS.
 - Scrivere la procedura DSA (precondizione di F6).

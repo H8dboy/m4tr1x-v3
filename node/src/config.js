@@ -31,6 +31,9 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
  * @property {Partial<typeof import('./directory').DEFAULT_LIMITS>} anchorLimits  solo ruolo anchor
  * @property {number} descriptorTtlSec       scadenza della scheda del nodo (≤ 7 giorni)
  * @property {number} descriptorRenewSec     ogni quanto si rinnova
+ * @property {number} torBootstrapTimeoutSec se tor non arriva al bootstrap completo entro questi secondi, il nodo non parte (errore: lo riavvia il sistema)
+ * @property {((e: Error) => void)} [onFatal] chiamata se il nodo si ferma da solo per un guasto (es. tor terminato); il programma esce con errore e lo riavvia il sistema
+ * @property {number} announceFallbackSec    se la pubblicazione dell'onion non è confermata, la scheda si annuncia comunque dopo questi secondi (un nodo non resta invisibile per sempre)
  * @property {number} descriptorPowBits      prova di lavoro della scheda (chiave nuova)
  * @property {string} [descriptorOnionForTests]
  * @property {string} [keyPassphrase]       passphrase del vault delle chiavi del nodo (K5, K13)
@@ -68,6 +71,9 @@ function normalize(c) {
     anchorLimits: c.anchorLimits || {},
     descriptorTtlSec: c.descriptorTtlSec ?? 3 * 86400,
     descriptorRenewSec: c.descriptorRenewSec ?? 86400,
+    announceFallbackSec: c.announceFallbackSec ?? 300,
+    torBootstrapTimeoutSec: c.torBootstrapTimeoutSec ?? 180,
+    onFatal: typeof c.onFatal === 'function' ? c.onFatal : undefined,
     descriptorPowBits: c.descriptorPowBits ?? 18,
     descriptorOnionForTests: c.descriptorOnionForTests,
     keyPassphrase: c.keyPassphrase,
@@ -88,6 +94,8 @@ function normalize(c) {
   }
   if (!(cfg.descriptorTtlSec >= 1 && cfg.descriptorTtlSec <= 7 * 86400)) throw new Error('descriptorTtlSec: da 1 secondo a 7 giorni')
   if (!(cfg.descriptorRenewSec >= 1 && cfg.descriptorRenewSec < cfg.descriptorTtlSec)) throw new Error('descriptorRenewSec deve essere minore della scadenza')
+  if (!(cfg.announceFallbackSec >= 1 && cfg.announceFallbackSec <= 3600)) throw new Error('announceFallbackSec tra 1 e 3600')
+  if (!(cfg.torBootstrapTimeoutSec >= 1 && cfg.torBootstrapTimeoutSec <= 3600)) throw new Error('torBootstrapTimeoutSec tra 1 e 3600')
   for (const o of cfg.allowedOrigins) {
     const u = new URL(o)
     if (u.origin !== o) throw new Error(`origine CORS non canonica: ${o}`)

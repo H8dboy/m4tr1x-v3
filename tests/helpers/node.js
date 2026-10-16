@@ -12,13 +12,58 @@ const protocol = require('../../packages/protocol')
 
 const NET = 'm4tr1x-test'
 
+/**
+ * Cache del consenso di Tor tra i test (idea del fondatore, 16/10/2026).
+ * All'avvio tor scarica il consenso (elenco firmato dei relay) e i microdescrittori:
+ * da una cartella vuota è la parte lenta, a volte minuti. Si copiano SOLO i file
+ * `cached-*` qui sotto: sono firmati dalle autorità di directory e tor li verifica
+ * (firma e scadenza) quando li carica, quindi una cache vecchia o manomessa viene
+ * scartata e riscaricata. MAI le chiavi (keys/, servizi onion) e MAI `state` (guardie):
+ * ogni nodo di test sceglie le sue. Solo dentro la stessa macchina o lo stesso job di CI,
+ * mai tra job (stesso motivo della cache npm spenta: avvelenamento).
+ * M4TR1X_TOR_CACHE=0 la spegne (per misurare a freddo).
+ */
+const TOR_CACHE_DIR = path.join(os.tmpdir(), 'm4tr1x-tor-cache')
+const TOR_CACHE_FILES = ['cached-certs', 'cached-microdesc-consensus', 'cached-microdescs', 'cached-microdescs.new', 'cached-consensus']
+const torCacheOn = () => process.env.M4TR1X_TOR_CACHE !== '0'
+
+/** Copia la cache nella cartella dati di tor. @returns {boolean} true se c'era qualcosa da copiare */
+function seedTorCache(/** @type {string} */ torDir) {
+  if (!torCacheOn()) return false
+  fs.mkdirSync(torDir, { recursive: true, mode: 0o700 })
+  let n = 0
+  for (const f of TOR_CACHE_FILES) {
+    const src = path.join(TOR_CACHE_DIR, f)
+    if (fs.existsSync(src)) { fs.copyFileSync(src, path.join(torDir, f)); n++ }
+  }
+  return n > 0
+}
+
+/** Salva i file freschi di tor nella cache (scrittura atomica: copia + rinomina). */
+function saveTorCache(/** @type {string} */ torDir) {
+  if (!torCacheOn()) return
+  fs.mkdirSync(TOR_CACHE_DIR, { recursive: true, mode: 0o700 })
+  for (const f of TOR_CACHE_FILES) {
+    const src = path.join(torDir, f)
+    if (!fs.existsSync(src)) continue
+    const tmp = path.join(TOR_CACHE_DIR, `${f}.${process.pid}.tmp`)
+    try { fs.copyFileSync(src, tmp); fs.renameSync(tmp, path.join(TOR_CACHE_DIR, f)) } catch { try { fs.rmSync(tmp, { force: true }) } catch {} }
+  }
+}
+
 /** @param {Partial<import('../../node/src/config').NodeConfig>} [over] */
 async function startTestNode(over = {}) {
   const { startNode } = require('../../node')
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'm4-node-'))
   const logs = /** @type {string[]} */ ([])
+  // il nodo usa <dataDir>/tor come DataDirectory di tor (node/src/tor.js)
+  const torDir = path.join(dataDir, 'tor')
+  const torCacheWarm = over.tor ? seedTorCache(torDir) : false
   const node = await startNode({ dataDir, network: NET, port: 0, tor: false, keyPassphrase: 'passphrase dei test, non segreta', log: line => logs.push(line), ...over })
-  return { node, logs, dataDir, close: () => node.close() }
+  return {
+    node, logs, dataDir, torCacheWarm,
+    close: async () => { await node.close(); if (over.tor) saveTorCache(torDir) },
+  }
 }
 
 /**
@@ -84,4 +129,4 @@ function uploadAuth(identity, data, opts = {}) {
   return { sha, header: 'Nostr ' + Buffer.from(JSON.stringify(ev)).toString('base64') }
 }
 
-module.exports = { NET, startTestNode, request, wsOpen, wsExchange, testIdentity, uploadAuth }
+module.exports = { NET, TOR_CACHE_DIR, TOR_CACHE_FILES, startTestNode, request, wsOpen, wsExchange, testIdentity, uploadAuth }
