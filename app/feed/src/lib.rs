@@ -34,6 +34,8 @@ pub const RIPRESA: Duration = Duration::from_secs(60);
 pub enum Fase {
     CercoIlNodo { secondi: u64, tentativo: u32 },
     Scarico { secondi: u64, tentativo: u32 },
+    /// collegati al nodo, il post firmato è partito: si aspetta la conferma (`OK`)
+    Invio { secondi: u64, tentativo: u32 },
     Fatto { secondi: u64, tentativo: u32 },
     NonRaggiungibile { secondi: u64, tentativo: u32 },
     /// budget scaduto: "il nodo non risponde ancora, Tor continua a cercarlo: riprovo tra N s"
@@ -67,8 +69,12 @@ pub struct NonRaggiungibile {
     pub ultimo: String,
 }
 
-/// Legge il feed dal nodo entro `budget`, chiamando `avanza` a ogni cambio di fase.
-pub async fn leggi<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Duration, avanza: impl Fn(Fase)) -> Result<Feed, NonRaggiungibile> {
+/// Il ciclo dei tentativi, comune a lettura e pubblicazione: `un_tentativo(n, inizio)` fino al budget,
+/// con la fase "cerco il nodo" a ogni tentativo. Restituisce (risultato, secondi, tentativi).
+async fn con_tentativi<R, Fut>(budget: Duration, avanza: &impl Fn(Fase), mut un_tentativo: impl FnMut(u32, Instant) -> Fut) -> Result<(R, u64, u32), NonRaggiungibile>
+where
+    Fut: std::future::Future<Output = Result<R, TransportError>>,
+{
     let t0 = Instant::now();
     let secondi = || t0.elapsed().as_secs();
     let mut ultimo = String::from("nessun tentativo");
@@ -81,11 +87,8 @@ pub async fn leggi<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Dura
         }
         tentativo += 1;
         avanza(Fase::CercoIlNodo { secondi: secondi(), tentativo });
-        match tokio::time::timeout(resto, un_tentativo(t, nodo, rete, || avanza(Fase::Scarico { secondi: secondi(), tentativo }))).await {
-            Ok(Ok((post, scartati))) => {
-                avanza(Fase::Fatto { secondi: secondi(), tentativo });
-                return Ok(Feed { post, scartati, secondi: secondi(), tentativi: tentativo });
-            }
+        match tokio::time::timeout(resto, un_tentativo(tentativo, t0)).await {
+            Ok(Ok(r)) => return Ok((r, secondi(), tentativo)),
             Ok(Err(e)) => ultimo = e.to_string(),
             // la causa vera dell'ultimo errore resta (es. "240: descrittore non trovato"): si aggiunge, non si sostituisce
             Err(_) => ultimo = format!("{ultimo} · poi budget scaduto durante il tentativo {tentativo}"),
@@ -94,17 +97,73 @@ pub async fn leggi<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Dura
     }
 }
 
-/// Come [`leggi`], ma se il budget scade aspetta [`RIPRESA`] mostrando il conto alla rovescia
-/// ([`Fase::AttesaRipresa`], ogni secondo) e rilegge UNA volta. L'errore finale è quello della ripresa.
-pub async fn leggi_con_ripresa<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Duration, avanza: impl Fn(Fase)) -> Result<Feed, NonRaggiungibile> {
-    if let Ok(f) = leggi(t, nodo, rete, budget, &avanza).await {
-        return Ok(f);
+/// Se `operazione` non arriva al nodo entro il budget, aspetta [`RIPRESA`] con il conto alla rovescia
+/// ([`Fase::AttesaRipresa`], ogni secondo) e la rifà UNA volta (fondatore, 20/10/2026).
+async fn con_ripresa<R, Fut>(avanza: &impl Fn(Fase), mut operazione: impl FnMut() -> Fut) -> Result<R, NonRaggiungibile>
+where
+    Fut: std::future::Future<Output = Result<R, NonRaggiungibile>>,
+{
+    if let Ok(r) = operazione().await {
+        return Ok(r);
     }
     for mancano in (1..=RIPRESA.as_secs()).rev() {
         avanza(Fase::AttesaRipresa { fra_secondi: mancano });
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    leggi(t, nodo, rete, budget, &avanza).await
+    operazione().await
+}
+
+/// Legge il feed dal nodo entro `budget`, chiamando `avanza` a ogni cambio di fase.
+pub async fn leggi<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Duration, avanza: impl Fn(Fase)) -> Result<Feed, NonRaggiungibile> {
+    let avanza = &avanza;
+    let ((post, scartati), secondi, tentativi) =
+        con_tentativi(budget, avanza, |tentativo, t0| un_tentativo(t, nodo, rete, move || avanza(Fase::Scarico { secondi: t0.elapsed().as_secs(), tentativo })))
+            .await?;
+    avanza(Fase::Fatto { secondi, tentativo: tentativi });
+    Ok(Feed { post, scartati, secondi, tentativi })
+}
+
+/// Come [`leggi`], ma con la ripresa automatica dopo il budget.
+pub async fn leggi_con_ripresa<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Duration, avanza: impl Fn(Fase)) -> Result<Feed, NonRaggiungibile> {
+    con_ripresa(&avanza, || leggi(t, nodo, rete, budget, &avanza)).await
+}
+
+/// Post pubblicato: quanto ci è voluto.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pubblicato {
+    pub secondi: u64,
+    pub tentativi: u32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ErrorePubblica {
+    /// il nodo ha risposto NO (`OK` false): non si ritenta, è una risposta
+    Rifiutato(String),
+    NonRaggiungibile(NonRaggiungibile),
+}
+
+/// Pubblica un evento GIÀ firmato e verificato (m4tr1x_protocol::firma_evento) sul nodo, con i tentativi
+/// e la ripresa del feed. Ripubblicare lo stesso evento è innocuo (il nodo risponde "duplicate").
+pub async fn pubblica<T: Transport>(t: &T, nodo: &OnionV3, evento: &m4tr1x_protocol::Evento, budget: Duration, avanza: impl Fn(Fase)) -> Result<Pubblicato, ErrorePubblica> {
+    let json = serde_json::to_value(evento).expect("un evento si serializza sempre");
+    let (json, avanza) = (&json, &avanza);
+    let una_volta = || async move {
+        con_tentativi(budget, avanza, |tentativo, t0| async move {
+            let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
+            let mut relay = Relay::apri(flusso, nodo).await?;
+            avanza(Fase::Invio { secondi: t0.elapsed().as_secs(), tentativo });
+            let r = relay.pubblica(json).await;
+            relay.chiudi().await;
+            r
+        })
+        .await
+    };
+    let ((accettato, motivo), secondi, tentativi) = con_ripresa(avanza, una_volta).await.map_err(ErrorePubblica::NonRaggiungibile)?;
+    if !accettato {
+        return Err(ErrorePubblica::Rifiutato(motivo));
+    }
+    avanza(Fase::Fatto { secondi, tentativo: tentativi });
+    Ok(Pubblicato { secondi, tentativi })
 }
 
 async fn un_tentativo<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, scarico: impl Fn()) -> Result<(Vec<Post>, usize), TransportError> {

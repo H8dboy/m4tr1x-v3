@@ -34,10 +34,11 @@ const salta = !TOR || !fs.existsSync(TOR) ? 'M4TR1X_TOR_BIN non impostato: prova
  * eventi — tor consegna la connessione ma il nodo non risponde (20/10/2026: "tempo massimo superato
  * nell'apertura" a ogni tentativo, colpa della prova e non dell'app).
  */
-function app(/** @type {string} */ onion, /** @type {string} */ dati) {
+function app(/** @type {string} */ onion, /** @type {string} */ dati, esempio = 'misura', /** @type {string[]} */ altri = []) {
   return new Promise((resolve, reject) => {
-    const p = spawn('cargo', ['run', '--quiet', '--locked', '--manifest-path', path.join(ROOT, 'app', 'Cargo.toml'), '-p', 'm4tr1x-feed', '--example', 'misura', '--', onion, dati],
-      { cwd: path.join(ROOT, 'app'), env: process.env, shell: process.platform === 'win32' })
+    const p = spawn('cargo', ['run', '--quiet', '--locked', '--manifest-path', path.join(ROOT, 'app', 'Cargo.toml'), '-p', 'm4tr1x-feed', '--example', esempio, '--', onion, dati, ...altri],
+      // senza shell: con cmd.exe un argomento con spazi (il testo del post) si spezza (20/10/2026: il nodo riceveva "Nderë:")
+      { cwd: path.join(ROOT, 'app'), env: process.env, shell: false })
     let out = '', err = ''
     p.stdout.on('data', d => { out += d })
     p.stderr.on('data', d => { err += d })
@@ -79,6 +80,23 @@ test('il feed dell\'app legge via Tor i post verificati di un nodo vero (e misur
       assert.ok(x.ids.includes(ev.id), `fase "feed": ${x.lettura}: il post pubblicato non è nel feed`)
       assert.equal(x.scartati, 0, `fase "feed": ${x.lettura}: eventi scartati da un nodo onesto`)
     }
+
+    // F4, post: l'app FIRMA un post nel lato Rust (identità del seme pubblico di prova) e lo pubblica via Tor.
+    // Il nodo lo deve avere (chiesto in locale, non via Tor) e il JavaScript lo deve verificare.
+    // Fasi: onion non raggiunto → "rete"; nodo che dice no o relay rotto → "invio"; firma non valida per il
+    // JavaScript → "firma"; non riletto dal feed → "feed".
+    const testo = `Nderë: primo post PUBBLICATO dall'app via Tor 🦅 ${Date.now()}`
+    const [pub] = await app(a.node.onion, dati, 'pubblica', [testo])
+    t.diagnostic(`post: ${pub.errore ? `ERRORE ${pub.errore}` : `pubblicato in ${pub.secondi}s/${pub.tentativi} tent., riletto dal feed: ${pub.riletto}`}`)
+    if (pub.errore) assert.fail(`fase "${/NonRaggiungibile/.test(pub.errore) ? 'rete' : 'invio'}": pubblicazione: ${pub.errore}`)
+    const ws2 = await wsOpen(a.node.port)
+    const sulNodo = (await wsExchange(ws2, ['REQ', 'p', { ids: [pub.id] }], m => m[0] === 'EOSE')).find(m => m[0] === 'EVENT')?.[2]
+    ws2.close()
+    assert.ok(sulNodo, `fase "invio": il nodo non ha il post ${pub.id}`)
+    assert.equal(sulNodo.content, testo)
+    assert.equal(sulNodo.pubkey, '817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7', 'fase "firma": non è l\'identità di prova')
+    assert.equal(protocol.verifyEvent(sulNodo, NET), true, 'fase "firma": il JavaScript non verifica il post firmato in Rust')
+    assert.equal(pub.riletto, true, 'fase "feed": il post pubblicato non si rilegge dal feed')
   } finally {
     await a.close()
     fs.rmSync(dati, { recursive: true, force: true })

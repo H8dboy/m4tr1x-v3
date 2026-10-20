@@ -77,7 +77,7 @@ impl From<m4tr1x_feed::Feed> for Feed {
 }
 
 /// Dove si trova il feed, per non sembrare bloccati ("sto cercando il nodo… 47 s, tentativo 2").
-/// `fase`: "fermo" | "tor" (tor non ancora pronto) | "cerco" | "scarico" | "fatto" | "non_raggiungibile"
+/// `fase`: "fermo" | "tor" (tor non ancora pronto) | "cerco" | "scarico" | "invio" | "fatto" | "non_raggiungibile"
 /// | "attesa_ripresa" (budget scaduto, Tor continua a cercare: `secondi` = quanti ne mancano alla ripresa).
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Avanzamento {
@@ -101,6 +101,7 @@ impl From<&m4tr1x_feed::Fase> for Avanzamento {
         let (fase, secondi, tentativo) = match *f {
             CercoIlNodo { secondi, tentativo } => ("cerco", secondi, tentativo),
             Scarico { secondi, tentativo } => ("scarico", secondi, tentativo),
+            Invio { secondi, tentativo } => ("invio", secondi, tentativo),
             Fatto { secondi, tentativo } => ("fatto", secondi, tentativo),
             NonRaggiungibile { secondi, tentativo } => ("non_raggiungibile", secondi, tentativo),
             AttesaRipresa { fra_secondi } => ("attesa_ripresa", fra_secondi, 0),

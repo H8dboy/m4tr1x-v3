@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pubblica-avanzamento"
+description = "Enables the pubblica_avanzamento command without any pre-configured scope."
+commands.allow = ["pubblica_avanzamento"]
+
+[[permission]]
+identifier = "deny-pubblica-avanzamento"
+description = "Denies the pubblica_avanzamento command without any pre-configured scope."
+commands.deny = ["pubblica_avanzamento"]

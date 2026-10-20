@@ -70,6 +70,7 @@ function testoFase(a) {
     case 'tor': return `aspetto che Tor sia pronto… ${s} s`
     case 'cerco': return n > 1 ? `sto cercando il nodo… ${s} s (tentativo ${n})` : `sto cercando il nodo… ${s} s`
     case 'scarico': return `nodo trovato, scarico i post… ${s} s`
+    case 'invio': return `nodo trovato, invio il post firmato… ${s} s`
     case 'attesa_ripresa': return `il nodo non risponde ancora, Tor continua a cercarlo: riprovo tra ${s} s`
     default: return ''
   }
@@ -111,7 +112,44 @@ async function aggiornaFeed() {
   }
 }
 
+// ─── Scrivi ───────────────────────────────────────────────────────────────────
+// Qui arriva solo il TESTO: la firma la fa il lato Rust con la tua identità (la chiave non passa mai di
+// qui, I-31). Se la pubblicazione non riesce, il testo resta nella casella.
+
+const MASSIMO_POST = 2000
+
+function contaPost() {
+  const t = /** @type {HTMLTextAreaElement|null} */ (document.getElementById('post-testo'))
+  mostra('post-conta', `${t ? [...t.value].length : 0}/${MASSIMO_POST}`)
+}
+
+async function pubblicaPost() {
+  const casella = /** @type {HTMLTextAreaElement|null} */ (document.getElementById('post-testo'))
+  const bottone = /** @type {HTMLButtonElement|null} */ (document.getElementById('pubblica'))
+  if (!casella || !casella.value.trim()) return
+  if (bottone) bottone.disabled = true
+  const fase = setInterval(async () => {
+    const a = await invoke('pubblica_avanzamento').catch(() => null)
+    if (a) mostra('post-stato', testoFase(a))
+  }, 1000)
+  mostra('post-stato', 'firmo e cerco il nodo…')
+  try {
+    const p = await invoke('pubblica', { testo: casella.value })
+    casella.value = ''
+    contaPost()
+    mostra('post-stato', 'pubblicato ✓')
+    document.getElementById('feed-lista')?.prepend(voce(p))
+  } catch (e) {
+    mostra('post-stato', String(e)) // il testo resta nella casella
+  } finally {
+    clearInterval(fase)
+    if (bottone) bottone.disabled = false
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pubblica')?.addEventListener('click', pubblicaPost)
+  document.getElementById('post-testo')?.addEventListener('input', contaPost)
   document.getElementById('aggiorna-feed')?.addEventListener('click', aggiornaFeed)
   document.getElementById('crea')?.addEventListener('click', () => apriSeme('crea'))
   document.getElementById('recupera')?.addEventListener('click', () => apriSeme('recupera'))

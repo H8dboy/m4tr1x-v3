@@ -16,9 +16,14 @@ tokio = { version = "=1.53.3", default-features = false, features = ["time"] }
 
 [dev-dependencies]
 m4tr1x-transport = { path = "../transport", features = ["prova"] }
+# firmare i post di prova con il seme PUBBLICO di prova
+m4tr1x-identity = { path = "../identity" }
 tokio = { version = "=1.53.3", default-features = false, features = ["time", "io-util", "rt-multi-thread", "macros", "test-util"] }
 
 # examples/misura.rs: prova di fine corsa con un nodo vero via Tor (solo prove)
 [[example]]
 name = "misura"
 
+# examples/pubblica.rs: pubblicazione di un post firmato via Tor su un nodo vero (solo prove)
+[[example]]
+name = "pubblica"

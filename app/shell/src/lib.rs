@@ -9,10 +9,10 @@
 pub mod api;
 pub mod api_seme;
 
-use api::{Avanzamento, Feed, Identita, Stato};
+use api::{Avanzamento, Feed, Identita, Post, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
-use m4tr1x_identity::portachiavi::Sistema;
+use m4tr1x_identity::portachiavi::{firma_come_identita, Sistema};
 use m4tr1x_transport::{OnionV3, TorProcessConfig, TorProcessTransport, Transport, TransportStatus};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -67,12 +67,41 @@ struct Rete {
     nodo: Option<OnionV3>,
 }
 
-/// Fase del feed in corso, letta dall'interfaccia ogni secondo (`feed_avanzamento`): niente eventi di
-/// Tauri, che richiederebbero un permesso core (I-31).
+/// Un'operazione verso il nodo (leggere il feed, pubblicare un post): una alla volta, con la fase letta
+/// dall'interfaccia ogni secondo (`*_avanzamento`): niente eventi di Tauri, servirebbe un permesso core (I-31).
 #[derive(Default)]
-struct StatoFeed {
+struct Operazione {
     in_corso: AtomicBool,
     fase: Mutex<Option<Avanzamento>>,
+}
+
+impl Operazione {
+    fn imposta(&self, a: Avanzamento) {
+        *self.fase.lock().unwrap() = Some(a);
+    }
+    fn fase(&self) -> Avanzamento {
+        self.fase.lock().unwrap().clone().unwrap_or_else(Avanzamento::fermo)
+    }
+}
+
+#[derive(Default)]
+struct Operazioni {
+    feed: Operazione,
+    post: Operazione,
+}
+
+/// Aspetta che tor sia pronto (al massimo il tempo di bootstrap del trasporto), segnalando la fase.
+/// "Spento" con tor configurato = sta per partire (app appena aperta): si aspetta; si smette solo su errore.
+async fn attendi_tor(tor: &TorProcessTransport, op: &Operazione) -> Result<(), String> {
+    let t0 = std::time::Instant::now();
+    while !matches!(tor.status(), TransportStatus::Pronto) {
+        if matches!(tor.status(), TransportStatus::Errore(_)) || t0.elapsed() > std::time::Duration::from_secs(180) {
+            return Err("tor non è pronto".to_string());
+        }
+        op.imposta(Avanzamento::tor(t0.elapsed().as_secs()));
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    Ok(())
 }
 
 /// Avvia tor in background: hash dal lock incluso alla compilazione, cartella dati dell'app.
@@ -103,38 +132,75 @@ fn stato(rete: tauri::State<'_, Rete>) -> Stato {
 /// tentativi da 30 s fino a 4 minuti; la fase si legge con `feed_avanzamento`.
 /// Gli errori dicono cosa manca o quanto si è aspettato, mai l'indirizzo del nodo.
 #[tauri::command]
-async fn feed(rete: tauri::State<'_, Rete>, stato: tauri::State<'_, StatoFeed>) -> Result<Feed, String> {
+async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Feed, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
-    if stato.in_corso.swap(true, Ordering::SeqCst) {
+    let op = &op.feed;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
         return Err("feed già in aggiornamento".into());
     }
-    let imposta = |a: Avanzamento| *stato.fase.lock().unwrap() = Some(a);
     let esito = async {
-        // tor ancora in avvio: si aspetta (al massimo il tempo di bootstrap del trasporto) mostrando la fase
-        let t0 = std::time::Instant::now();
-        while !matches!(tor.status(), TransportStatus::Pronto) {
-            if matches!(tor.status(), TransportStatus::Errore(_) | TransportStatus::Spento) || t0.elapsed() > std::time::Duration::from_secs(180) {
-                return Err("tor non è pronto".to_string());
-            }
-            imposta(Avanzamento::tor(t0.elapsed().as_secs()));
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
+        attendi_tor(&tor, op).await?;
         // budget scaduto → attesa di un minuto con conto alla rovescia → una ripresa (fondatore, 20/10/2026)
-        m4tr1x_feed::leggi_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| imposta(Avanzamento::from(&f)))
+        m4tr1x_feed::leggi_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
             .map(Feed::from)
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
     }
     .await;
-    stato.in_corso.store(false, Ordering::SeqCst);
+    op.in_corso.store(false, Ordering::SeqCst);
     esito
 }
 
 /// Fase del feed in corso (o dell'ultimo), per l'interfaccia.
 #[tauri::command]
-fn feed_avanzamento(stato: tauri::State<'_, StatoFeed>) -> Avanzamento {
-    stato.fase.lock().unwrap().clone().unwrap_or_else(Avanzamento::fermo)
+fn feed_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
+    op.feed.fase()
+}
+
+/// Pubblica un post firmato con la TUA identità.
+/// La chiave d'identità si legge dal portachiavi SOLO dentro la firma (`firma_come_identita`) e si
+/// cancella appena firmato: qui non esiste mai una `ChiaveRuolo` (fondatore, 20/10/2026). L'evento
+/// firmato si riverifica (`firma_evento`) prima di partire. All'interfaccia torna solo il post pubblico.
+#[tauri::command]
+async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Post, String> {
+    let testo = testo.trim().to_string();
+    if testo.is_empty() {
+        return Err("il post è vuoto".into());
+    }
+    if testo.chars().count() > m4tr1x_protocol::MASSIMO_TESTO_POST {
+        return Err(format!("il post supera i {} caratteri", m4tr1x_protocol::MASSIMO_TESTO_POST));
+    }
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let identita = creazione::identita_salvata(&Sistema).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
+    let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
+    let evento = m4tr1x_protocol::firma_evento(1, &testo, &[], ora, m4tr1x_protocol::Rete::Prova, &identita.identity, |d| {
+        firma_come_identita(&Sistema, d).ok()
+    })
+    .map_err(|e| format!("post non firmato: {e}"))?;
+    let op = &op.post;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un post è già in pubblicazione".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::pubblica(&*tor, &nodo, &evento, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map_err(|e| match e {
+            m4tr1x_feed::ErrorePubblica::Rifiutato(m) => format!("il nodo ha rifiutato il post: {m}"),
+            m4tr1x_feed::ErrorePubblica::NonRaggiungibile(n) => {
+                format!("il post non è partito: il nodo non risponde ancora. Il testo resta qui, riprova tra un minuto ({})", n.ultimo)
+            }
+        })
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content })
+}
+
+/// Fase della pubblicazione in corso (o dell'ultima), per l'interfaccia.
+#[tauri::command]
+fn pubblica_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
+    op.post.fase()
 }
 
 /// Identità salvata (solo chiavi pubbliche), se c'è.
@@ -222,7 +288,7 @@ pub fn run() {
     }
     tauri::Builder::default()
         .manage(StatoSeme::default())
-        .manage(StatoFeed::default())
+        .manage(Operazioni::default())
         .setup(move |app| {
             // se Tauri usa un'altra cartella dati, il registro la segue
             let dati = app.path().app_data_dir()?;
@@ -241,7 +307,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento])
         .build(tauri::generate_context!())
         .expect("avvio dell'app fallito")
         .run(|app, ev| {

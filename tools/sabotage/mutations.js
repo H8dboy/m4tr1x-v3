@@ -251,9 +251,30 @@ module.exports = [
     find: '    verifica_firma(pubkey, id, sig)?;\n', replace: '    let _ = verifica_firma;\n', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
   { id: 'feed-ogni-kind', rule: 'feed', name: 'feed che mostra eventi di ogni tipo (non solo post)', file: 'app/feed/src/lib.rs',
     find: '            Ok(e) if e.kind == 1 => {', replace: '            Ok(e) => {', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
-  { id: 'feed-senza-ripresa', rule: 'feed', name: 'budget scaduto senza la ripresa automatica', file: 'app/feed/src/lib.rs',
-    find: '    if let Ok(f) = leggi(t, nodo, rete, budget, &avanza).await {\n        return Ok(f);\n    }\n',
-    replace: '    return leggi(t, nodo, rete, budget, &avanza).await;\n    #[allow(unreachable_code)]\n', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
+  // 20/10: la ripresa è una funzione comune a lettura e pubblicazione (con_ripresa)
+  { id: 'feed-senza-ripresa', rule: 'feed', name: 'budget scaduto senza la ripresa automatica (lettura e pubblicazione)', file: 'app/feed/src/lib.rs',
+    find: '    if let Ok(r) = operazione().await {\n        return Ok(r);\n    }\n    for mancano',
+    replace: '    if true {\n        return operazione().await;\n    }\n    for mancano', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
+
+  // ─── F4: pubblicazione del post ──
+  { id: 'post-no-del-nodo-ignorato', rule: 'feed', name: 'post rifiutato dal nodo dato per pubblicato', file: 'app/feed/src/lib.rs',
+    find: '    if !accettato {\n        return Err(ErrorePubblica::Rifiutato(motivo));\n    }\n', replace: '    let _ = (accettato, motivo);\n',
+    test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
+  { id: 'post-ok-di-un-altro', rule: 'I-36', name: 'conferma accettata anche se è di un altro evento', file: 'app/transport/src/relay.rs',
+    find: '            if a.first().and_then(Value::as_str) == Some("OK") && a.get(1).and_then(Value::as_str) == Some(id.as_str()) {',
+    replace: '            if a.first().and_then(Value::as_str) == Some("OK") {', test: T('inv-36-transport-only'), timeoutMs: 900000 },
+
+  // ─── F4: chiave d'identità letta solo per firmare (fondatore, 20/10/2026) ──
+  { id: 'i31-chiave-nel-guscio', rule: 'I-31', name: 'il guscio legge la chiave d\'identità dal portachiavi e la tiene', file: 'app/shell/src/lib.rs',
+    find: '        firma_come_identita(&Sistema, d).ok()\n',
+    replace: '        m4tr1x_identity::portachiavi::carica(&Sistema, m4tr1x_identity::Ruolo::Identity, 1).ok().flatten().and_then(|k: m4tr1x_identity::ChiaveRuolo| k.firma_schnorr(d))\n',
+    test: T('inv-31-no-keys-in-js') },
+  { id: 'i31-buffer-non-cancellato', rule: 'I-31', name: 'buffer del portachiavi liberato senza cancellarlo', file: 'app/identity/src/portachiavi.rs',
+    find: '                let v = Zeroizing::new(v);\n', replace: '', test: T('inv-31-no-keys-in-js'), timeoutMs: 900000 },
+  { id: 'i31-chiave-tenuta', rule: 'I-31', name: 'chiave d\'identità tenuta da parte tra una firma e l\'altra', file: 'app/identity/src/portachiavi.rs',
+    find: '    let k = carica(p, Ruolo::Identity, 1)?.ok_or(IdentityError::Portachiavi("nessuna identità salvata".into()))?;',
+    replace: '    static TENUTA: std::sync::OnceLock<ChiaveRuolo> = std::sync::OnceLock::new();\n    if TENUTA.get().is_none() { if let Some(c) = carica(p, Ruolo::Identity, 1)? { let _ = TENUTA.set(c); } }\n    let k = TENUTA.get().ok_or(IdentityError::Portachiavi("nessuna identità salvata".into()))?;',
+    test: T('inv-31-no-keys-in-js'), timeoutMs: 900000 },
 
   // ─── F4: registro dei crash senza dati dell'utente ──
   { id: 'crash-messaggio-runtime', rule: 'diagnostica', name: 'registro dei crash che scrive i messaggi costruiti a runtime', file: 'app/crash/src/lib.rs',

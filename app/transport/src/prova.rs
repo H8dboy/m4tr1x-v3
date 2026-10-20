@@ -4,23 +4,48 @@
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::tungstenite::Message;
 
+/// Contenuto che il relay finto rifiuta (`OK` false), per provare il "no" del nodo.
+pub const CONTENUTO_RIFIUTATO: &str = "relay finto: rifiutami";
+
 /// Accetta il WebSocket sul flusso e a ogni `REQ` risponde con `eventi` e poi `EOSE`.
 pub async fn relay_finto<S: AsyncRead + AsyncWrite + Unpin>(flusso: S, eventi: Vec<Value>) {
+    relay_finto_condiviso(flusso, Arc::new(Mutex::new(eventi))).await
+}
+
+/// Come [`relay_finto`], con gli eventi condivisi tra più connessioni: un `EVENT` accettato (`OK` true)
+/// si aggiunge e le `REQ` successive lo restituiscono. `CONTENUTO_RIFIUTATO` → `OK` false.
+pub async fn relay_finto_condiviso<S: AsyncRead + AsyncWrite + Unpin>(flusso: S, eventi: Arc<Mutex<Vec<Value>>>) {
     let Ok(mut ws) = tokio_tungstenite::accept_async(flusso).await else { return };
     while let Some(Ok(m)) = ws.next().await {
         let Message::Text(t) = m else { continue };
         let Ok(Value::Array(a)) = serde_json::from_str::<Value>(&t) else { continue };
-        if a.first().and_then(Value::as_str) == Some("REQ") {
-            let id = a.get(1).cloned().unwrap_or(Value::Null);
-            for e in &eventi {
-                if ws.send(Message::text(json!(["EVENT", id, e]).to_string())).await.is_err() {
-                    return;
+        match a.first().and_then(Value::as_str) {
+            Some("REQ") => {
+                let id = a.get(1).cloned().unwrap_or(Value::Null);
+                let copia = eventi.lock().unwrap().clone();
+                for e in &copia {
+                    if ws.send(Message::text(json!(["EVENT", id, e]).to_string())).await.is_err() {
+                        return;
+                    }
                 }
+                let _ = ws.send(Message::text(json!(["EOSE", id]).to_string())).await;
             }
-            let _ = ws.send(Message::text(json!(["EOSE", id]).to_string())).await;
+            Some("EVENT") => {
+                let ev = a.get(1).cloned().unwrap_or(Value::Null);
+                let id = ev.get("id").cloned().unwrap_or(Value::Null);
+                let risposta = if ev.get("content").and_then(Value::as_str) == Some(CONTENUTO_RIFIUTATO) {
+                    json!(["OK", id, false, "blocked: rifiutato dal relay finto"])
+                } else {
+                    eventi.lock().unwrap().push(ev);
+                    json!(["OK", id, true, ""])
+                };
+                let _ = ws.send(Message::text(risposta.to_string())).await;
+            }
+            _ => {}
         }
     }
 }

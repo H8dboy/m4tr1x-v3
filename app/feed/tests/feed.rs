@@ -3,12 +3,12 @@
 
 use m4tr1x_feed::{leggi, leggi_con_ripresa, Fase, ATTESA_TRA_TENTATIVI, BUDGET, RIPRESA};
 use m4tr1x_protocol::Rete;
-use m4tr1x_transport::prova::relay_finto;
+use m4tr1x_transport::prova::{relay_finto_condiviso, CONTENUTO_RIFIUTATO};
 use m4tr1x_transport::{BootstrapInfo, Isolation, OnionV3, Stream, Transport, TransportError, TransportStatus, TEMPO_MASSIMO_CONNESSIONE};
 use serde_json::Value;
 use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 const VETTORI: &str = include_str!("../../../packages/protocol/vectors/eventi.json");
 
@@ -29,9 +29,10 @@ fn vettori() -> Vec<(bool, Value)> {
 }
 
 /// Trasporto finto: i primi `falliscono` tentativi scadono dopo 30 s come quelli veri; `sempre_appeso`
-/// non riesce mai; poi un relay finto che manda `eventi`.
+/// non riesce mai; poi un relay finto che manda `eventi` (condivisi tra le connessioni: un post
+/// pubblicato si rilegge alla connessione dopo, come su un nodo vero).
 struct Finto {
-    eventi: Vec<Value>,
+    eventi: Arc<Mutex<Vec<Value>>>,
     falliscono: u32,
     sempre_appeso: bool,
     chiamate: AtomicU32,
@@ -39,7 +40,7 @@ struct Finto {
 
 impl Finto {
     fn new(eventi: Vec<Value>, falliscono: u32, sempre_appeso: bool) -> Self {
-        Self { eventi, falliscono, sempre_appeso, chiamate: AtomicU32::new(0) }
+        Self { eventi: Arc::new(Mutex::new(eventi)), falliscono, sempre_appeso, chiamate: AtomicU32::new(0) }
     }
 }
 
@@ -56,7 +57,7 @@ impl Transport for Finto {
                 return Err(TransportError::Connessione("tempo massimo del tentativo superato (30 s)".into()));
             }
             let (client, server) = tokio::io::duplex(1 << 20);
-            tokio::spawn(relay_finto(server, eventi));
+            tokio::spawn(relay_finto_condiviso(server, eventi));
             Ok(Box::pin(client) as Stream)
         }
     }
@@ -153,4 +154,54 @@ async fn la_ripresa_e_una_sola() {
     assert!(e.ultimo.contains("tempo massimo"), "{}", e.ultimo);
     let durata = inizio.elapsed();
     assert!(durata >= BUDGET * 2 + RIPRESA && durata < BUDGET * 2 + RIPRESA + TEMPO_MASSIMO_CONNESSIONE * 2, "{durata:?}");
+}
+
+// ─── Pubblicazione (F4, post) ────────────────────────────────────────────────
+
+/// Post firmato con l'identità del seme PUBBLICO di prova (lo stesso dei vettori delle chiavi).
+fn post(testo: &str) -> m4tr1x_protocol::Evento {
+    use m4tr1x_identity::{deriva, seme_da_parole, Ruolo};
+    let seme = seme_da_parole(&(["abandon"; 23].join(" ") + " art"), "").unwrap();
+    let k = deriva(&seme, Ruolo::Identity, 1).unwrap();
+    m4tr1x_protocol::firma_evento(1, testo, &[], 1_760_000_500, Rete::Prova, &k.pubblica_hex(), |d| k.firma_schnorr(d)).unwrap()
+}
+
+#[tokio::test]
+async fn il_post_pubblicato_si_rilegge_dal_feed() {
+    let finto = Finto::new(vec![], 0, false);
+    let p = post("primo post dall'app 🦅");
+    let fasi = Mutex::new(vec![]);
+    let esito = m4tr1x_feed::pubblica(&finto, &nodo(), &p, BUDGET, |x| fasi.lock().unwrap().push(x)).await.unwrap();
+    assert_eq!(esito.tentativi, 1);
+    let fasi = fasi.into_inner().unwrap();
+    assert!(fasi.iter().any(|x| matches!(x, Fase::Invio { .. })), "{fasi:?}");
+    assert!(matches!(fasi.last(), Some(Fase::Fatto { .. })), "{fasi:?}");
+    // il nodo (finto) l'ha tenuto, e il feed lo rilegge VERIFICATO
+    let f = leggi(&finto, &nodo(), Rete::Prova, BUDGET, |_| {}).await.unwrap();
+    assert_eq!(f.post.len(), 1);
+    assert_eq!(f.post[0].id, p.id);
+    assert_eq!(f.post[0].testo, "primo post dall'app 🦅");
+}
+
+/// Il "no" del nodo è una risposta: nessun nuovo tentativo, nessuna ripresa.
+#[tokio::test(start_paused = true)]
+async fn il_no_del_nodo_non_si_ritenta() {
+    let finto = Finto::new(vec![], 0, false);
+    let inizio = tokio::time::Instant::now();
+    let e = m4tr1x_feed::pubblica(&finto, &nodo(), &post(CONTENUTO_RIFIUTATO), BUDGET, |_| {}).await.unwrap_err();
+    assert!(matches!(&e, m4tr1x_feed::ErrorePubblica::Rifiutato(m) if m.starts_with("blocked")), "{e:?}");
+    assert_eq!(finto.chiamate.load(Ordering::SeqCst), 1, "ritentato dopo un no del nodo");
+    assert!(inizio.elapsed() < RIPRESA, "aspettata la ripresa dopo un no del nodo");
+}
+
+/// Come il feed: tentativi da 30 s, e la stessa ripresa dopo il budget.
+#[tokio::test(start_paused = true)]
+async fn pubblica_riprova_e_riprende_come_il_feed() {
+    let finto = Finto::new(vec![], 9, false); // oltre il budget: serve la ripresa
+    let fasi = Mutex::new(vec![]);
+    let p = post("arrivato dopo la ripresa");
+    m4tr1x_feed::pubblica(&finto, &nodo(), &p, BUDGET, |x| fasi.lock().unwrap().push(x)).await.unwrap();
+    let fasi = fasi.into_inner().unwrap();
+    assert!(fasi.iter().any(|x| matches!(x, Fase::AttesaRipresa { .. })), "nessuna ripresa: {fasi:?}");
+    assert!(finto.eventi.lock().unwrap().iter().any(|e| e["id"] == p.id.as_str()));
 }

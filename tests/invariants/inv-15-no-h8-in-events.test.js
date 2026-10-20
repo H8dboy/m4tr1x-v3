@@ -50,6 +50,6 @@ test('lato Rust (app/protocol): eventi con dati H8 rifiutati come in JavaScript'
     { cwd: path.join(ROOT, 'app'), encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
   const out = (r.stdout || '') + (r.stderr || '')
   assert.equal(r.status, 0, out.slice(-4000))
-  for (const t of ['confini_di_parola_come_il_javascript', 'stesso_esito_del_javascript_su_ogni_vettore', 'i_rifiuti_hanno_il_motivo_giusto'])
+  for (const t of ['confini_di_parola_come_il_javascript', 'stesso_esito_del_javascript_su_ogni_vettore', 'i_rifiuti_hanno_il_motivo_giusto', 'dati_h8_rifiutati_prima_di_firmare'])
     assert.match(out, new RegExp(`${t} \\.\\.\\. ok`), `manca o fallisce la prova ${t}`)
 })

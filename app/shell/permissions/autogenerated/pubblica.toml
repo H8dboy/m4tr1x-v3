@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pubblica"
+description = "Enables the pubblica command without any pre-configured scope."
+commands.allow = ["pubblica"]
+
+[[permission]]
+identifier = "deny-pubblica"
+description = "Denies the pubblica command without any pre-configured scope."
+commands.deny = ["pubblica"]

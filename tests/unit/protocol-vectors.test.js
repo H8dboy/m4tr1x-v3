@@ -25,3 +25,20 @@ test('vettori validi: l\'id si ricalcola uguale', () => {
     assert.equal(protocol.eventId(e.pubkey, e.created_at, e.kind, e.tags, e.content), e.id, v.nome)
   }
 })
+
+// Nell'altro senso: un post FIRMATO nel lato Rust (app/protocol, firma_evento) passa da verifyEvent del
+// JavaScript, con la chiave d'identità congelata del seme pubblico di prova (keys-vectors.test.js).
+const path = require('path')
+const { spawnSync } = require('child_process')
+const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' })
+test('post firmato in Rust: il JavaScript lo verifica', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 900000 }, () => {
+  const testo = 'Nderë 🦅 "virgolette" \\ a capo\n </script>'
+  const r = spawnSync('cargo', ['run', '--quiet', '--locked', '--manifest-path', path.join(__dirname, '..', '..', 'app', 'Cargo.toml'), '-p', 'm4tr1x-protocol', '--example', 'firma', '--', testo],
+    { cwd: path.join(__dirname, '..', '..', 'app'), encoding: 'utf8', timeout: 900000, shell: false })
+  assert.equal(r.status, 0, (r.stdout || '') + (r.stderr || ''))
+  const ev = JSON.parse(r.stdout.trim().split('\n').pop() || '')
+  assert.equal(ev.pubkey, '817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7')
+  assert.equal(ev.content, testo)
+  assert.equal(protocol.verifyEvent(ev, rete), true)
+  assert.equal(protocol.verifyEvent({ ...ev, content: testo + '!' }, rete), false)
+})

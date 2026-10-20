@@ -108,6 +108,48 @@ pub fn verifica(v: &Value, rete: Rete) -> Result<Evento, Rifiuto> {
     })
 }
 
+/// Testo massimo di un post scritto dall'app (caratteri): ben sotto i 64 KiB per evento del nodo anche
+/// con caratteri da 4 byte. Scelta del 20/10/2026, si cambia qui.
+pub const MASSIMO_TESTO_POST: usize = 2000;
+
+/// Costruisce e FIRMA un evento come `buildEvent` di packages/protocol: aggiunge il tag `net`, rifiuta i
+/// dati H8 PRIMA di firmare (I-15: "il costruttore di eventi rifiuta"), calcola l'id e lo firma con
+/// `firma` (BIP-340 sul digest dell'id). Il protocollo non vede la chiave: riceve la pubblica e una
+/// funzione che firma (la chiave resta nel crate dell'identità). L'evento firmato si RIVERIFICA prima
+/// di restituirlo: un evento che non passerebbe da `verifica` non esce mai di qui.
+pub fn firma_evento(
+    kind: u16,
+    content: &str,
+    tags: &[Vec<String>],
+    created_at: u64,
+    rete: Rete,
+    pubkey: &str,
+    firma: impl FnOnce(&[u8; 32]) -> Option<[u8; 64]>,
+) -> Result<Evento, Rifiuto> {
+    if tags.iter().any(|t| t.is_empty()) {
+        return Err(Rifiuto::Forma("tag vuoto"));
+    }
+    if tags.iter().any(|t| t[0] == "net") {
+        return Err(Rifiuto::Forma("il tag net lo aggiunge il protocollo"));
+    }
+    if created_at > MAX_INTERO_JS {
+        return Err(Rifiuto::Forma("created_at"));
+    }
+    if !esadecimale_minuscolo(pubkey, 64) {
+        return Err(Rifiuto::Forma("pubkey"));
+    }
+    let mut tutti: Vec<Vec<String>> = tags.to_vec();
+    tutti.push(vec!["net".into(), rete.nome().into()]);
+    if let Some(motivo) = violazione_h8(content, &tutti) {
+        return Err(Rifiuto::H8(motivo));
+    }
+    let id = id_evento(pubkey, created_at, kind, &tutti, content);
+    let digest: [u8; 32] = da_esadecimale(&id).and_then(|v| v.try_into().ok()).ok_or(Rifiuto::Id)?;
+    let sig = esadecimale(&firma(&digest).ok_or(Rifiuto::Firma)?);
+    let ev = serde_json::json!({ "id": id, "pubkey": pubkey, "created_at": created_at, "kind": kind, "tags": tutti, "content": content, "sig": sig });
+    verifica(&ev, rete)
+}
+
 /// Id dell'evento in esadecimale: SHA-256 della serializzazione NIP-01.
 /// `serde_json` scrive le stringhe come `JSON.stringify` (stessi caratteri scappati, stesso
 /// `\u00XX` minuscolo, niente `\/`, U+2028 lasciato com'è): lo provano i vettori.

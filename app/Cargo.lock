@@ -2070,6 +2070,7 @@ version = "0.1.0"
 name = "m4tr1x-feed"
 version = "0.1.0"
 dependencies = [
+ "m4tr1x-identity",
  "m4tr1x-protocol",
  "m4tr1x-transport",
  "serde",
@@ -2097,6 +2098,7 @@ name = "m4tr1x-protocol"
 version = "0.1.0"
 dependencies = [
  "k256",
+ "m4tr1x-identity",
  "serde",
  "serde_json",
  "sha2",

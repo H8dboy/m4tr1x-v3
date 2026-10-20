@@ -3,7 +3,7 @@
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **196 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **199 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -78,8 +78,14 @@
 52. **Rilancio unico per la rete Tor** (fondatore): nel runner (`eseguiConRilancio`, CI + report + `npm test`) un file si rilancia UNA volta solo se TUTTI i suoi test falliti cominciano l'errore con `fase "pubblicazione"` o `fase "rete"`; ogni altra fase (evento, file, eco, relay, feed), file bloccati/usciti prima/senza test: rossi subito. Il rilancio si scrive nel log ("RILANCIO … fase …: primo errore") e nel report ("rilanciato una volta"). **Difetto trovato dal suo stesso controllo:** la prima versione rilanciava un rosso di CODICE che CITAVA la frase "manca la fase "pubblicazione"": ora la fase conta solo all'INIZIO del messaggio (prova di regressione `citazione.js`). Verificato sul rosso vero del report (feed, "pubblicazione"). Sabotaggi `report-rilancio-*` 3/3.
 53. **Stessa lingua per tutte le prove che raggiungono un onion** (fondatore): due nodi (pubblicazione, rete, evento, file), feed (pubblicazione, rete, relay, feed), I-37 (pubblicazione, rete, eco; la fase della prova Rust va in testa al messaggio JS; se fallisce anche un'altra prova Rust il rilancio si neutralizza). `tests/unit/fasi-tor.test.js` lo controlla e scopre le prove nuove con Tor fuori dall'elenco. I-59 non raggiunge onion: un suo rosso è codice.
 
+54. **Post — firma nel lato Rust:** `m4tr1x_protocol::firma_evento` aggiunge il tag `net`, rifiuta i dati H8 PRIMA di firmare (la chiave non firma nemmeno: I-15), calcola l'id, firma con una funzione (il protocollo non vede la chiave) e RIVERIFICA l'evento prima di restituirlo. Testo massimo 2000 caratteri (`MASSIMO_TESTO_POST`, scelta del 20/10). Prova incrociata Rust→JS: un post firmato in Rust passa `verifyEvent` con la chiave congelata dei vettori.
+55. **Chiave d'identità letta solo per firmare (fondatore):** trovati due punti in cui restava in memoria (buffer del portachiavi liberato senza cancellarlo; copie per valore). Ora `leggi` restituisce `Zeroizing`, il buffer di Windows si cancella, `da_portachiavi` prende un riferimento, e `firma_come_identita` legge, firma e lascia cadere nella stessa chiamata. Prove: due firme = due letture; `ChiaveRuolo` è `ZeroizeOnDrop` (controllo alla compilazione). I-31 controlla che il guscio non tenga mai una `ChiaveRuolo` né legga il portachiavi, e usi `firma_come_identita` solo in `pubblica`. Limite dichiarato: Rust non garantisce l'assenza di copie sullo stack negli spostamenti. Sabotaggi `i31-*` nuovi 3/3.
+56. **Pubblicazione:** `Relay::pubblica` (EVENT → OK del proprio evento; il "no" del nodo è una risposta, non un errore); `m4tr1x_feed::pubblica` con gli stessi tentativi e la stessa ripresa del feed (`con_tentativi`, `con_ripresa`, funzioni comuni; il "no" del nodo non si ritenta). Guscio: comando `pubblica` + `pubblica_avanzamento`; corretto anche un difetto del feed (con tor "spento" ma configurato rispondeva subito "non pronto" invece di aspettare). Interfaccia: sezione "Scrivi", contatore, fase visibile, il testo resta nella casella se la pubblicazione fallisce, il post compare in cima al feed.
+57. **Primo post pubblicato via Tor** (prova di fine corsa): firmato in Rust, pubblicato in 3–4 s, sul nodo con testo e chiave giusti, verificato dal JavaScript, riletto dal feed. Difetto della prova trovato dall'asserzione sul contenuto: con `shell: true` su Windows il testo si spezzava al primo spazio (il nodo riceveva "Nderë:").
+
 ## Prossimo
 
+- **Provare il post dall'app VERA con la tua identità** (crea/recupera dalla finestra del seme, nodo di prova acceso, "Pubblica").
 - **F4 continua:** post (firma nel lato Rust con l'identità salvata), profilo; prova dinamica di I-31 con seme di prova, I-01 dinamica, `ArtiTransport` per Linux, build del guscio in CI.
 - **Per l'installer del nodo (punto 25):** la configurazione di produzione si legge SOLO da file (JSON), così nessuna opzione `…ForTests` che sia una funzione può accendersi.
 

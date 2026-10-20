@@ -223,15 +223,16 @@ impl ChiaveRuolo {
         &self.segreto
     }
 
-    /// Ricostruisce una chiave dal portachiavi del sistema.
-    pub fn da_portachiavi(ruolo: Ruolo, versione: u32, segreto: [u8; 32]) -> Result<Self, IdentityError> {
+    /// Ricostruisce una chiave dal portachiavi del sistema. Il segreto arriva per RIFERIMENTO: l'unica copia
+    /// nuova è quella dentro la chiave, che si cancella quando esce di scena.
+    pub fn da_portachiavi(ruolo: Ruolo, versione: u32, segreto: &[u8; 32]) -> Result<Self, IdentityError> {
         if ruolo == Ruolo::Revoke {
             return Err(IdentityError::Derivazione); // la revoca non si salva mai, quindi non si rilegge
         }
-        if ruolo.famiglia() == Famiglia::Schnorr && k256::SecretKey::from_slice(&segreto).is_err() {
+        if ruolo.famiglia() == Famiglia::Schnorr && k256::SecretKey::from_slice(segreto).is_err() {
             return Err(IdentityError::Derivazione);
         }
-        Ok(Self { ruolo, versione, segreto })
+        Ok(Self { ruolo, versione, segreto: *segreto })
     }
 }
 
@@ -313,9 +314,9 @@ mod tests {
     fn la_revoca_non_si_rilegge_dal_portachiavi() {
         let s = seme_prova();
         let r = deriva(&s, Ruolo::Revoke, 1).unwrap();
-        assert!(ChiaveRuolo::da_portachiavi(Ruolo::Revoke, 1, *r.segreto_per_portachiavi()).is_err());
+        assert!(ChiaveRuolo::da_portachiavi(Ruolo::Revoke, 1, r.segreto_per_portachiavi()).is_err());
         let i = deriva(&s, Ruolo::Identity, 1).unwrap();
-        let back = ChiaveRuolo::da_portachiavi(Ruolo::Identity, 1, *i.segreto_per_portachiavi()).unwrap();
+        let back = ChiaveRuolo::da_portachiavi(Ruolo::Identity, 1, i.segreto_per_portachiavi()).unwrap();
         assert_eq!(back.pubblica_hex(), i.pubblica_hex());
     }
 

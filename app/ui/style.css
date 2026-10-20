@@ -45,3 +45,9 @@ body {
 .feed li { border-top: 1px solid var(--bordo); padding: 12px 0; }
 .feed .chi { font: 12px ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--tenue); }
 .feed .testo { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.post-testo {
+  width: 100%; margin: 8px 0; padding: 10px 12px; resize: vertical;
+  background: var(--sfondo); color: var(--testo); border: 1px solid var(--bordo); border-radius: 8px;
+  font: inherit;
+}
+.post-testo:focus { outline: 2px solid var(--accento); outline-offset: 1px; }

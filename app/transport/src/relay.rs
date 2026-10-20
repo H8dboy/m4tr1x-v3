@@ -83,6 +83,32 @@ impl Relay {
         Ok(eventi)
     }
 
+    /// `["EVENT", evento]` → `["OK", id, accettato, messaggio]` (NIP-01). Un rifiuto del nodo NON è un
+    /// errore di rete: torna `Ok((false, motivo))`, e chi chiama non lo ritenta. Errore solo se il nodo
+    /// non risponde entro [`TEMPO_MASSIMO`] o chiude.
+    pub async fn pubblica(&mut self, evento: &Value) -> Result<(bool, String)> {
+        let id = evento.get("id").and_then(Value::as_str).ok_or_else(|| errore("evento senza id"))?.to_owned();
+        let scadenza = Instant::now() + TEMPO_MASSIMO;
+        self.manda(&json!(["EVENT", evento]), scadenza).await?;
+        loop {
+            let m = timeout_at(scadenza, self.ws.next())
+                .await
+                .map_err(|_| errore("tempo massimo superato in attesa della conferma"))?
+                .ok_or_else(|| errore("il nodo ha chiuso la connessione"))?
+                .map_err(errore)?;
+            let testo = match m {
+                Message::Text(t) => t,
+                Message::Close(_) => return Err(errore("il nodo ha chiuso la connessione")),
+                _ => continue,
+            };
+            let Ok(Value::Array(a)) = serde_json::from_str::<Value>(&testo) else { continue };
+            if a.first().and_then(Value::as_str) == Some("OK") && a.get(1).and_then(Value::as_str) == Some(id.as_str()) {
+                let accettato = a.get(2).and_then(Value::as_bool).unwrap_or(false);
+                return Ok((accettato, a.get(3).and_then(Value::as_str).unwrap_or("").to_owned()));
+            }
+        }
+    }
+
     /// Chiude la connessione (senza aspettare oltre il tempo massimo).
     pub async fn chiudi(mut self) {
         let _ = tokio::time::timeout(Duration::from_secs(5), self.ws.close(None)).await;

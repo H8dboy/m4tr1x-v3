@@ -135,3 +135,42 @@ async fn nodo_che_chiude_e_un_errore() {
     .await;
     assert!(relay.unwrap().richiedi(json!({})).await.is_err());
 }
+
+// ─── pubblica (F4, post) ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn pubblica_aspetta_l_ok_del_proprio_evento() {
+    let (relay, _) = collega(|mut ws| async move {
+        let ev = ricevi(&mut ws).await;
+        assert_eq!(ev[0], "EVENT");
+        let id = ev[1]["id"].clone();
+        manda(&mut ws, json!(["OK", "un-altro-id", false, "non è il tuo"])).await; // ignorato
+        manda(&mut ws, json!(["OK", id, true, ""])).await;
+    })
+    .await;
+    let r = relay.unwrap().pubblica(&json!({ "id": "abc", "content": "ciao" })).await.unwrap();
+    assert_eq!(r, (true, String::new()));
+}
+
+#[tokio::test]
+async fn il_no_del_nodo_e_una_risposta_non_un_errore() {
+    let (relay, _) = collega(|mut ws| async move {
+        let id = ricevi(&mut ws).await[1]["id"].clone();
+        manda(&mut ws, json!(["OK", id, false, "blocked: quota di questo autore esaurita"])).await;
+    })
+    .await;
+    let (ok, motivo) = relay.unwrap().pubblica(&json!({ "id": "abc" })).await.unwrap();
+    assert!(!ok);
+    assert!(motivo.starts_with("blocked"), "{motivo}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn pubblica_con_nodo_muto_tempo_massimo() {
+    let (relay, _) = collega(|mut ws| async move {
+        let _ = ricevi(&mut ws).await;
+        tokio::time::sleep(TEMPO_MASSIMO * 10).await;
+    })
+    .await;
+    let e = relay.unwrap().pubblica(&json!({ "id": "abc" })).await.unwrap_err();
+    assert!(e.to_string().contains("tempo massimo"), "{e}");
+}

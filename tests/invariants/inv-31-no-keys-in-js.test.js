@@ -18,6 +18,7 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('fs')
 const path = require('path')
+const { spawnSync } = require('child_process')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const SHELL = path.join(ROOT, 'app', 'shell')
@@ -122,4 +123,36 @@ test('interfaccia senza script inline, gestori on*=, eval o innerHTML', () => {
         assert.ok(!(/** @type {RegExp} */ (re)).test(src), `${rel}: ${what}`)
     }
   }
+})
+
+// Chiave d'identità per i post (F4, fondatore 20/10/2026): si legge dal portachiavi SOLO al momento della
+// firma e non resta in memoria. Nel guscio non esiste mai una ChiaveRuolo; il portachiavi si legge solo
+// dentro `firma_come_identita`, chiamata solo dal comando `pubblica`.
+test('chiave d\'identità: letta solo per firmare, mai tenuta dal guscio', () => {
+  const sorgenti = walk(path.join(SHELL, 'src')).filter(f => f.endsWith('.rs'))
+  for (const f of sorgenti) {
+    // solo il CODICE: un commento che spiega la regola non deve farla scattare
+    const src = read(f).replace(/\/\/[^\n]*/g, '')
+    assert.ok(!/\bChiaveRuolo\b/.test(src), `${path.relative(ROOT, f)}: il guscio tiene una ChiaveRuolo`)
+    assert.ok(!/portachiavi::carica|\bcarica\(/.test(src), `${path.relative(ROOT, f)}: il guscio legge chiavi dal portachiavi`)
+  }
+  const lib = read(path.join(SHELL, 'src', 'lib.rs')).replace(/\/\/[^\n]*/g, '')
+  const usi = [...lib.matchAll(/firma_come_identita\(/g)].length
+  assert.equal(usi, 1, `firma_come_identita usata ${usi} volte (attesa: solo nel comando pubblica)`)
+  const corpo = /async fn pubblica\([\s\S]*?\n}\n/.exec(lib)
+  assert.ok(corpo && corpo[0].includes('firma_come_identita('), 'firma_come_identita fuori dal comando pubblica')
+  const pc = read(path.join(ROOT, 'app', 'identity', 'src', 'portachiavi.rs'))
+  assert.match(pc, /let v = Zeroizing::new\(v\);/, 'il buffer letto dal portachiavi non si cancella')
+  assert.match(pc, /fn leggi\(&self, voce: &str\) -> Result<Option<Zeroizing<\[u8; 32\]>>, IdentityError>;/, 'il portachiavi restituisce il segreto senza Zeroizing')
+})
+
+const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' })
+test('chiave d\'identità (Rust): ogni firma legge il portachiavi, segreti ZeroizeOnDrop', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 900000 }, () => {
+  const app = path.join(ROOT, 'app')
+  const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(app, 'Cargo.toml'), '-p', 'm4tr1x-identity', '--test', 'firma_identita'],
+    { cwd: app, encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
+  const out = (r.stdout || '') + (r.stderr || '')
+  assert.equal(r.status, 0, out.slice(-4000))
+  for (const p of ['ogni_firma_legge_il_portachiavi_nessuna_chiave_tenuta', 'senza_identita_salvata_non_si_firma', 'segreti_cancellati_per_costruzione'])
+    assert.match(out, new RegExp(`${p} \\.\\.\\. ok`), `manca o fallisce la prova ${p}`)
 })

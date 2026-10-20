@@ -102,6 +102,7 @@ test('client del relay (Rust): limiti di tempo, eventi e dimensione contro un re
     { cwd: APP, encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
   const out = (r.stdout || '') + (r.stderr || '')
   assert.equal(r.status, 0, out.slice(-4000))
-  for (const t of ['richiesta_eventi_fino_a_eose_poi_close', 'troppi_eventi_e_un_errore', 'messaggio_troppo_grande_e_un_errore', 'nodo_muto_tempo_massimo'])
+  for (const t of ['richiesta_eventi_fino_a_eose_poi_close', 'troppi_eventi_e_un_errore', 'messaggio_troppo_grande_e_un_errore', 'nodo_muto_tempo_massimo',
+    'pubblica_aspetta_l_ok_del_proprio_evento', 'il_no_del_nodo_e_una_risposta_non_un_errore', 'pubblica_con_nodo_muto_tempo_massimo'])
     assert.match(out, new RegExp(`${t} \\.\\.\\. ok`), `manca o fallisce la prova ${t}`)
 })
