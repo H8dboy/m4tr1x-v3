@@ -3,7 +3,7 @@
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **185 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **187 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -69,9 +69,15 @@
 45. **Decisioni del fondatore:** (1) `TEMPO_MASSIMO_CONNESSIONE` 30 s per tentativo nel trait `Transport` (vale anche per Arti); (2) i tentativi li fa chi chiama: per il feed **tentativi da 30 s fino a un budget di 4 minuti** (peggiore misurato 251 s), con la **fase mostrata** ("sto cercando il nodo… 47 s"), poi "nodo non raggiungibile"; (3) `ExtendedErrors` sulla SocksPort: cause leggibili (es. "240: descrittore dell'onion non trovato"). Sabotaggi `i37-tentativo-senza-limite`, `i37-senza-extended-errors` presi; I-37 8/8 con tor vero.
 46. **Da misurare nel passo 4 (fondatore):** tor tiene i descrittori degli onion visitati SOLO in memoria → dopo un riavvio dell'app la ricerca potrebbe ripartire da zero. Misurare: primo collegamento, secondo nella stessa sessione, dopo un riavvio con la stessa cartella dati.
 
+47. **Passo 4 — feed (`app/feed`):** `leggi` = tentativi da 30 s fino al budget di 4 minuti; ogni evento passa da `m4tr1x_protocol::verifica`, solo kind 1, doppioni tolti, dal più recente; la fase si segnala sempre. `leggi_con_ripresa` (fondatore): budget scaduto → "il nodo non risponde ancora, Tor continua a cercarlo: riprovo tra N s" con conto alla rovescia di 60 s → UNA ripresa. Se il budget scade durante un tentativo, l'errore finale conserva la CAUSA vera (difetto trovato dalle prove). Prove con trasporto finto e i 32 vettori (6/6), `tests/unit/feed.test.js`; relay finto per le prove nel trasporto dietro la feature `prova` (tokio-tungstenite resta solo lì).
+48. **Guscio e interfaccia:** comandi `feed` e `feed_avanzamento` (l'interfaccia la chiede ogni secondo: niente eventi di Tauri, servirebbe un permesso core vietato da I-31); onion da `M4TR1X_NODO_PROVA`, mai verso il JS; un solo aggiornamento alla volta; si aspetta tor pronto. Sezione "Feed": fase visibile ("aspetto che Tor sia pronto… 12 s", "sto cercando il nodo… 47 s (tentativo 2)", "nodo trovato, scarico i post…"), post solo con `textContent`.
+49. **Prova di fine corsa** `tests/integration/feed-via-tor.test.js` (anche nel job tor della CI): nodo vero, post pubblicato, l'app (`app/feed/examples/misura.rs`) lo legge via Tor due volte, poi un secondo processo con la STESSA cartella dati ("dopo un riavvio"). Legge solo con pubblicazione del nodo CONFERMATA (fondatore); con la sola riserva: fase "pubblicazione" esplicita. **Errore mio trovato e corretto:** lanciavo l'app con `spawnSync`, che ferma il ciclo degli eventi del nodo nello stesso processo → "tempo massimo nell'apertura" a ogni tentativo (dimostrato con una sonda: upgrade a mano 101 in 0,3 s, `Relay::apri` 0,5 s, feed 6 s sullo stesso nodo).
+50. **Misure (punto 46 confermato):** stessa sessione 0–3 s; **dopo un riavvio la ricerca riparte da zero** (3–6 s di solito, 104–124 s con un HSDir lento); primo collegamento fino a 186 s, dentro il budget. Un rosso da 306 s (messaggio perso per un mio filtro dell'output) non si è ripetuto in 6 giri; poi nel report un rosso IDENTICO (305 s) col messaggio nuovo: "fase pubblicazione: il nodo è arrivato solo alla riserva dei 5 minuti" → quasi certamente era quello. Con un nodo appena creato capita ~1 volta su 7: rete Tor, si rilancia. Le misure ora si salvano intere.
+51. **Sabotaggio: falso verde chiuso per categoria.** Una prova "presa" perché il codice sabotato NON COMPILA non dimostra niente: `tools/sabotage/run.js` ora la segna "non-compila" (verificato rimettendo la vecchia prova difettosa). Ripasso delle 25 prove di oggi: tutte prese davvero. Sabotaggi feed nuovi: firma non controllata, ogni kind, senza ripresa.
+
 ## Prossimo
 
-- **F4 feed, passo 4:** comando `feed` (eventi verificati in Rust, `textContent` nell'interfaccia) + prova di fine corsa con un nodo vero via Tor.
+- **F4 continua:** post (firma nel lato Rust con l'identità salvata), profilo; prova dinamica di I-31 con seme di prova, I-01 dinamica, `ArtiTransport` per Linux, build del guscio in CI.
 - **Per l'installer del nodo (punto 25):** la configurazione di produzione si legge SOLO da file (JSON), così nessuna opzione `…ForTests` che sia una funzione può accendersi.
 
 1. Campagna completa di sabotaggio (lunga: le prove I-59 con tor durano ~10 min ciascuna).
@@ -80,7 +86,6 @@
 
 - OK del fondatore sulla bozza PEZZI_MANCANTI (tabella in fondo) → numeri I-42…I-50, K16, K17 entrano in SECURITY_INVARIANTS/KEYS.
 - Scrivere la procedura DSA (precondizione di F6).
-- **F4 continua:** feed/post/profilo verso un nodo di prova (firma nel lato Rust con l'identità salvata), collegare `TorProcessTransport` al guscio (stato reale), prova dinamica di I-31 con seme di prova, I-01 dinamica (namespace su Linux), `ArtiTransport` per Linux, build del guscio e `cargo deny` in CI.
 
 ## Fuori dal repo, ancora aperto
 - Sito nderja.com: correggere "identità ML-DSA", "codice pubblico", download Kalendae rotto.

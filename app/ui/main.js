@@ -58,7 +58,61 @@ async function apriSeme(/** @type {'crea'|'recupera'} */ modo) {
   if (!attesa) attesa = setInterval(aggiornaIdentita, 2000)
 }
 
+// ─── Feed ────────────────────────────────────────────────────────────────────
+// I post arrivano GIÀ verificati dal lato Rust (firma, rete, dati H8). Qui si mostrano soltanto,
+// sempre con textContent. Il primo collegamento a un nodo può richiedere minuti (misura del
+// 20/10/2026): la fase si mostra ogni secondo, l'app non deve sembrare bloccata.
+
+/** @param {{fase: string, secondi: number, tentativo: number}} a */
+function testoFase(a) {
+  const s = Number(a.secondi), n = Number(a.tentativo)
+  switch (a.fase) {
+    case 'tor': return `aspetto che Tor sia pronto… ${s} s`
+    case 'cerco': return n > 1 ? `sto cercando il nodo… ${s} s (tentativo ${n})` : `sto cercando il nodo… ${s} s`
+    case 'scarico': return `nodo trovato, scarico i post… ${s} s`
+    case 'attesa_ripresa': return `il nodo non risponde ancora, Tor continua a cercarlo: riprovo tra ${s} s`
+    default: return ''
+  }
+}
+
+/** @param {any} p */
+function voce(p) {
+  const li = document.createElement('li')
+  const chi = document.createElement('div')
+  chi.className = 'chi'
+  const quando = new Date(Number(p.creato) * 1000).toLocaleString('it-IT')
+  chi.textContent = `${String(p.autore).slice(0, 12)}… · ${quando}`
+  const testo = document.createElement('p')
+  testo.className = 'testo'
+  testo.textContent = String(p.testo)
+  li.append(chi, testo)
+  return li
+}
+
+async function aggiornaFeed() {
+  const bottone = /** @type {HTMLButtonElement|null} */ (document.getElementById('aggiorna-feed'))
+  if (bottone) bottone.disabled = true
+  const fase = setInterval(async () => {
+    const a = await invoke('feed_avanzamento').catch(() => null)
+    if (a) mostra('feed-stato', testoFase(a))
+  }, 1000)
+  mostra('feed-stato', 'sto cercando il nodo…')
+  try {
+    const f = await invoke('feed')
+    const lista = document.getElementById('feed-lista')
+    if (lista) lista.replaceChildren(...f.post.map(voce))
+    const scartati = Number(f.scartati) ? ` · ${Number(f.scartati)} scartati (non validi)` : ''
+    mostra('feed-stato', `${f.post.length} post in ${Number(f.secondi)} s${scartati}`)
+  } catch (e) {
+    mostra('feed-stato', String(e))
+  } finally {
+    clearInterval(fase)
+    if (bottone) bottone.disabled = false
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('aggiorna-feed')?.addEventListener('click', aggiornaFeed)
   document.getElementById('crea')?.addEventListener('click', () => apriSeme('crea'))
   document.getElementById('recupera')?.addEventListener('click', () => apriSeme('recupera'))
   aggiornaStato()

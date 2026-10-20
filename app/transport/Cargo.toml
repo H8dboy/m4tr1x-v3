@@ -25,5 +25,9 @@ tokio-tungstenite = { version = "=0.30.0", default-features = false, features = 
 futures-util = { version = "=0.3.34", default-features = false, features = ["sink", "std"] }
 serde_json = "=1.0.154"
 
+[features]
+# relay finto per le prove di chi usa il trasporto (src/prova.rs); mai nell'app
+prova = []
+
 [dev-dependencies]
 tokio = { version = "=1.53.3", default-features = false, features = ["process", "net", "io-util", "time", "sync", "rt-multi-thread", "macros", "test-util"] }

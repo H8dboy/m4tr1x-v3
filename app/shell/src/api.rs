@@ -45,6 +45,70 @@ impl From<IdentitaPubblica> for Identita {
     }
 }
 
+/// Un post del feed, GIÀ verificato nel lato Rust (m4tr1x-feed → m4tr1x-protocol). L'autore è la sua
+/// chiave PUBBLICA d'identità; il testo si mostra solo con `textContent`.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Post {
+    pub id: String,
+    pub autore: String,
+    pub creato: u64,
+    pub testo: String,
+}
+
+/// Il feed: post dal più recente, quanti eventi sono stati scartati, quanto ci è voluto.
+/// Nessun indirizzo del nodo: l'onion resta nel lato Rust.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Feed {
+    pub post: Vec<Post>,
+    pub scartati: u32,
+    pub secondi: u64,
+    pub tentativi: u32,
+}
+
+impl From<m4tr1x_feed::Feed> for Feed {
+    fn from(f: m4tr1x_feed::Feed) -> Self {
+        Self {
+            post: f.post.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo }).collect(),
+            scartati: u32::try_from(f.scartati).unwrap_or(u32::MAX),
+            secondi: f.secondi,
+            tentativi: f.tentativi,
+        }
+    }
+}
+
+/// Dove si trova il feed, per non sembrare bloccati ("sto cercando il nodo… 47 s, tentativo 2").
+/// `fase`: "fermo" | "tor" (tor non ancora pronto) | "cerco" | "scarico" | "fatto" | "non_raggiungibile"
+/// | "attesa_ripresa" (budget scaduto, Tor continua a cercare: `secondi` = quanti ne mancano alla ripresa).
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Avanzamento {
+    pub fase: String,
+    pub secondi: u64,
+    pub tentativo: u32,
+}
+
+impl Avanzamento {
+    pub fn fermo() -> Self {
+        Self { fase: "fermo".into(), secondi: 0, tentativo: 0 }
+    }
+    pub fn tor(secondi: u64) -> Self {
+        Self { fase: "tor".into(), secondi, tentativo: 0 }
+    }
+}
+
+impl From<&m4tr1x_feed::Fase> for Avanzamento {
+    fn from(f: &m4tr1x_feed::Fase) -> Self {
+        use m4tr1x_feed::Fase::*;
+        let (fase, secondi, tentativo) = match *f {
+            CercoIlNodo { secondi, tentativo } => ("cerco", secondi, tentativo),
+            Scarico { secondi, tentativo } => ("scarico", secondi, tentativo),
+            Fatto { secondi, tentativo } => ("fatto", secondi, tentativo),
+            NonRaggiungibile { secondi, tentativo } => ("non_raggiungibile", secondi, tentativo),
+            AttesaRipresa { fra_secondi } => ("attesa_ripresa", fra_secondi, 0),
+        };
+        Self { fase: fase.into(), secondi, tentativo }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

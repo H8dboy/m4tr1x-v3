@@ -235,6 +235,16 @@ module.exports = [
     replace: '            tor_sha256: tor_bin.as_deref().and_then(|p| sha256_file(p).ok()).unwrap_or_default(),\n            tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,',
     test: T('inv-37-tor-process'), timeoutMs: 900000 },
 
+  // ─── F4: feed (passo 4) ──
+  // deve COMPILARE: un sabotaggio "preso" perché non compila non dimostra niente (20/10/2026)
+  { id: 'feed-firma-non-controllata', rule: 'feed', name: 'feed con eventi a firma falsa (verifica della firma tolta)', file: 'app/protocol/src/lib.rs',
+    find: '    verifica_firma(pubkey, id, sig)?;\n', replace: '    let _ = verifica_firma;\n', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
+  { id: 'feed-ogni-kind', rule: 'feed', name: 'feed che mostra eventi di ogni tipo (non solo post)', file: 'app/feed/src/lib.rs',
+    find: '            Ok(e) if e.kind == 1 => {', replace: '            Ok(e) => {', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
+  { id: 'feed-senza-ripresa', rule: 'feed', name: 'budget scaduto senza la ripresa automatica', file: 'app/feed/src/lib.rs',
+    find: '    if let Ok(f) = leggi(t, nodo, rete, budget, &avanza).await {\n        return Ok(f);\n    }\n',
+    replace: '    return leggi(t, nodo, rete, budget, &avanza).await;\n    #[allow(unreachable_code)]\n', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
+
   // ─── F4: registro dei crash senza dati dell'utente ──
   { id: 'crash-messaggio-runtime', rule: 'diagnostica', name: 'registro dei crash che scrive i messaggi costruiti a runtime', file: 'app/crash/src/lib.rs',
     find: '        format!("(costruito a runtime, {} caratteri: omesso perché può contenere dati dell\'utente)", costruito.chars().count())',

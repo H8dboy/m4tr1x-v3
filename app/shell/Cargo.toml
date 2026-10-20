@@ -23,6 +23,11 @@ m4tr1x-transport = { path = "../transport" }
 m4tr1x-identity = { path = "../identity" }
 # registro dei crash su file, senza dati dell'utente
 m4tr1x-crash = { path = "../crash" }
+# feed: ultimi post del nodo via Tor, verificati in Rust
+m4tr1x-feed = { path = "../feed" }
+m4tr1x-protocol = { path = "../protocol" }
+# solo timer (attesa di tor pronto nel feed); niente rete (I-36)
+tokio = { version = "=1.53.3", default-features = false, features = ["time"] }
 zeroize = "=1.8.2"
 
 # Blocco delle catture dello schermo sulla finestra del seme (I-58). Già nel lockfile via Tauri.

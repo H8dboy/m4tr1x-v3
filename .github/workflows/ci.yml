@@ -129,6 +129,11 @@ jobs:
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
         run: node tools/report/esegui.js --senza-saltati tests/invariants/inv-37-tor-process.test.js
+      # F4: il feed dell'app legge via Tor i post verificati di un nodo vero (e misura le riaperture)
+      - name: Feed dell'app via Tor (fine corsa)
+        env:
+          M4TR1X_TOR_BIN: /usr/bin/tor
+        run: node tools/report/esegui.js --senza-saltati tests/integration/feed-via-tor.test.js
       # Misura a freddo (nodo nuovo al primo avvio): NON bloccante, finisce nel riepilogo del job.
       - name: Misura a freddo della rete Tor (non bloccante)
         if: always()

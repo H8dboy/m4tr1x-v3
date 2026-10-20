@@ -2067,6 +2067,17 @@ name = "m4tr1x-crash"
 version = "0.1.0"
 
 [[package]]
+name = "m4tr1x-feed"
+version = "0.1.0"
+dependencies = [
+ "m4tr1x-protocol",
+ "m4tr1x-transport",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "m4tr1x-identity"
 version = "0.1.0"
 dependencies = [
@@ -2097,12 +2108,15 @@ name = "m4tr1x-shell"
 version = "0.1.0"
 dependencies = [
  "m4tr1x-crash",
+ "m4tr1x-feed",
  "m4tr1x-identity",
+ "m4tr1x-protocol",
  "m4tr1x-transport",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
  "windows-sys 0.61.2",
  "zeroize",
 ]

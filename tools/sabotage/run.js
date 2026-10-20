@@ -58,7 +58,11 @@ for (const m of MUTATIONS.filter(x => x.id.includes(filter))) {
     const last = fails.at(-1)
     // Un test fermato dal tempo massimo NON ha preso il sabotaggio: non si sa cosa avrebbe detto.
     const timedOut = /testTimeoutFailure|timed out after/.test(out)
+    // Un sabotaggio che NON COMPILA non è "preso": il test cade per l'errore di compilazione, non perché
+    // si accorge della regola rotta. Va riscritto perché compili (20/10/2026: feed-senza-verifica lo era).
+    const nonCompila = /error\[E\d{4}\]|could not compile/.test(out)
     if (r.error) { outcome = 'interrotta'; detail = `test interrotto (${r.error.message}): alzare timeoutMs della prova` }
+    else if (nonCompila) { outcome = 'non-compila'; detail = 'il codice sabotato non compila: la prova non dimostra niente, va riscritta' }
     else if (timedOut) { outcome = 'interrotta'; detail = `tempo massimo (${testTimeout} ms) superato: alzare timeoutMs della prova` }
     else if (!last) { outcome = 'presa'; detail = 'il test è caduto' }
     else if (last.trim() === '# fail 0') { outcome = 'sfuggita'; detail = 'tutti i test verdi con la regola rotta' }
@@ -69,7 +73,7 @@ for (const m of MUTATIONS.filter(x => x.id.includes(filter))) {
   }
   if (sha(fs.readFileSync(file, 'utf8')) !== sha(orig)) throw new Error(`ripristino fallito: ${m.file}`)
   results.push({ ...pick(m), outcome, detail })
-  console.log(`${outcome === 'presa' ? 'PRESA     ' : outcome === 'interrotta' ? 'INTERROTTA' : 'SFUGGITA  '}  ${m.rule} ${m.name} — ${detail}`)
+  console.log(`${outcome === 'presa' ? 'PRESA     ' : outcome === 'interrotta' ? 'INTERROTTA' : outcome === 'non-compila' ? 'NON COMPILA' : 'SFUGGITA  '}  ${m.rule} ${m.name} — ${detail}`)
 }
 
 /** @param {any} m */

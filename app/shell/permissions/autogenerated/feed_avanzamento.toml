@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-feed-avanzamento"
+description = "Enables the feed_avanzamento command without any pre-configured scope."
+commands.allow = ["feed_avanzamento"]
+
+[[permission]]
+identifier = "deny-feed-avanzamento"
+description = "Denies the feed_avanzamento command without any pre-configured scope."
+commands.deny = ["feed_avanzamento"]

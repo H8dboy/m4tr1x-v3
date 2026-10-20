@@ -10,6 +10,8 @@
 //! un metodo per collegarsi a un host in chiaro.
 
 pub mod onion;
+#[cfg(feature = "prova")]
+pub mod prova;
 pub mod relay;
 pub mod tor_process;
 

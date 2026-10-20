@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Finestra principale: solo stato, identità pubblica e apertura della finestra del seme. Nessun comando del seme, nessun plugin, nessuna API core (I-31, I-58)",
+  "description": "Finestra principale: solo stato, identità pubblica, feed (post già verificati in Rust) e apertura della finestra del seme. Nessun comando del seme, nessun plugin, nessuna API core (I-31, I-58)",
   "windows": ["main"],
-  "permissions": ["allow-stato", "allow-identita", "allow-apri-finestra-seme"]
+  "permissions": ["allow-stato", "allow-identita", "allow-apri-finestra-seme", "allow-feed", "allow-feed-avanzamento"]
 }

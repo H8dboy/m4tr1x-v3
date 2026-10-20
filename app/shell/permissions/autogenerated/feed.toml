@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-feed"
+description = "Enables the feed command without any pre-configured scope."
+commands.allow = ["feed"]
+
+[[permission]]
+identifier = "deny-feed"
+description = "Denies the feed command without any pre-configured scope."
+commands.deny = ["feed"]

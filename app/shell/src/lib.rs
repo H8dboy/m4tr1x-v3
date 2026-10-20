@@ -9,12 +9,13 @@
 pub mod api;
 pub mod api_seme;
 
-use api::{Identita, Stato};
+use api::{Avanzamento, Feed, Identita, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::Sistema;
-use m4tr1x_transport::{TorProcessConfig, TorProcessTransport, Transport, TransportStatus};
+use m4tr1x_transport::{OnionV3, TorProcessConfig, TorProcessTransport, Transport, TransportStatus};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use zeroize::Zeroize;
@@ -58,9 +59,21 @@ fn escludi_dalle_catture(_w: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Tor dell'app (I-37, ADR-0016). `None`: tor non indicato (in F4 la variabile `M4TR1X_TOR_BIN`)
-/// oppure piattaforma che userà Arti (non ancora fatto): il trasporto resta spento e lo stato lo dice.
-struct Rete(Option<Arc<TorProcessTransport>>);
+/// Tor dell'app (I-37, ADR-0016) e nodo di prova. `tor` None: tor non indicato (in F4 la variabile
+/// `M4TR1X_TOR_BIN`) oppure piattaforma che userà Arti (non ancora fatto). `nodo` None: variabile
+/// `M4TR1X_NODO_PROVA` assente o non un onion v3 valido. L'onion NON esce mai verso l'interfaccia.
+struct Rete {
+    tor: Option<Arc<TorProcessTransport>>,
+    nodo: Option<OnionV3>,
+}
+
+/// Fase del feed in corso, letta dall'interfaccia ogni secondo (`feed_avanzamento`): niente eventi di
+/// Tauri, che richiederebbero un permesso core (I-31).
+#[derive(Default)]
+struct StatoFeed {
+    in_corso: AtomicBool,
+    fase: Mutex<Option<Avanzamento>>,
+}
 
 /// Avvia tor in background: hash dal lock incluso alla compilazione, cartella dati dell'app.
 /// Gli errori restano nello stato del trasporto (`Errore`); all'interfaccia arriva solo "errore" (api.rs).
@@ -75,14 +88,53 @@ fn avvia_rete(app: &tauri::App) -> Result<Rete, Box<dyn std::error::Error>> {
             }
         });
     }
-    Ok(Rete(tor))
+    let nodo = std::env::var("M4TR1X_NODO_PROVA").ok().and_then(|s| OnionV3::parse(s.trim().trim_start_matches("http://")).ok());
+    Ok(Rete { tor, nodo })
 }
 
 /// Stato dell'app per l'interfaccia. Nessun dato sensibile.
 #[tauri::command]
 fn stato(rete: tauri::State<'_, Rete>) -> Stato {
-    let t = rete.0.as_ref().map(|t| t.status()).unwrap_or(TransportStatus::Spento);
+    let t = rete.tor.as_ref().map(|t| t.status()).unwrap_or(TransportStatus::Spento);
     Stato::new(env!("CARGO_PKG_VERSION"), &t)
+}
+
+/// Ultimi post del nodo di prova, verificati nel lato Rust (m4tr1x-feed). Aspetta tor pronto, poi
+/// tentativi da 30 s fino a 4 minuti; la fase si legge con `feed_avanzamento`.
+/// Gli errori dicono cosa manca o quanto si è aspettato, mai l'indirizzo del nodo.
+#[tauri::command]
+async fn feed(rete: tauri::State<'_, Rete>, stato: tauri::State<'_, StatoFeed>) -> Result<Feed, String> {
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    if stato.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("feed già in aggiornamento".into());
+    }
+    let imposta = |a: Avanzamento| *stato.fase.lock().unwrap() = Some(a);
+    let esito = async {
+        // tor ancora in avvio: si aspetta (al massimo il tempo di bootstrap del trasporto) mostrando la fase
+        let t0 = std::time::Instant::now();
+        while !matches!(tor.status(), TransportStatus::Pronto) {
+            if matches!(tor.status(), TransportStatus::Errore(_) | TransportStatus::Spento) || t0.elapsed() > std::time::Duration::from_secs(180) {
+                return Err("tor non è pronto".to_string());
+            }
+            imposta(Avanzamento::tor(t0.elapsed().as_secs()));
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        // budget scaduto → attesa di un minuto con conto alla rovescia → una ripresa (fondatore, 20/10/2026)
+        m4tr1x_feed::leggi_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| imposta(Avanzamento::from(&f)))
+            .await
+            .map(Feed::from)
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+    }
+    .await;
+    stato.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Fase del feed in corso (o dell'ultimo), per l'interfaccia.
+#[tauri::command]
+fn feed_avanzamento(stato: tauri::State<'_, StatoFeed>) -> Avanzamento {
+    stato.fase.lock().unwrap().clone().unwrap_or_else(Avanzamento::fermo)
 }
 
 /// Identità salvata (solo chiavi pubbliche), se c'è.
@@ -170,6 +222,7 @@ pub fn run() {
     }
     tauri::Builder::default()
         .manage(StatoSeme::default())
+        .manage(StatoFeed::default())
         .setup(move |app| {
             // se Tauri usa un'altra cartella dati, il registro la segue
             let dati = app.path().app_data_dir()?;
@@ -188,13 +241,13 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento])
         .build(tauri::generate_context!())
         .expect("avvio dell'app fallito")
         .run(|app, ev| {
             // l'app si chiude: tor si chiude con lei (oltre a TAKEOWNERSHIP, che lo chiude anche se l'app muore)
             if let RunEvent::Exit = ev {
-                if let Some(t) = app.try_state::<Rete>().and_then(|r| r.0.clone()) {
+                if let Some(t) = app.try_state::<Rete>().and_then(|r| r.tor.clone()) {
                     tauri::async_runtime::block_on(t.shutdown());
                 }
             }
