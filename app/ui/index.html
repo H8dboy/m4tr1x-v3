@@ -32,6 +32,18 @@
       <p>Tor: <strong id="trasporto">—</strong> <span id="percento"></span></p>
     </section>
     <section class="scheda">
+      <h2>Profilo</h2>
+      <label for="profilo-nome" class="tenue">Nome</label>
+      <input id="profilo-nome" class="campo" maxlength="50" autocomplete="off">
+      <label for="profilo-descrizione" class="tenue">Descrizione</label>
+      <textarea id="profilo-descrizione" class="post-testo" rows="2" maxlength="500"></textarea>
+      <p class="riga-feed">
+        <button id="profilo-salva">Salva</button>
+        <button id="profilo-carica" class="secondario">Carica dal nodo</button>
+        <span id="profilo-stato" class="tenue" aria-live="polite"></span>
+      </p>
+    </section>
+    <section class="scheda">
       <h2>Scrivi</h2>
       <label for="post-testo" class="tenue">Il post si firma con la tua identità, sul tuo computer.</label>
       <textarea id="post-testo" class="post-testo" rows="3" maxlength="2000"></textarea>

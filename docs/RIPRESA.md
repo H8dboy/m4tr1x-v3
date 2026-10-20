@@ -3,7 +3,7 @@
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **199 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **200 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -83,9 +83,17 @@
 56. **Pubblicazione:** `Relay::pubblica` (EVENT → OK del proprio evento; il "no" del nodo è una risposta, non un errore); `m4tr1x_feed::pubblica` con gli stessi tentativi e la stessa ripresa del feed (`con_tentativi`, `con_ripresa`, funzioni comuni; il "no" del nodo non si ritenta). Guscio: comando `pubblica` + `pubblica_avanzamento`; corretto anche un difetto del feed (con tor "spento" ma configurato rispondeva subito "non pronto" invece di aspettare). Interfaccia: sezione "Scrivi", contatore, fase visibile, il testo resta nella casella se la pubblicazione fallisce, il post compare in cima al feed.
 57. **Primo post pubblicato via Tor** (prova di fine corsa): firmato in Rust, pubblicato in 3–4 s, sul nodo con testo e chiave giusti, verificato dal JavaScript, riletto dal feed. Difetto della prova trovato dall'asserzione sul contenuto: con `shell: true` su Windows il testo si spezzava al primo spazio (il nodo riceveva "Nderë:").
 
+58. **20/10/2026, 14:49 — primo post dall'app VERA, scritto dal fondatore: "Hajde shqipe".** Identità usa e getta (24 parole pubbliche di prova, `817d2b66…`), nodo di prova con pubblicazione confermata, firma nel lato Rust, via Tor. Ricontrollato dal nodo stesso in locale: 1 post, firma valida per il JavaScript. Poi: app e nodo chiusi, nessun tor rimasto, le 3 voci di prova cancellate dal portachiavi (identity/dm/wallet v1), nessun crash.log.
+
+59. **Profilo (kind 0) — decisioni del fondatore:** solo `name` e `about` (niente lud16/lud06, nip05, picture; immagine in F6 con la pulizia dei metadati). `m4tr1x_protocol`: `profilo_da_evento` (elenco chiuso, testi tagliati 50/500 in lettura), `contenuto_profilo` (rifiuta oltre i limiti in scrittura). Dal nome si tolgono caratteri invisibili e di DIREZIONE (U+202E ecc.: falsificazione di nomi che `textContent` non ferma). Rust stesso rifiuta quei caratteri nel sorgente: un mio commento con U+202E non compilava.
+60. **Nel feed il nome viene SOLO da un profilo verificato**, il più recente per autore, chiesto nella stessa connessione dei post; chi non ha profilo non riceve un nome inventato. `leggi_profilo` precompila il modulo. Guscio: `profilo_mio`, `profilo_salva`, `profilo_avanzamento`; la firma passa da UN solo punto del guscio (`firma_con_la_mia_identita`, unica chiamata a `firma_come_identita`), usato solo da `pubblica` e `profilo_salva` (I-31 lo controlla). Interfaccia: sezione Profilo (nome, descrizione, Salva, Carica dal nodo); il feed mostra il nome accanto all'inizio della chiave.
+61. **Difetti trovati lavorando al profilo:** (1) il relay finto delle prove ignorava i filtri delle `REQ`: due prove del feed contavano come "scartati" eventi che il nodo vero non manderebbe mai; ora filtra come il nodo (kinds, authors, ids). (2) `Evento` aveva i campi tutti pubblici: chiunque poteva costruirne uno NON verificato, contro il suo commento; ora un campo privato lo impedisce, provato con un doctest `compile_fail`. (3) una mia prova di sabotaggio non toglieva davvero la verifica: riscritta (toglie id e firma nel protocollo). Sabotaggi `profilo-*` 3/3.
+62. **Prova di fine corsa:** l'app salva via Tor il profilo "Prova M4TR1X", pubblica un post, e il feed riletto lo mostra con quel nome.
+
 ## Prossimo
 
-- **Provare il post dall'app VERA con la tua identità** (crea/recupera dalla finestra del seme, nodo di prova acceso, "Pubblica").
+- **Provare il profilo dall'app vera** (identità usa e getta come per il primo post).
+
 - **F4 continua:** post (firma nel lato Rust con l'identità salvata), profilo; prova dinamica di I-31 con seme di prova, I-01 dinamica, `ArtiTransport` per Linux, build del guscio in CI.
 - **Per l'installer del nodo (punto 25):** la configurazione di produzione si legge SOLO da file (JSON), così nessuna opzione `…ForTests` che sia una funzione può accendersi.
 

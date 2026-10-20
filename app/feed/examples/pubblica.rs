@@ -10,6 +10,9 @@ use m4tr1x_transport::tor_process::sha256_file;
 use m4tr1x_transport::{OnionV3, TorProcessConfig, TorProcessTransport, Transport};
 use std::time::Duration;
 
+/// nome del profilo di prova: il test controlla che il feed lo mostri sul post
+const NOME_PROVA: &str = "Prova M4TR1X";
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let mut a = std::env::args().skip(1);
@@ -25,12 +28,22 @@ async fn main() {
     let k = deriva(&seme, Ruolo::Identity, 1).unwrap();
     let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
     let ev = firma_evento(1, &testo, &[], ora, Rete::Prova, &k.pubblica_hex(), |d| k.firma_schnorr(d)).expect("firma");
+    // il profilo (kind 0) prima del post: nel feed riletto il post deve avere il nome
+    let profilo = m4tr1x_protocol::contenuto_profilo(NOME_PROVA, "profilo di prova").expect("profilo");
+    let ev_profilo = firma_evento(0, &profilo, &[], ora, Rete::Prova, &k.pubblica_hex(), |d| k.firma_schnorr(d)).expect("firma del profilo");
     drop(k);
+    if let Err(e) = m4tr1x_feed::pubblica(&t, &onion, &ev_profilo, m4tr1x_feed::BUDGET, |_| {}).await {
+        println!("{{\"id\":\"{}\",\"errore\":{:?}}}", ev.id, format!("profilo: {e:?}"));
+        t.shutdown().await;
+        return;
+    }
 
     match m4tr1x_feed::pubblica(&t, &onion, &ev, m4tr1x_feed::BUDGET, |_| {}).await {
         Ok(p) => {
-            let riletto = m4tr1x_feed::leggi_con_ripresa(&t, &onion, Rete::Prova, m4tr1x_feed::BUDGET, |_| {}).await.map(|f| f.post.iter().any(|x| x.id == ev.id));
-            println!("{{\"id\":\"{}\",\"secondi\":{},\"tentativi\":{},\"riletto\":{}}}", ev.id, p.secondi, p.tentativi, matches!(riletto, Ok(true)));
+            let feed = m4tr1x_feed::leggi_con_ripresa(&t, &onion, Rete::Prova, m4tr1x_feed::BUDGET, |_| {}).await;
+            let mio = feed.as_ref().ok().and_then(|f| f.post.iter().find(|x| x.id == ev.id).cloned());
+            let nome = mio.as_ref().and_then(|p| p.nome.clone()).unwrap_or_default();
+            println!("{{\"id\":\"{}\",\"secondi\":{},\"tentativi\":{},\"riletto\":{},\"nome\":{:?}}}", ev.id, p.secondi, p.tentativi, mio.is_some(), nome);
         }
         Err(e) => println!("{{\"id\":\"{}\",\"errore\":{:?}}}", ev.id, format!("{e:?}")),
     }

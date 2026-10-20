@@ -11,6 +11,12 @@ use tokio_tungstenite::tungstenite::Message;
 /// Contenuto che il relay finto rifiuta (`OK` false), per provare il "no" del nodo.
 pub const CONTENUTO_RIFIUTATO: &str = "relay finto: rifiutami";
 
+/// Un evento passa il filtro NIP-01 (solo `kinds`, `authors`, `ids`: quelli che usa l'app).
+fn passa(filtro: &Value, e: &Value) -> bool {
+    let in_elenco = |chiave: &str, valore: &Value| filtro.get(chiave).and_then(Value::as_array).is_none_or(|l| l.contains(valore));
+    in_elenco("kinds", &e["kind"]) && in_elenco("authors", &e["pubkey"]) && in_elenco("ids", &e["id"])
+}
+
 /// Accetta il WebSocket sul flusso e a ogni `REQ` risponde con `eventi` e poi `EOSE`.
 pub async fn relay_finto<S: AsyncRead + AsyncWrite + Unpin>(flusso: S, eventi: Vec<Value>) {
     relay_finto_condiviso(flusso, Arc::new(Mutex::new(eventi))).await
@@ -26,7 +32,10 @@ pub async fn relay_finto_condiviso<S: AsyncRead + AsyncWrite + Unpin>(flusso: S,
         match a.first().and_then(Value::as_str) {
             Some("REQ") => {
                 let id = a.get(1).cloned().unwrap_or(Value::Null);
-                let copia = eventi.lock().unwrap().clone();
+                // filtri come il nodo vero (kinds, authors, ids): un relay finto che manda tutto farebbe passare
+                // prove che col nodo fallirebbero (20/10/2026, profili)
+                let filtro = a.get(2).cloned().unwrap_or(Value::Null);
+                let copia: Vec<Value> = eventi.lock().unwrap().iter().filter(|e| passa(&filtro, e)).cloned().collect();
                 for e in &copia {
                     if ws.send(Message::text(json!(["EVENT", id, e]).to_string())).await.is_err() {
                         return;

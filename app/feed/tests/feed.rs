@@ -82,7 +82,9 @@ async fn solo_post_verificati_dal_piu_recente() {
     let fasi = Mutex::new(vec![]);
     let f = leggi(&Finto::new(eventi, 0, false), &nodo(), Rete::Prova, BUDGET, |x| fasi.lock().unwrap().push(x)).await.unwrap();
     assert_eq!(f.post.len(), attesi, "post verificati");
-    assert_eq!(f.scartati, v.len() - attesi, "non validi o non kind 1");
+    // il nodo (come il relay finto) manda solo i kind 1 chiesti: scartati = kind 1 NON validi
+    let falsi_kind1 = v.iter().filter(|(ok, e)| !*ok && e["kind"] == 1).count();
+    assert_eq!(f.scartati, falsi_kind1, "kind 1 non validi");
     assert!(f.post.windows(2).all(|w| w[0].creato >= w[1].creato), "non in ordine dal più recente");
     assert_eq!(f.tentativi, 1);
     let fasi = fasi.into_inner().unwrap();
@@ -97,7 +99,7 @@ async fn nessun_testo_di_eventi_non_validi_arriva_al_feed() {
     let falsi: Vec<Value> = v.iter().filter(|(ok, _)| !ok).map(|(_, e)| e.clone()).collect();
     let f = leggi(&Finto::new(falsi.clone(), 0, false), &nodo(), Rete::Prova, BUDGET, |_| {}).await.unwrap();
     assert!(f.post.is_empty(), "{:?}", f.post);
-    assert_eq!(f.scartati, falsi.len());
+    assert_eq!(f.scartati, falsi.iter().filter(|e| e["kind"] == 1).count(), "tutti i kind 1 falsi scartati");
 }
 
 /// Come nella misura del 20/10: i primi tentativi scadono, poi il descrittore arriva e si riesce.
@@ -204,4 +206,56 @@ async fn pubblica_riprova_e_riprende_come_il_feed() {
     let fasi = fasi.into_inner().unwrap();
     assert!(fasi.iter().any(|x| matches!(x, Fase::AttesaRipresa { .. })), "nessuna ripresa: {fasi:?}");
     assert!(finto.eventi.lock().unwrap().iter().any(|e| e["id"] == p.id.as_str()));
+}
+
+// ─── Profili (kind 0) nel feed ───────────────────────────────────────────────
+
+fn chiave(versione: u32) -> m4tr1x_identity::ChiaveRuolo {
+    use m4tr1x_identity::{deriva, seme_da_parole, Ruolo};
+    let seme = seme_da_parole(&(["abandon"; 23].join(" ") + " art"), "").unwrap();
+    deriva(&seme, Ruolo::Identity, versione).unwrap()
+}
+
+fn firmato(k: &m4tr1x_identity::ChiaveRuolo, kind: u16, content: &str, quando: u64) -> Value {
+    serde_json::to_value(m4tr1x_protocol::firma_evento(kind, content, &[], quando, Rete::Prova, &k.pubblica_hex(), |d| k.firma_schnorr(d)).unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn il_feed_mostra_il_nome_dal_profilo_piu_recente() {
+    let (a, b) = (chiave(1), chiave(2));
+    let mut falso = firmato(&b, 0, r#"{"name":"Impostore"}"#, 300);
+    falso["pubkey"] = Value::String(a.pubblica_hex()); // profilo con la chiave di A ma firmato da B
+    let eventi = vec![
+        firmato(&a, 1, "post di A", 100),
+        firmato(&b, 1, "post di B", 101),
+        firmato(&a, 0, r#"{"name":"Vecchio nome"}"#, 50),
+        firmato(&a, 0, r#"{"name":"Arta","about":"x","lud16":"paga@esempio"}"#, 60),
+        falso,
+    ];
+    let f = leggi(&Finto::new(eventi, 0, false), &nodo(), Rete::Prova, BUDGET, |_| {}).await.unwrap();
+    let nome = |testo: &str| f.post.iter().find(|p| p.testo == testo).unwrap().nome.clone();
+    assert_eq!(nome("post di A"), Some("Arta".into()), "vince il profilo più recente e VALIDO");
+    assert_eq!(nome("post di B"), None, "B non ha un profilo: nessun nome inventato");
+}
+
+#[tokio::test]
+async fn leggi_profilo_per_precompilare() {
+    let a = chiave(1);
+    let eventi = vec![firmato(&a, 0, r#"{"name":"Arta","about":"ciao"}"#, 10), firmato(&a, 0, r#"{"name":"Vecchio"}"#, 5)];
+    let finto = Finto::new(eventi, 0, false);
+    let p = m4tr1x_feed::leggi_profilo(&finto, &nodo(), Rete::Prova, &a.pubblica_hex(), BUDGET, |_| {}).await.unwrap();
+    assert_eq!(p, Some(m4tr1x_protocol::Profilo { name: "Arta".into(), about: "ciao".into() }));
+    let nessuno = m4tr1x_feed::leggi_profilo(&finto, &nodo(), Rete::Prova, &chiave(2).pubblica_hex(), BUDGET, |_| {}).await.unwrap();
+    assert_eq!(nessuno, None);
+}
+
+#[tokio::test]
+async fn profilo_salvato_si_rilegge_e_da_il_nome() {
+    let a = chiave(1);
+    let finto = Finto::new(vec![firmato(&a, 1, "un post", 100)], 0, false);
+    let c = m4tr1x_protocol::contenuto_profilo("Arta", "prova").unwrap();
+    let ev = m4tr1x_protocol::firma_evento(0, &c, &[], 200, Rete::Prova, &a.pubblica_hex(), |d| a.firma_schnorr(d)).unwrap();
+    m4tr1x_feed::pubblica(&finto, &nodo(), &ev, BUDGET, |_| {}).await.unwrap();
+    let f = leggi(&finto, &nodo(), Rete::Prova, BUDGET, |_| {}).await.unwrap();
+    assert_eq!(f.post[0].nome.as_deref(), Some("Arta"));
 }

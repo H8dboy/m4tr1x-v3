@@ -9,7 +9,7 @@
 pub mod api;
 pub mod api_seme;
 
-use api::{Avanzamento, Feed, Identita, Post, Stato};
+use api::{Avanzamento, Feed, Identita, Post, Profilo, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::{firma_come_identita, Sistema};
@@ -88,6 +88,7 @@ impl Operazione {
 struct Operazioni {
     feed: Operazione,
     post: Operazione,
+    profilo: Operazione,
 }
 
 /// Aspetta che tor sia pronto (al massimo il tempo di bootstrap del trasporto), segnalando la fase.
@@ -158,6 +159,18 @@ fn feed_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.feed.fase()
 }
 
+/// L'UNICO punto del guscio che fa firmare la tua identità (post e profilo): la chiave si legge dal
+/// portachiavi SOLO dentro `firma_come_identita` e si cancella appena firmato (fondatore, 20/10/2026).
+/// L'evento firmato si riverifica (`firma_evento`) prima di uscire.
+fn firma_con_la_mia_identita(kind: u16, contenuto: &str) -> Result<m4tr1x_protocol::Evento, String> {
+    let identita = creazione::identita_salvata(&Sistema).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
+    let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
+    m4tr1x_protocol::firma_evento(kind, contenuto, &[], ora, m4tr1x_protocol::Rete::Prova, &identita.identity, |d| {
+        firma_come_identita(&Sistema, d).ok()
+    })
+    .map_err(|e| e.to_string())
+}
+
 /// Pubblica un post firmato con la TUA identità.
 /// La chiave d'identità si legge dal portachiavi SOLO dentro la firma (`firma_come_identita`) e si
 /// cancella appena firmato: qui non esiste mai una `ChiaveRuolo` (fondatore, 20/10/2026). L'evento
@@ -173,12 +186,7 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
     }
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
-    let identita = creazione::identita_salvata(&Sistema).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
-    let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
-    let evento = m4tr1x_protocol::firma_evento(1, &testo, &[], ora, m4tr1x_protocol::Rete::Prova, &identita.identity, |d| {
-        firma_come_identita(&Sistema, d).ok()
-    })
-    .map_err(|e| format!("post non firmato: {e}"))?;
+    let evento = firma_con_la_mia_identita(1, &testo).map_err(|e| format!("post non firmato: {e}"))?;
     let op = &op.post;
     if op.in_corso.swap(true, Ordering::SeqCst) {
         return Err("un post è già in pubblicazione".into());
@@ -194,7 +202,60 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
-    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content })
+    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None })
+}
+
+/// Il TUO profilo com'è sul nodo (per precompilare il modulo). Ok(None): non ne hai ancora uno.
+#[tauri::command]
+async fn profilo_mio(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Option<Profilo>, String> {
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let identita = creazione::identita_salvata(&Sistema).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
+    let op = &op.profilo;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("il profilo è già in aggiornamento".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::leggi_profilo(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &identita.identity, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+            .await
+            .map(|p| p.map(Profilo::from))
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Salva il TUO profilo (solo nome e descrizione), firmato con la tua identità e pubblicato sul nodo.
+#[tauri::command]
+async fn profilo_salva(nome: String, descrizione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Profilo, String> {
+    let contenuto = m4tr1x_protocol::contenuto_profilo(&nome, &descrizione).map_err(|e| e.to_string())?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let evento = firma_con_la_mia_identita(0, &contenuto).map_err(|e| format!("profilo non firmato: {e}"))?;
+    let op = &op.profilo;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("il profilo è già in aggiornamento".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::pubblica(&*tor, &nodo, &evento, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map_err(|e| match e {
+            m4tr1x_feed::ErrorePubblica::Rifiutato(m) => format!("il nodo ha rifiutato il profilo: {m}"),
+            m4tr1x_feed::ErrorePubblica::NonRaggiungibile(n) => format!("profilo non salvato: il nodo non risponde ancora. Riprova tra un minuto ({})", n.ultimo),
+        })
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito?;
+    // quello che il nodo mostrerà: riletto dall'evento firmato con la stessa pulizia
+    Ok(m4tr1x_protocol::profilo_da_evento(&evento).map(Profilo::from).ok_or("profilo non leggibile")?)
+}
+
+/// Fase del profilo in corso (lettura o salvataggio), per l'interfaccia.
+#[tauri::command]
+fn profilo_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
+    op.profilo.fase()
 }
 
 /// Fase della pubblicazione in corso (o dell'ultima), per l'interfaccia.
@@ -307,7 +368,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento])
         .build(tauri::generate_context!())
         .expect("avvio dell'app fallito")
         .run(|app, ev| {

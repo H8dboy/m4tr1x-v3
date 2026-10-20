@@ -82,7 +82,14 @@ function voce(p) {
   const chi = document.createElement('div')
   chi.className = 'chi'
   const quando = new Date(Number(p.creato) * 1000).toLocaleString('it-IT')
-  chi.textContent = `${String(p.autore).slice(0, 12)}… · ${quando}`
+  // nome dal profilo (già pulito nel lato Rust) e sempre l'inizio della chiave: il nome si può copiare, la chiave no
+  if (p.nome) {
+    const nome = document.createElement('span')
+    nome.className = 'nome'
+    nome.textContent = String(p.nome)
+    chi.append(nome, ' · ')
+  }
+  chi.append(`${String(p.autore).slice(0, 12)}… · ${quando}`)
   const testo = document.createElement('p')
   testo.className = 'testo'
   testo.textContent = String(p.testo)
@@ -147,7 +154,49 @@ async function pubblicaPost() {
   }
 }
 
+// ─── Profilo ──────────────────────────────────────────────────────────────────
+// Solo nome e descrizione (l'immagine arriva in F6). La firma la fa il lato Rust con la tua identità.
+
+/** @param {string} comando @param {() => Promise<void>} lavoro */
+async function conFaseProfilo(comando, lavoro) {
+  const bottoni = ['profilo-salva', 'profilo-carica'].map(id => /** @type {HTMLButtonElement|null} */ (document.getElementById(id)))
+  bottoni.forEach(b => { if (b) b.disabled = true })
+  const fase = setInterval(async () => {
+    const a = await invoke('profilo_avanzamento').catch(() => null)
+    if (a) mostra('profilo-stato', testoFase(a))
+  }, 1000)
+  mostra('profilo-stato', comando)
+  try { await lavoro() } catch (e) { mostra('profilo-stato', String(e)) } finally {
+    clearInterval(fase)
+    bottoni.forEach(b => { if (b) b.disabled = false })
+  }
+}
+
+function campo(/** @type {string} */ id) {
+  return /** @type {HTMLInputElement|HTMLTextAreaElement} */ (document.getElementById(id))
+}
+
+async function caricaProfilo() {
+  await conFaseProfilo('cerco il tuo profilo sul nodo…', async () => {
+    const p = await invoke('profilo_mio')
+    if (p) { campo('profilo-nome').value = String(p.nome); campo('profilo-descrizione').value = String(p.descrizione) }
+    mostra('profilo-stato', p ? 'profilo caricato dal nodo' : 'non hai ancora un profilo sul nodo')
+  })
+}
+
+async function salvaProfilo() {
+  await conFaseProfilo('firmo e cerco il nodo…', async () => {
+    const p = await invoke('profilo_salva', { nome: campo('profilo-nome').value, descrizione: campo('profilo-descrizione').value })
+    // il profilo com'è stato firmato (pulito nel lato Rust): quello che vedranno gli altri
+    campo('profilo-nome').value = String(p.nome)
+    campo('profilo-descrizione').value = String(p.descrizione)
+    mostra('profilo-stato', 'profilo salvato ✓')
+  })
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('profilo-salva')?.addEventListener('click', salvaProfilo)
+  document.getElementById('profilo-carica')?.addEventListener('click', caricaProfilo)
   document.getElementById('pubblica')?.addEventListener('click', pubblicaPost)
   document.getElementById('post-testo')?.addEventListener('input', contaPost)
   document.getElementById('aggiorna-feed')?.addEventListener('click', aggiornaFeed)

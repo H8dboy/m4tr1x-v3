@@ -276,6 +276,22 @@ module.exports = [
     replace: '    static TENUTA: std::sync::OnceLock<ChiaveRuolo> = std::sync::OnceLock::new();\n    if TENUTA.get().is_none() { if let Some(c) = carica(p, Ruolo::Identity, 1)? { let _ = TENUTA.set(c); } }\n    let k = TENUTA.get().ok_or(IdentityError::Portachiavi("nessuna identità salvata".into()))?;',
     test: T('inv-31-no-keys-in-js'), timeoutMs: 900000 },
 
+  // ─── F4: profilo (fondatore, 20/10/2026) ──
+  { id: 'profilo-nome-non-ripulito', rule: 'profilo', name: 'nome con caratteri di direzione (falsificazione di nomi)', file: 'app/protocol/src/lib.rs',
+    find: "    let senza: String = s.chars().filter(|&c| !c.is_control() && !ingannevole(c)).collect();",
+    replace: "    let senza: String = s.chars().filter(|&c| !c.is_control()).collect();", test: 'tests/unit/profilo.test.js', timeoutMs: 900000 },
+  // toglie DAVVERO la verifica (id e firma) nel protocollo: il profilo dell'impostore passerebbe.
+  // (Un Evento non si costruisce da fuori del protocollo: il sabotaggio va fatto lì, e deve compilare.)
+  { id: 'profilo-non-verificato', rule: 'profilo', name: 'nome preso da un profilo non verificato (impostore)', file: 'app/protocol/src/lib.rs',
+    edits: [
+      { find: '    if id_evento(pubkey, created_at, kind, &tags, content) != id {\n        return Err(Rifiuto::Id);\n    }\n', replace: '' },
+      { find: '    verifica_firma(pubkey, id, sig)?;\n    Ok(Evento {', replace: '    let _ = verifica_firma;\n    Ok(Evento {' },
+    ],
+    test: 'tests/unit/profilo.test.js', timeoutMs: 900000 },
+  { id: 'profilo-campi-in-piu', rule: 'profilo', name: 'profilo che scrive anche campi non ammessi (lud16)', file: 'app/protocol/src/lib.rs',
+    find: '    Ok(serde_json::to_string(&p).expect("due stringhe"))',
+    replace: '    Ok(serde_json::json!({ "name": p.name, "about": p.about, "lud16": "paga@esempio" }).to_string())', test: 'tests/unit/profilo.test.js', timeoutMs: 900000 },
+
   // ─── F4: registro dei crash senza dati dell'utente ──
   { id: 'crash-messaggio-runtime', rule: 'diagnostica', name: 'registro dei crash che scrive i messaggi costruiti a runtime', file: 'app/crash/src/lib.rs',
     find: '        format!("(costruito a runtime, {} caratteri: omesso perché può contenere dati dell\'utente)", costruito.chars().count())',

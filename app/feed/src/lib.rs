@@ -49,6 +49,8 @@ pub struct Post {
     pub autore: String,
     pub creato: u64,
     pub testo: String,
+    /// nome dal profilo (kind 0) dell'autore, già pulito (m4tr1x_protocol::profilo_da_evento); None se non ne ha
+    pub nome: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,9 +173,69 @@ async fn un_tentativo<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, scarico: 
     let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
     let mut relay = Relay::apri(flusso, nodo).await?;
     scarico();
-    let grezzi = relay.richiedi(json!({ "kinds": [1], "limit": QUANTI })).await;
+    let grezzi = match relay.richiedi(json!({ "kinds": [1], "limit": QUANTI })).await {
+        Ok(g) => g,
+        Err(e) => {
+            relay.chiudi().await;
+            return Err(e);
+        }
+    };
+    let (mut post, scartati) = verificati(grezzi, rete);
+    // nella stessa connessione: i profili (kind 0) degli autori, per mostrare il nome
+    let autori: Vec<&str> = post.iter().map(|p| p.autore.as_str()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    if !autori.is_empty() {
+        let profili = relay.richiedi(json!({ "kinds": [0], "authors": autori, "limit": QUANTI })).await;
+        let nomi = nomi_dai_profili(profili.unwrap_or_default(), rete);
+        for p in &mut post {
+            p.nome = nomi.get(&p.autore).cloned();
+        }
+    }
     relay.chiudi().await;
-    Ok(verificati(grezzi?, rete))
+    Ok((post, scartati))
+}
+
+/// Nome per autore dai profili (kind 0): solo eventi VERIFICATI, vince il più recente di ciascun autore,
+/// profili non leggibili o con nome vuoto ignorati.
+pub fn nomi_dai_profili(grezzi: Vec<serde_json::Value>, rete: Rete) -> std::collections::HashMap<String, String> {
+    let mut piu_recenti: std::collections::HashMap<String, (u64, String)> = Default::default();
+    for g in grezzi {
+        let Ok(e) = verifica(&g, rete) else { continue };
+        let Some(p) = m4tr1x_protocol::profilo_da_evento(&e) else { continue };
+        if p.name.is_empty() {
+            continue;
+        }
+        if piu_recenti.get(&e.pubkey).is_none_or(|(t, _)| e.created_at > *t) {
+            piu_recenti.insert(e.pubkey, (e.created_at, p.name));
+        }
+    }
+    piu_recenti.into_iter().map(|(k, (_, n))| (k, n)).collect()
+}
+
+/// Profilo di un autore dal nodo (es. il tuo, per precompilare il modulo), con i tentativi e la ripresa del
+/// feed. Ok(None) se il nodo non ne ha uno valido.
+pub async fn leggi_profilo<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, autore: &str, budget: Duration, avanza: impl Fn(Fase)) -> Result<Option<m4tr1x_protocol::Profilo>, NonRaggiungibile> {
+    let avanza = &avanza;
+    let filtro = json!({ "kinds": [0], "authors": [autore], "limit": 5 });
+    let filtro = &filtro;
+    let una_volta = || async move {
+        con_tentativi(budget, avanza, |tentativo, t0| async move {
+            let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
+            let mut relay = Relay::apri(flusso, nodo).await?;
+            avanza(Fase::Scarico { secondi: t0.elapsed().as_secs(), tentativo });
+            let r = relay.richiedi(filtro.clone()).await;
+            relay.chiudi().await;
+            r
+        })
+        .await
+    };
+    let (grezzi, secondi, tentativi) = con_ripresa(avanza, una_volta).await?;
+    avanza(Fase::Fatto { secondi, tentativo: tentativi });
+    let piu_recente = grezzi
+        .iter()
+        .filter_map(|g| verifica(g, rete).ok())
+        .filter(|e| e.pubkey == autore)
+        .max_by_key(|e| e.created_at);
+    Ok(piu_recente.as_ref().and_then(m4tr1x_protocol::profilo_da_evento))
 }
 
 /// Solo eventi validi e kind 1, senza doppioni, dal più recente.
@@ -184,7 +246,7 @@ pub fn verificati(grezzi: Vec<serde_json::Value>, rete: Rete) -> (Vec<Post>, usi
         match verifica(&g, rete) {
             Ok(e) if e.kind == 1 => {
                 if !post.iter().any(|p| p.id == e.id) {
-                    post.push(Post { id: e.id, autore: e.pubkey, creato: e.created_at, testo: e.content });
+                    post.push(Post { id: e.id, autore: e.pubkey, creato: e.created_at, testo: e.content, nome: None });
                 }
             }
             _ => scartati += 1,

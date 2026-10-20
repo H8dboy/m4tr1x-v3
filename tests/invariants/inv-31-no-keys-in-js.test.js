@@ -137,10 +137,14 @@ test('chiave d\'identità: letta solo per firmare, mai tenuta dal guscio', () =>
     assert.ok(!/portachiavi::carica|\bcarica\(/.test(src), `${path.relative(ROOT, f)}: il guscio legge chiavi dal portachiavi`)
   }
   const lib = read(path.join(SHELL, 'src', 'lib.rs')).replace(/\/\/[^\n]*/g, '')
+  // UNA sola lettura della chiave nel guscio: dentro `firma_con_la_mia_identita`, che usano solo i comandi
+  // che pubblicano (post e profilo)
   const usi = [...lib.matchAll(/firma_come_identita\(/g)].length
-  assert.equal(usi, 1, `firma_come_identita usata ${usi} volte (attesa: solo nel comando pubblica)`)
-  const corpo = /async fn pubblica\([\s\S]*?\n}\n/.exec(lib)
-  assert.ok(corpo && corpo[0].includes('firma_come_identita('), 'firma_come_identita fuori dal comando pubblica')
+  assert.equal(usi, 1, `firma_come_identita usata ${usi} volte (attesa: una, in firma_con_la_mia_identita)`)
+  const aiuto = /fn firma_con_la_mia_identita\([\s\S]*?\n}\n/.exec(lib)
+  assert.ok(aiuto && aiuto[0].includes('firma_come_identita('), 'firma_come_identita fuori da firma_con_la_mia_identita')
+  const chiamanti = [...lib.matchAll(/async fn (\w+)\([^)]*\)[^{]*\{[\s\S]*?\n}\n/g)].filter(m => m[0].includes('firma_con_la_mia_identita(')).map(m => m[1]).sort()
+  assert.deepEqual(chiamanti, ['profilo_salva', 'pubblica'], `la tua identità firma da: ${chiamanti}`)
   const pc = read(path.join(ROOT, 'app', 'identity', 'src', 'portachiavi.rs'))
   assert.match(pc, /let v = Zeroizing::new\(v\);/, 'il buffer letto dal portachiavi non si cancella')
   assert.match(pc, /fn leggi\(&self, voce: &str\) -> Result<Option<Zeroizing<\[u8; 32\]>>, IdentityError>;/, 'il portachiavi restituisce il segreto senza Zeroizing')

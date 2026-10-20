@@ -36,7 +36,14 @@ impl Rete {
 /// Più grande intero che `JSON.stringify` scrive esatto (Number.MAX_SAFE_INTEGER).
 const MAX_INTERO_JS: u64 = (1 << 53) - 1;
 
-/// Evento già verificato: l'unico modo di averne uno è [`verifica`].
+/// Evento già verificato: l'unico modo di averne uno è [`verifica`] (o [`firma_evento`], che riverifica).
+/// I campi si LEGGONO da fuori ma l'evento non si COSTRUISCE da fuori: il campo privato `_verificato` lo
+/// impedisce (20/10/2026: prima, con i campi tutti pubblici, chiunque poteva crearne uno non verificato).
+///
+/// ```compile_fail
+/// let _ = m4tr1x_protocol::Evento { id: String::new(), pubkey: String::new(), created_at: 0, kind: 1,
+///     tags: vec![], content: String::new(), sig: String::new() };
+/// ```
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Evento {
     pub id: String,
@@ -46,6 +53,8 @@ pub struct Evento {
     pub tags: Vec<Vec<String>>,
     pub content: String,
     pub sig: String,
+    #[serde(skip)]
+    _verificato: (),
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -105,6 +114,7 @@ pub fn verifica(v: &Value, rete: Rete) -> Result<Evento, Rifiuto> {
         tags,
         content: content.to_owned(),
         sig: sig.to_owned(),
+        _verificato: (),
     })
 }
 
@@ -148,6 +158,66 @@ pub fn firma_evento(
     let sig = esadecimale(&firma(&digest).ok_or(Rifiuto::Firma)?);
     let ev = serde_json::json!({ "id": id, "pubkey": pubkey, "created_at": created_at, "kind": kind, "tags": tutti, "content": content, "sig": sig });
     verifica(&ev, rete)
+}
+
+// ─── Profilo (kind 0, F4) ────────────────────────────────────────────────────
+// Decisioni del fondatore (20/10/2026): SOLO `name` e `about`, in lettura e in scrittura; ogni altro
+// campo si scarta (niente lud16/lud06: pagamenti nel profilo, contro lo spirito di I-15; niente nip05:
+// servirebbe contattare un sito in chiaro; niente picture: URL fuori da Tor, l'immagine arriva in F6).
+
+/// Nome massimo (caratteri).
+pub const MASSIMO_NOME: usize = 50;
+/// Descrizione massima (caratteri).
+pub const MASSIMO_DESCRIZIONE: usize = 500;
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct Profilo {
+    pub name: String,
+    pub about: String,
+}
+
+/// Caratteri invisibili o che girano il verso del testo (U+202E: "emocleW" scritto rovesciato si legge "Welcome"): nel NOME servono solo a
+/// falsificare l'identità di qualcun altro, e `textContent` non li ferma (è il testo stesso a ingannare).
+fn ingannevole(c: char) -> bool {
+    matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}' | '\u{061C}')
+}
+
+/// Nome pulito: senza caratteri di controllo, invisibili o di direzione, spazi unificati, al massimo
+/// MASSIMO_NOME caratteri.
+fn pulisci_nome(s: &str) -> String {
+    let senza: String = s.chars().filter(|&c| !c.is_control() && !ingannevole(c)).collect();
+    senza.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MASSIMO_NOME).collect()
+}
+
+/// Descrizione pulita: a capo ammessi, niente altri caratteri di controllo né di direzione, al massimo
+/// MASSIMO_DESCRIZIONE caratteri.
+fn pulisci_descrizione(s: &str) -> String {
+    s.chars().filter(|&c| (c == '\n' || !c.is_control()) && !ingannevole(c)).take(MASSIMO_DESCRIZIONE).collect::<String>().trim().to_owned()
+}
+
+/// Profilo da un evento GIÀ verificato (kind 0). Legge solo `name` e `about` (stringhe); tutto il resto si
+/// scarta; testi puliti e tagliati ai limiti. None se non è un kind 0 o il contenuto non è un oggetto JSON.
+pub fn profilo_da_evento(e: &Evento) -> Option<Profilo> {
+    if e.kind != 0 {
+        return None;
+    }
+    let v: Value = serde_json::from_str(&e.content).ok()?;
+    let o = v.as_object()?;
+    let testo = |k: &str| o.get(k).and_then(Value::as_str).unwrap_or("");
+    Some(Profilo { name: pulisci_nome(testo("name")), about: pulisci_descrizione(testo("about")) })
+}
+
+/// Contenuto di un kind 0 scritto dall'app: SOLO `name` e `about`, puliti. Errore se il nome è vuoto o i
+/// testi superano i limiti (chi scrive deve saperlo, non vedersi tagliare il testo in silenzio).
+pub fn contenuto_profilo(name: &str, about: &str) -> Result<String, Rifiuto> {
+    if name.chars().count() > MASSIMO_NOME || about.chars().count() > MASSIMO_DESCRIZIONE {
+        return Err(Rifiuto::Forma("nome o descrizione oltre il limite"));
+    }
+    let p = Profilo { name: pulisci_nome(name), about: pulisci_descrizione(about) };
+    if p.name.is_empty() {
+        return Err(Rifiuto::Forma("nome vuoto"));
+    }
+    Ok(serde_json::to_string(&p).expect("due stringhe"))
 }
 
 /// Id dell'evento in esadecimale: SHA-256 della serializzazione NIP-01.

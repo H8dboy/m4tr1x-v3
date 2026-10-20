@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-profilo-avanzamento"
+description = "Enables the profilo_avanzamento command without any pre-configured scope."
+commands.allow = ["profilo_avanzamento"]
+
+[[permission]]
+identifier = "deny-profilo-avanzamento"
+description = "Denies the profilo_avanzamento command without any pre-configured scope."
+commands.deny = ["profilo_avanzamento"]

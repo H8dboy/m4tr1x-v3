@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-profilo-salva"
+description = "Enables the profilo_salva command without any pre-configured scope."
+commands.allow = ["profilo_salva"]
+
+[[permission]]
+identifier = "deny-profilo-salva"
+description = "Denies the profilo_salva command without any pre-configured scope."
+commands.deny = ["profilo_salva"]

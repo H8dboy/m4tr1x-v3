@@ -87,7 +87,7 @@ test('il feed dell\'app legge via Tor i post verificati di un nodo vero (e misur
     // JavaScript → "firma"; non riletto dal feed → "feed".
     const testo = `Nderë: primo post PUBBLICATO dall'app via Tor 🦅 ${Date.now()}`
     const [pub] = await app(a.node.onion, dati, 'pubblica', [testo])
-    t.diagnostic(`post: ${pub.errore ? `ERRORE ${pub.errore}` : `pubblicato in ${pub.secondi}s/${pub.tentativi} tent., riletto dal feed: ${pub.riletto}`}`)
+    t.diagnostic(`post: ${pub.errore ? `ERRORE ${pub.errore}` : `pubblicato in ${pub.secondi}s/${pub.tentativi} tent., riletto dal feed: ${pub.riletto}, nome: ${pub.nome}`}`)
     if (pub.errore) assert.fail(`fase "${/NonRaggiungibile/.test(pub.errore) ? 'rete' : 'invio'}": pubblicazione: ${pub.errore}`)
     const ws2 = await wsOpen(a.node.port)
     const sulNodo = (await wsExchange(ws2, ['REQ', 'p', { ids: [pub.id] }], m => m[0] === 'EOSE')).find(m => m[0] === 'EVENT')?.[2]
@@ -97,6 +97,8 @@ test('il feed dell\'app legge via Tor i post verificati di un nodo vero (e misur
     assert.equal(sulNodo.pubkey, '817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7', 'fase "firma": non è l\'identità di prova')
     assert.equal(protocol.verifyEvent(sulNodo, NET), true, 'fase "firma": il JavaScript non verifica il post firmato in Rust')
     assert.equal(pub.riletto, true, 'fase "feed": il post pubblicato non si rilegge dal feed')
+    // F4, profilo: l'app ha salvato (firmato, via Tor) il profilo "Prova M4TR1X" prima del post
+    assert.equal(pub.nome, 'Prova M4TR1X', 'fase "feed": il post riletto non ha il nome del profilo salvato')
   } finally {
     await a.close()
     fs.rmSync(dati, { recursive: true, force: true })
