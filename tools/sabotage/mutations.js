@@ -131,7 +131,8 @@ module.exports = [
   { id: 'i37-hash', rule: 'I-37', name: 'hash del binario tor non controllato', file: 'app/transport/src/tor_process.rs',
     find: '        if actual != self.cfg.tor_sha256.to_ascii_lowercase() {', replace: '        if false && actual != self.cfg.tor_sha256.to_ascii_lowercase() {', test: T('inv-37-tor-process'), timeoutMs: 900000 },
   { id: 'i37-onlyonion', rule: 'I-37', name: 'SOCKS senza OnionTrafficOnly (host in chiaro raggiungibili)', file: 'app/transport/src/tor_process.rs',
-    find: '"127.0.0.1:auto OnionTrafficOnly IsolateSOCKSAuth"', replace: '"127.0.0.1:auto IsolateSOCKSAuth"', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+    // 20/10: la riga ora ha anche ExtendedErrors; il sabotaggio toglie SOLO OnionTrafficOnly
+    find: '"127.0.0.1:auto OnionTrafficOnly IsolateSOCKSAuth ExtendedErrors"', replace: '"127.0.0.1:auto IsolateSOCKSAuth ExtendedErrors"', test: T('inv-37-tor-process'), timeoutMs: 900000 },
   { id: 'i37-owner', rule: 'I-37', name: 'tor non legato all\'app (sopravvive se l\'app muore)', file: 'app/transport/src/tor_process.rs',
     edits: [
       { find: '            .args(["--__OwningControllerProcess", &std::process::id().to_string()])\n', replace: '' },
@@ -220,11 +221,27 @@ module.exports = [
   { id: 'protocollo-rust-firma', rule: 'protocollo', name: 'Rust: firma dell\'evento non verificata', file: 'app/protocol/src/lib.rs',
     find: '    verifica_firma(pubkey, id, sig)?;\n', replace: '', test: T('inv-15-no-h8-in-events'), timeoutMs: 900000 },
 
+  // ─── F4: tentativi verso un onion (dati del 20/10: primo tentativo appeso ~120 s) ──
+  { id: 'i37-tentativo-senza-limite', rule: 'I-37', name: 'connect_onion senza tempo massimo (appeso finché tor rinuncia)', file: 'app/transport/src/tor_process.rs',
+    find: '    tokio::time::timeout(limite, socks5_connect(socks_port, user, pass, host, port))\n        .await\n        .map_err(|_| TransportError::Connessione(format!("tempo massimo del tentativo superato ({} s)", limite.as_secs())))?',
+    replace: '    let _ = limite;\n    socks5_connect(socks_port, user, pass, host, port).await',
+    test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-senza-extended-errors', rule: 'I-37', name: 'SocksPort senza ExtendedErrors (di nuovo il generico "6")', file: 'app/transport/src/tor_process.rs',
+    find: 'IsolateSOCKSAuth ExtendedErrors"', replace: 'IsolateSOCKSAuth"', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+
   // ─── F4: tor dell'app (passo 3) ──
   { id: 'i37-app-hash-del-binario', rule: 'I-37', name: 'app che si fida dell\'hash del binario stesso invece del lock', file: 'app/transport/src/tor_process.rs',
     find: '            tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,\n            tor_sha256: sha256_tor_windows(),',
     replace: '            tor_sha256: tor_bin.as_deref().and_then(|p| sha256_file(p).ok()).unwrap_or_default(),\n            tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,',
     test: T('inv-37-tor-process'), timeoutMs: 900000 },
+
+  // ─── F4: registro dei crash senza dati dell'utente ──
+  { id: 'crash-messaggio-runtime', rule: 'diagnostica', name: 'registro dei crash che scrive i messaggi costruiti a runtime', file: 'app/crash/src/lib.rs',
+    find: '        format!("(costruito a runtime, {} caratteri: omesso perché può contenere dati dell\'utente)", costruito.chars().count())',
+    replace: '        costruito.clone()', test: 'tests/unit/crash-log.test.js', timeoutMs: 900000 },
+  { id: 'crash-installato-tardi', rule: 'diagnostica', name: 'registro installato solo dopo l\'avvio di Tauri', file: 'app/shell/src/lib.rs',
+    find: '    if let Some(c) = cartella_crash.clone() {\n        m4tr1x_crash::installa(c, env!("CARGO_PKG_VERSION"));\n    }\n',
+    replace: '', test: 'tests/unit/crash-log.test.js' },
 
   // ─── F4: cargo deny e cargo audit (I-25) ──
   { id: 'i25-audit-eccezione', rule: 'I-25', name: 'eccezione aggiunta solo a cargo audit (senza motivo in deny.toml)', file: 'app/.cargo/audit.toml',

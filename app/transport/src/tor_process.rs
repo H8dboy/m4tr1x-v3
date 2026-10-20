@@ -181,7 +181,9 @@ impl TorProcessTransport {
             .args(["-f", &dir.join("nessun-torrc").to_string_lossy()])
             .args(["--defaults-torrc", &dir.join("nessun-torrc-defaults").to_string_lossy()])
             .args(["--DataDirectory", &dir.join("data").to_string_lossy()])
-            .args(["--SocksPort", "127.0.0.1:auto OnionTrafficOnly IsolateSOCKSAuth"])
+            // ExtendedErrors (decisione del fondatore, 20/10/2026): sugli onion tor dice PERCHÉ fallisce
+            // (descrittore non trovato, introduzione, rendezvous…) invece del generico "6". Non allarga niente.
+            .args(["--SocksPort", "127.0.0.1:auto OnionTrafficOnly IsolateSOCKSAuth ExtendedErrors"])
             .args(["--SocksPolicy", "accept 127.0.0.1,reject *"])
             .args(["--ControlPort", "127.0.0.1:auto"])
             .args(["--ControlPortWriteToFile", &port_file.to_string_lossy()])
@@ -253,6 +255,38 @@ impl TorProcessTransport {
 }
 
 /// SOCKS5 con nome/password (RFC 1929) verso un nome onion, porta `port`.
+/// Causa leggibile di un codice di risposta SOCKS5 (RFC 1928) e dei codici estesi di tor per gli
+/// onion (`ExtendedErrors`, tor-spec socks-extensions: 0xF0–0xF7).
+fn causa_socks(codice: u8) -> &'static str {
+    match codice {
+        1 => "errore generico di tor",
+        2 => "non consentito dalle regole (OnionTrafficOnly)",
+        3 => "rete irraggiungibile",
+        4 => "host irraggiungibile",
+        5 => "connessione rifiutata dal servizio",
+        6 => "tempo scaduto dentro Tor",
+        7 => "comando non supportato",
+        8 => "tipo di indirizzo non supportato",
+        0xF0 => "descrittore dell'onion non trovato",
+        0xF1 => "descrittore dell'onion non valido",
+        0xF2 => "introduzione all'onion fallita",
+        0xF3 => "rendezvous con l'onion fallito",
+        0xF4 => "manca l'autorizzazione del client",
+        0xF5 => "autorizzazione del client sbagliata",
+        0xF6 => "indirizzo onion non valido",
+        0xF7 => "introduzione all'onion scaduta",
+        _ => "codice sconosciuto",
+    }
+}
+
+/// Un tentativo di collegamento a un onion con tempo massimo TOTALE: oltre, la connessione SOCKS si
+/// chiude e tor abbandona il flusso. Senza, un tentativo restava appeso ~120 s (SocksTimeout di tor).
+async fn socks5_connect_con_limite(limite: Duration, socks_port: u16, user: &str, pass: &str, host: &str, port: u16) -> Result<TcpStream> {
+    tokio::time::timeout(limite, socks5_connect(socks_port, user, pass, host, port))
+        .await
+        .map_err(|_| TransportError::Connessione(format!("tempo massimo del tentativo superato ({} s)", limite.as_secs())))?
+}
+
 async fn socks5_connect(socks_port: u16, user: &str, pass: &str, host: &str, port: u16) -> Result<TcpStream> {
     let e = |m: &str| TransportError::Connessione(m.to_string());
     let mut s = TcpStream::connect(("127.0.0.1", socks_port)).await.map_err(|x| e(&x.to_string()))?;
@@ -278,7 +312,7 @@ async fn socks5_connect(socks_port: u16, user: &str, pass: &str, host: &str, por
     let mut head = [0u8; 4];
     s.read_exact(&mut head).await.map_err(|x| e(&x.to_string()))?;
     if head[1] != 0 {
-        return Err(TransportError::Connessione(format!("SOCKS ha risposto {}", head[1])));
+        return Err(TransportError::Connessione(format!("SOCKS ha risposto {} ({})", head[1], causa_socks(head[1]))));
     }
     // salta l'indirizzo legato nella risposta
     let skip = match head[3] {
@@ -344,7 +378,7 @@ impl Transport for TorProcessTransport {
         let socks = self.socks_port().await.ok_or(TransportError::NonPronto)?;
         // gettoni diversi = credenziali diverse = circuiti diversi (IsolateSOCKSAuth)
         let user = format!("m4tr1x-{:016x}", isolation.0);
-        let s = socks5_connect(socks, &user, &self.session_secret, &host.host(), port).await?;
+        let s = socks5_connect_con_limite(crate::TEMPO_MASSIMO_CONNESSIONE, socks, &user, &self.session_secret, &host.host(), port).await?;
         Ok(Box::pin(s))
     }
 
@@ -379,5 +413,43 @@ mod tests {
     fn segreti_di_sessione_diversi() {
         assert_ne!(random_hex(16), random_hex(16));
         assert_eq!(random_hex(16).len(), 32);
+    }
+
+    /// Finto SOCKS che accetta nome/password e poi risponde alla richiesta con `codice`, oppure (None) tace.
+    async fn socks_finto(codice: Option<u8>) -> u16 {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let p = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut s, _) = l.accept().await.unwrap();
+            let mut b = [0u8; 512];
+            let _ = s.read(&mut b).await; // saluto
+            s.write_all(&[5, 2]).await.unwrap();
+            let _ = s.read(&mut b).await; // credenziali
+            s.write_all(&[1, 0]).await.unwrap();
+            let _ = s.read(&mut b).await; // richiesta
+            match codice {
+                Some(c) => s.write_all(&[5, c, 0, 1, 0, 0, 0, 0, 0, 0]).await.unwrap(),
+                None => tokio::time::sleep(Duration::from_secs(3600)).await,
+            }
+        });
+        p
+    }
+
+    #[tokio::test]
+    async fn codici_estesi_di_tor_leggibili() {
+        let p = socks_finto(Some(0xF0)).await;
+        let e = socks5_connect_con_limite(Duration::from_secs(5), p, "u", "p", "x.onion", 80).await.unwrap_err();
+        assert!(e.to_string().contains("240 (descrittore dell'onion non trovato)"), "{e}");
+        assert_eq!(causa_socks(6), "tempo scaduto dentro Tor");
+        assert_eq!(causa_socks(0xF2), "introduzione all'onion fallita");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tentativo_appeso_chiuso_al_tempo_massimo() {
+        let p = socks_finto(None).await;
+        let t0 = tokio::time::Instant::now();
+        let e = socks5_connect_con_limite(crate::TEMPO_MASSIMO_CONNESSIONE, p, "u", "p", "x.onion", 80).await.unwrap_err();
+        assert!(e.to_string().contains("tempo massimo del tentativo"), "{e}");
+        assert!(t0.elapsed() >= crate::TEMPO_MASSIMO_CONNESSIONE && t0.elapsed() < crate::TEMPO_MASSIMO_CONNESSIONE * 2);
     }
 }

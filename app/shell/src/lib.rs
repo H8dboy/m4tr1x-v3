@@ -159,10 +159,23 @@ fn seme_recupera(window: WebviewWindow, mut parole: String) -> Result<Identita, 
     Ok(id.into())
 }
 
+/// Identificatore dell'app (uguale a `identifier` in tauri.conf.json: lo controlla tests/unit/crash-log.test.js).
+const IDENTIFICATORE: &str = "org.m4tr1x.app";
+
 pub fn run() {
+    // PRIMA di tutto: un crash dell'avvio (anche dentro Tauri) deve finire nel registro (m4tr1x-crash)
+    let cartella_crash = m4tr1x_crash::cartella_predefinita(IDENTIFICATORE);
+    if let Some(c) = cartella_crash.clone() {
+        m4tr1x_crash::installa(c, env!("CARGO_PKG_VERSION"));
+    }
     tauri::Builder::default()
         .manage(StatoSeme::default())
-        .setup(|app| {
+        .setup(move |app| {
+            // se Tauri usa un'altra cartella dati, il registro la segue
+            let dati = app.path().app_data_dir()?;
+            if cartella_crash.as_deref() != Some(dati.as_path()) {
+                m4tr1x_crash::installa(dati, env!("CARGO_PKG_VERSION"));
+            }
             let rete = avvia_rete(app)?;
             app.manage(rete);
             Ok(())

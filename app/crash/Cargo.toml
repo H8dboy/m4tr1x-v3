@@ -1,0 +1,10 @@
+[package]
+name = "m4tr1x-crash"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Registro dei crash dell'app M4TR1X: un panic finisce in crash.log nella cartella dell'app, senza dati dell'utente"
+
+# Nessuna dipendenza: solo la libreria standard. Nessuna rete (I-36).
+[dependencies]

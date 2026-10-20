@@ -36,6 +36,14 @@ test('I-37 senza tor: binario con hash sbagliato non parte; porta di controllo s
   const unit = cargoTest(['--lib'], 'tor_process::')
   assert.equal(unit.code, 0, unit.out.slice(-4000))
   assert.match(unit.out, /file_della_porta_solo_loopback \.\.\. ok/)
+  // 20/10/2026: tentativo con tempo massimo (prima restava appeso ~120 s) e cause leggibili dei rifiuti
+  assert.match(unit.out, /tentativo_appeso_chiuso_al_tempo_massimo \.\.\. ok/)
+  assert.match(unit.out, /codici_estesi_di_tor_leggibili \.\.\. ok/)
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'transport', 'src', 'tor_process.rs'), 'utf8')
+  const socksPort = /"--SocksPort",\s*"([^"]+)"/.exec(src)
+  assert.ok(socksPort, 'SocksPort non trovata')
+  for (const f of ['127.0.0.1:auto', 'OnionTrafficOnly', 'IsolateSOCKSAuth', 'ExtendedErrors'])
+    assert.ok(socksPort[1].split(/\s+/).includes(f), `SocksPort senza ${f}: "${socksPort[1]}"`)
   const hash = cargoTest(['--test', 'inv_37_tor_process'], 'binario_con_hash_sbagliato_non_parte')
   assert.equal(hash.code, 0, hash.out.slice(-4000))
   assert.match(hash.out, /binario_con_hash_sbagliato_non_parte \.\.\. ok/)
@@ -48,7 +56,12 @@ test('I-37 con tor vero: solo onion, cookie, solo 127.0.0.1, muore con l\'app, o
   const r = cargoTest(['--test', 'inv_37_tor_process'])
   // anche da verde: il tempo per raggiungere l'onion di prova serve a vedere se peggiora (CI del 20/10:
   // "SOCKS ha risposto 6" dopo 240 s, e nessuno storico con cui confrontarlo)
-  t.diagnostic(`onion: ${(/onion raggiunto in \d+ s|onion non raggiunto[^\n]*/.exec(r.out) || ['tempo non stampato'])[0]}`)
+  // due fasi: "pubblicazione" (rete Tor, rilanciabile) e "connessione" (il nostro trasporto, da indagare)
+  t.diagnostic(`onion: ${(/pubblicazione dell'onion di prova: [^\n]*/.exec(r.out) || ['pubblicazione non stampata'])[0]} · ` +
+    `${(/onion raggiunto in \d+ s|onion non raggiunto[^\n]*/.exec(r.out) || ['tempo non stampato'])[0]}`)
+  t.diagnostic((/tentativi di connessione: [^\n]*/.exec(r.out) || ['tentativi non stampati'])[0])
+  // HSDir cercati dal client confrontati con quelli su cui il servizio ha caricato (misura del 20/10/2026)
+  t.diagnostic((/hsdir del client: [^\n]*/.exec(r.out) || ['hsdir del client non stampati'])[0])
   assert.equal(r.code, 0, r.out.slice(-4000))
   assert.ok(!r.out.includes('SALTATO: serve M4TR1X_TOR_BIN'), 'le prove Rust si sono saltate anche se M4TR1X_TOR_BIN è impostato')
   // 4 prove + `aiuto_fa_l_app` (che senza la sua variabile non fa niente e risulta passata)

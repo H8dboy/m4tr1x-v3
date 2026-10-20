@@ -61,6 +61,11 @@ pub enum TransportError {
 
 pub type Result<T> = std::result::Result<T, TransportError>;
 
+/// Tempo massimo di UN tentativo di `connect_onion`, per ogni implementazione (decisione del fondatore,
+/// 20/10/2026). Misure di I-37: un primo tentativo può restare appeso ~120 s mentre il successivo riesce in
+/// meno di 2 s. Riprovare è compito di chi chiama (es. il feed: 3 tentativi con attesa crescente).
+pub const TEMPO_MASSIMO_CONNESSIONE: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// L'interfaccia unica (ADR-0016). Le due implementazioni passano la stessa suite di test.
 pub trait Transport: Send + Sync {
     fn bootstrap(&self) -> impl Future<Output = Result<BootstrapInfo>> + Send;

@@ -254,6 +254,95 @@ async fn aiuto_fa_l_app() {
     }
 }
 
+/// Un evento `HS_DESC` di un tor: millisecondi dall'inizio della prova, azione, HSDir (8 cifre), causa.
+#[derive(Clone, Debug)]
+struct EventoHs {
+    ms: u128,
+    azione: String,
+    hsdir: String,
+    causa: String,
+}
+
+type Registro = std::sync::Arc<std::sync::Mutex<Vec<EventoHs>>>;
+
+/// Ascolta gli eventi `HS_DESC` di un tor (porta di controllo + cookie) per l'onion `indirizzo`, finché la
+/// prova dura. Serve a confrontare gli HSDir su cui il servizio CARICA con quelli a cui il client CHIEDE
+/// (misura del 20/10/2026: primo collegamento a volte 1–3 minuti, con "descrittore non trovato").
+async fn ascolta_hs_desc(file_porta: PathBuf, file_cookie: PathBuf, indirizzo: String, t0: Instant) -> Registro {
+    let attesa = Instant::now();
+    let porta = loop {
+        if let Some(p) = std::fs::read_to_string(&file_porta).ok().and_then(|s| {
+            let v = s.lines().find_map(|l| l.trim().strip_prefix("PORT=").map(str::to_owned))?;
+            let (host, port) = v.rsplit_once(':')?;
+            (host == "127.0.0.1").then(|| port.parse::<u16>().ok()).flatten()
+        }) {
+            break p;
+        }
+        assert!(attesa.elapsed() < Duration::from_secs(60), "porta di controllo non aperta: {}", file_porta.display());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    let cookie: String = std::fs::read(&file_cookie).unwrap().iter().map(|b| format!("{b:02x}")).collect();
+    let mut c = BufReader::new(TcpStream::connect(("127.0.0.1", porta)).await.unwrap());
+    c.get_mut().write_all(format!("AUTHENTICATE {cookie}\r\nSETEVENTS HS_DESC\r\n").as_bytes()).await.unwrap();
+    let registro: Registro = Default::default();
+    let r = registro.clone();
+    tokio::spawn(async move {
+        let mut riga = String::new();
+        loop {
+            riga.clear();
+            if !matches!(c.read_line(&mut riga).await, Ok(n) if n > 0) {
+                return;
+            }
+            // 650 HS_DESC <azione> <indirizzo> <auth> <HSDir> [<id>] [REASON=…]
+            let p: Vec<&str> = riga.split_whitespace().collect();
+            if p.len() >= 6 && p[0] == "650" && p[1] == "HS_DESC" && p[3] == indirizzo {
+                let hsdir: String = p[5].trim_start_matches('$').chars().take(8).collect();
+                let causa = p.iter().find_map(|x| x.strip_prefix("REASON=")).unwrap_or("").to_owned();
+                r.lock().unwrap().push(EventoHs { ms: t0.elapsed().as_millis(), azione: p[2].to_owned(), hsdir, causa });
+            }
+        }
+    });
+    registro
+}
+
+/// Aspetta che il tor del servizio di prova abbia pubblicato il descrittore: almeno 12 `HS_DESC UPLOADED`
+/// su 16 (8 HSDir del periodo attuale + 8 del prossimo; tor a volte carica prima il prossimo, quindi
+/// 12 garantisce anche l'attuale). Riserva a 300 s come il nodo (I-59): poi si prova lo stesso.
+/// Restituisce (UPLOADED, secondi, riserva usata).
+async fn attendi_pubblicazione(servizio: Registro, t0: Instant) -> (usize, u64, bool) {
+    const SERVONO: usize = 12;
+    loop {
+        let caricati = servizio.lock().unwrap().iter().filter(|e| e.azione == "UPLOADED").count();
+        if caricati >= SERVONO {
+            return (caricati, t0.elapsed().as_secs(), false);
+        }
+        if t0.elapsed() > Duration::from_secs(300) {
+            return (caricati, t0.elapsed().as_secs(), true);
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+/// "+12.3s REQUESTED 1A2B3C4D [caricato qui: sì]" per ogni evento del client. "tentato" = il servizio ci ha
+/// provato (UPLOAD) ma la conferma non è arrivata; "NO" = mai tentato, cioè fuori dall'anello del servizio.
+fn racconta_client(client: &[EventoHs], caricati: &std::collections::HashSet<String>, tentati: &std::collections::HashSet<String>) -> String {
+    client
+        .iter()
+        .map(|e| {
+            let qui = if caricati.contains(&e.hsdir) {
+                "sì"
+            } else if tentati.contains(&e.hsdir) {
+                "tentato"
+            } else {
+                "NO"
+            };
+            let causa = if e.causa.is_empty() { String::new() } else { format!(" {}", e.causa) };
+            format!("+{:.1}s {} {} [caricato qui: {qui}]{causa}", e.ms as f64 / 1000.0, e.azione, e.hsdir)
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 /// Prova positiva: un servizio onion di prova (tor separato, nel test) con un'eco;
 /// l'app lo raggiunge con connect_onion e riceve indietro quello che manda.
 #[tokio::test(flavor = "multi_thread")]
@@ -290,6 +379,9 @@ async fn connect_onion_raggiunge_un_servizio_onion() {
         .args(["--SocksPort", "0"])
         .args(["--HiddenServiceDir", &hs.to_string_lossy()])
         .args(["--HiddenServicePort", &format!("80 127.0.0.1:{eco_port}")])
+        // porta di controllo SOLO per sapere quando il descrittore è pubblicato (punto 42, 20/10/2026)
+        .args(["--ControlPort", "auto", "--ControlPortWriteToFile", &dir.join("hs-control.port").to_string_lossy()])
+        .args(["--CookieAuthentication", "1", "--CookieAuthFile", &dir.join("hs-control.cookie").to_string_lossy()])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)
@@ -305,28 +397,53 @@ async fn connect_onion_raggiunge_un_servizio_onion() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
     let onion = OnionV3::parse(&host).expect("tor ha scritto un onion v3 valido");
+    // la pubblicazione corre in parallelo al bootstrap dell'app; si registrano gli HSDir del servizio
+    let indirizzo = host.trim_end_matches(".onion").to_string();
+    let t_prova = Instant::now();
+    let reg_servizio = ascolta_hs_desc(dir.join("hs-control.port"), dir.join("hs-control.cookie"), indirizzo.clone(), t_prova).await;
+    let pubblicazione = tokio::spawn(attendi_pubblicazione(reg_servizio.clone(), t_prova));
 
     let t = transport(&bin, &dir.join("app"));
     // Questa è la prova che il trasporto funziona davvero: qui si aspetta il bootstrap
     // COMPLETO della rete Tor (mai `avvia()`), e si controlla che sia arrivato al 100%.
     t.bootstrap().await.expect("bootstrap");
     assert_eq!(t.status(), TransportStatus::Pronto, "bootstrap() è tornato prima del 100%");
-    // il descrittore del servizio impiega un po' a essere pubblicato: si riprova
+    // Fase "pubblicazione" (rete Tor): si aspetta il descrittore, non si riprova alla cieca.
+    // Fase "connessione" (il nostro trasporto): da qui un rosso NON è più la rete che pubblica.
+    let (caricati, secondi, riserva) = pubblicazione.await.unwrap();
+    // da qui si registra anche cosa CHIEDE il client (stessa porta di controllo dell'app, con il suo cookie)
+    let client = ascolta_hs_desc(t.control_port_file(), dir.join("app").join("tor").join("control.cookie"), indirizzo.clone(), t_prova).await;
+    eprintln!("pubblicazione dell'onion di prova: {caricati}/16 UPLOADED in {secondi} s{}", if riserva { " (riserva: tempo scaduto, si prova lo stesso)" } else { "" });
     let t1 = Instant::now();
+    // registro dei tentativi: quando parte, quanto dura, come finisce (20/10: 124 s dopo una pubblicazione di 7 s)
+    let mut tentativi: Vec<String> = vec![];
     let ok = loop {
+        let ta = Instant::now();
+        let partenza = t1.elapsed().as_secs();
         match t.connect_onion(&onion, 80, Isolation(1)).await {
             Ok(mut s) => {
+                tentativi.push(format!("t+{partenza}s ok in {} ms", ta.elapsed().as_millis()));
                 s.write_all(b"ciao nderja").await.unwrap();
                 let mut b = [0u8; 11];
                 s.read_exact(&mut b).await.unwrap();
                 break &b == b"ciao nderja";
             }
-            Err(e) => assert!(t1.elapsed() < Duration::from_secs(240), "onion non raggiunto: {e}"),
+            Err(e) => {
+                tentativi.push(format!("t+{partenza}s {e} dopo {} ms", ta.elapsed().as_millis()));
+                assert!(t1.elapsed() < Duration::from_secs(240), "onion non raggiunto: {e} · tentativi: {}", tentativi.join(" | "));
+            }
         }
         tokio::time::sleep(Duration::from_secs(3)).await;
     };
     assert!(ok, "l'eco non torna uguale");
     eprintln!("onion raggiunto in {} s", t1.elapsed().as_secs());
+    eprintln!("tentativi di connessione: {}", tentativi.join(" | "));
+    let caricati_su: std::collections::HashSet<String> =
+        reg_servizio.lock().unwrap().iter().filter(|e| e.azione == "UPLOADED").map(|e| e.hsdir.clone()).collect();
+    eprintln!("hsdir del servizio (UPLOADED): {}", caricati_su.iter().cloned().collect::<Vec<_>>().join(" "));
+    let tentati_su: std::collections::HashSet<String> =
+        reg_servizio.lock().unwrap().iter().filter(|e| e.azione == "UPLOAD").map(|e| e.hsdir.clone()).collect();
+    eprintln!("hsdir del client: {}", racconta_client(&client.lock().unwrap(), &caricati_su, &tentati_su));
     t.shutdown().await;
     cache_salva(&data_tor(&dir.join("app")));
     let _ = servizio.kill().await;
