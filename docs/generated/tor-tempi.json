@@ -1,0 +1,51 @@
+{
+  "misure": [
+    {
+      "data": "2026-10-16T13:20:45.954Z",
+      "ambiente": "win32 10.0.26200",
+      "giri": 3,
+      "riusciti": 1,
+      "riserve": 0,
+      "mediane": {
+        "tor-a": 10.7,
+        "pubblicazione": 3.5,
+        "tor-b": 180.6,
+        "rete": 8.2,
+        "evento": 0.3,
+        "file": 1
+      },
+      "risultati": [
+        {
+          "ok": false,
+          "annuncio": "confermata",
+          "fasi": {
+            "tor-a": 10.4,
+            "pubblicazione": 2.1,
+            "tor-b": 180.6
+          },
+          "errore": "fase \"tor-b\" fallita dopo 181 s (massimo 200 s): Tor: avvio non completato in tempo · tempi finora: {\"tor-a\":10400,\"pubblicazione\":2147,\"tor-b\":180608} · log di A: tor: HS_DESC UPLOADED | tor: HS_DESC"
+        },
+        {
+          "ok": true,
+          "annuncio": "confermata",
+          "fasi": {
+            "tor-a": 10.7,
+            "pubblicazione": 3.5,
+            "tor-b": 75.4,
+            "rete": 8.2,
+            "evento": 0.3,
+            "file": 1
+          }
+        },
+        {
+          "ok": false,
+          "annuncio": "?",
+          "fasi": {
+            "tor-a": 180.6
+          },
+          "errore": "fase \"tor-a\" fallita dopo 181 s (massimo 200 s): Tor: avvio non completato in tempo · tempi finora: {\"tor-a\":180575} · log di A: tor: avvio 14% | tor: avvio 15% | tor: avvio 20% | tor: avvio 25% | tor"
+        }
+      ]
+    }
+  ]
+}

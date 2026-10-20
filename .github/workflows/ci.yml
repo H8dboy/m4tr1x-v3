@@ -1,5 +1,7 @@
 # CI di M4TR1X v3 (fase F0)
-# - test: tutte le invarianti attive (node --test)
+# - test: tutte le invarianti attive, con lo stesso runner di `npm run report`
+#   (tools/report/esegui.js: un file che non risponde, esce prima o non ha test conta
+#   come FALLITO; stessi tempi massimi ovunque)
 # - secrets: gitleaks sulla storia intera + scanner M4TR1X sui file tracciati
 # - deps: audit delle dipendenze (npm audit; cargo deny dalla F4)
 # - release-gate: sui tag v*, nessuna pubblicazione senza release.json firmato (I-23)
@@ -31,7 +33,7 @@ jobs:
       - name: Controllo dei tipi (ADR-0012)
         run: npx tsc -p tsconfig.json
       - name: Invarianti
-        run: node --test "tests/**/*.test.js"
+        run: node tools/report/esegui.js tests
 
   secrets:
     runs-on: ubuntu-24.04
@@ -91,18 +93,19 @@ jobs:
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
         run: node tools/tor/riscalda.js
+      # --senza-saltati: qui tor c'è, una prova saltata vorrebbe dire che non ha girato
       - name: Due nodi via Tor
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
-        run: node --test tests/integration/two-nodes.test.js
+        run: node tools/report/esegui.js --senza-saltati tests/integration/two-nodes.test.js
       - name: Porta di controllo, pubblicazione, riconnessione del tor del nodo (I-59)
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
-        run: node --test --test-timeout=1800000 tests/invariants/inv-59-node-tor-control.test.js
+        run: node tools/report/esegui.js --senza-saltati tests/invariants/inv-59-node-tor-control.test.js
       - name: Trasporto dell'app con tor vero (I-37)
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
-        run: node --test --test-timeout=900000 tests/invariants/inv-37-tor-process.test.js
+        run: node tools/report/esegui.js --senza-saltati tests/invariants/inv-37-tor-process.test.js
       # Misura a freddo (nodo nuovo al primo avvio): NON bloccante, finisce nel riepilogo del job.
       - name: Misura a freddo della rete Tor (non bloccante)
         if: always()

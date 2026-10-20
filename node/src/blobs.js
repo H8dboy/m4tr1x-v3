@@ -99,10 +99,14 @@ function storeVerified(ctx, sha, data, pubkey) {
  * Scarica un blob da un altro nodo e lo accetta solo se l'hash corrisponde (I-17).
  * Solo nodi .onion (via `agent` Tor); il loopback esiste solo per i test.
  * @param {string} baseUrl @param {string} sha
- * @param {{ agent?: import('http').Agent, allowLoopbackForTests?: boolean, headers?: Record<string,string>, maxBytes?: number }} [o]
+ * `onFase` riceve le fasi del trasferimento con i ms dall'inizio (connessione via Tor pronta,
+ * risposta, fine): servono a capire DOVE si ferma un trasferimento appeso.
+ * @param {{ agent?: import('http').Agent, allowLoopbackForTests?: boolean, headers?: Record<string,string>, maxBytes?: number, onFase?: (fase: string, ms: number) => void }} [o]
  * @returns {Promise<Buffer>}
  */
 function fetchVerified(baseUrl, sha, o = {}) {
+  const t0 = Date.now()
+  const fase = (/** @type {string} */ f) => o.onFase?.(f, Date.now() - t0)
   return new Promise((resolve, reject) => {
     if (!SHA_RE.test(sha)) return reject(new Error('hash non valido'))
     let u
@@ -112,16 +116,20 @@ function fetchVerified(baseUrl, sha, o = {}) {
     if (!loop && !o.agent) return reject(new Error('serve l\'agente Tor'))
     const max = o.maxBytes || 64 * 1024 * 1024
     const req = http.get(u, { agent: loop ? undefined : o.agent, headers: o.headers, timeout: 120000 }, res => {
+      fase(`risposta HTTP ${res.statusCode}`)
       if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode}`)) }
       const h = crypto.createHash('sha256'), parts = /** @type {Buffer[]} */ ([])
       let size = 0
       res.on('data', c => { size += c.length; if (size > max) { req.destroy(); return reject(new Error('blob troppo grande')) } h.update(c); parts.push(c) })
       res.on('end', () => {
+        fase(`ricevuti ${size} byte`)
         if (h.digest('hex') !== sha) return reject(new Error('hash non corrispondente: blob rifiutato'))
         resolve(Buffer.concat(parts))
       })
       res.on('error', reject)
     })
+    // con l'agente Tor il socket arriva solo dopo la stretta di mano SOCKS: qui il circuito verso l'onion è pronto
+    req.on('socket', () => fase('connessione pronta'))
     req.on('timeout', () => req.destroy(new Error('tempo scaduto')))
     req.on('error', reject)
   })

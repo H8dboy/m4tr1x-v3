@@ -16,6 +16,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { spawnSync } = require('child_process')
+const { eseguiFile, fileDiTest } = require('./esito')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const DOC = path.join(ROOT, 'docs', 'STATO_M4TR1X.md')
@@ -68,21 +69,13 @@ function sabotage() {
 }
 
 // ─── Test ────────────────────────────────────────────────────────────────────
-function walk(/** @type {string} */ d) {
-  return fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)])
-}
-
 function runTests() {
-  const files = walk(path.join(ROOT, 'tests')).filter(f => f.endsWith('.test.js')).sort()
-  return files.map(f => {
-    const rel = path.relative(ROOT, f).replace(/\\/g, '/')
-    const t0 = Date.now()
-    const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-force-exit', '--test-timeout=120000', rel],
-      { cwd: ROOT, encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, env: process.env })
-    const out = (r.stdout || '') + (r.stderr || '')
-    const num = (/** @type {string} */ k) => { const x = new RegExp(`^# ${k} (\\d+)`, 'm').exec(out); return x ? Number(x[1]) : 0 }
-    const skipReasons = [...out.matchAll(/# SKIP (.*)$/gm)].map(x => x[1].trim())
-    return { file: rel, pass: num('pass'), fail: num('fail'), todo: num('todo'), skipped: num('skipped'), skipReasons, ms: Date.now() - t0 }
+  // stesso runner, stessi tempi e stesso elenco di file della CI e di `npm test` (tools/report/esito.js):
+  // un file che non risponde conta come fallito
+  return fileDiTest(ROOT, ['tests']).map(rel => {
+    const t = eseguiFile(rel, { cwd: ROOT })
+    if (t.problema) console.error(`FALLITO ${rel}: ${t.problema}\n${t.uscita}\n`)
+    return t
   })
 }
 
@@ -125,7 +118,7 @@ function main() {
     if (d && file && d.test && !file.startsWith(d.test)) divergences.push(`${id}: il documento indica il test \`${d.test}\`, il codice usa \`${file}\``)
     if (d && ph && d.phase !== ph) divergences.push(`${id}: fase ${d.phase} nel documento, ${ph} nell'elenco "in attesa"`)
     const t = file ? byFile.get(file) : null
-    const testCell = file ? `\`${file}\`${t ? (t.fail ? ` ❌ ${t.fail} falliti` : ` ✅ ${t.pass} verdi`) : ''}` : '—'
+    const testCell = file ? `\`${file}\`${t ? (t.fail ? ` ❌ ${t.fail} falliti` : t.pass ? ` ✅ ${t.pass} verdi` : ' ❌ nessun test verde') : ' ❌ non eseguito'}` : '—'
     const srows = sab ? sab.results.filter((/** @type {any} */ r) => r.rule === id) : []
     const sabCell = !file ? '—' : !sab ? 'mai eseguita' : !srows.length ? '**nessuna prova di sabotaggio**' :
       `${srows.filter((/** @type {any} */ r) => r.outcome === 'presa').length}/${srows.length} prese` +
@@ -152,7 +145,8 @@ function main() {
     `**Totale: ${tot.pass} verdi, ${tot.fail} falliti, ${tot.skipped} saltati, ${tot.todo} in attesa.**`,
     '',
     table(['File', 'Verdi', 'Falliti', 'Saltati', 'In attesa', 'Durata'], tests.map(t => [
-      `\`${t.file}\``, String(t.pass), t.fail ? `**${t.fail}**` : '0', t.skipped ? `${t.skipped} (${t.skipReasons.join('; ').slice(0, 80)})` : '0', String(t.todo), `${(t.ms / 1000).toFixed(1)} s`])),
+      `\`${t.file}\``, String(t.pass), t.fail ? `**${t.fail}**${t.problema ? ` (${t.problema.replace(/\|/g, '/')})` : ''}` : '0', t.skipped ? `${t.skipped} (${t.skipReasons.join('; ').slice(0, 80)})` : '0', String(t.todo), `${(t.ms / 1000).toFixed(1)} s`])),
+    ...tests.filter(t => t.problema).map(t => `\n**\`${t.file}\` non ha risposto** (${t.problema}). Ultime righe:\n\n\`\`\`\n${t.uscita}\n\`\`\``),
   ].join('\n')
 
   const d = deps()
@@ -189,6 +183,8 @@ function main() {
   fs.writeFileSync(path.join(ROOT, 'docs', 'generated', 'report.json'), JSON.stringify({ date: now.toISOString(), env, pinnedOk, totals: tot, tests, rules: ruleRows, divergences, deps: d }, null, 2) + '\n')
   console.log(`report aggiornato: ${tot.pass} verdi, ${tot.fail} falliti · ${active} regole attive · ${divergences.length} divergenze`)
   if (!pinnedOk) { console.error(`ATTENZIONE: Node ${process.versions.node} ≠ ${PINNED}`); process.exitCode = 1 }
+  // un report con test falliti non è verde: esce con errore
+  if (tot.fail) { console.error(`ATTENZIONE: ${tot.fail} falliti`); process.exitCode = 1 }
 }
 
 main()

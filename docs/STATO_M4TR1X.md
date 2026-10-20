@@ -118,9 +118,9 @@ flowchart TB
 ## 5. Difese (regole I-xx)
 
 <!-- AUTO:REGOLE:INIZIO -->
-_Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
+_Generato da `npm run report` il 2026-10-20. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
 
-**25 regole attive, 27 in attesa, 0 assenti.** Prove di sabotaggio: 64/66 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
+**26 regole attive, 27 in attesa, 0 assenti.** Prove di sabotaggio: 64/66 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
 
 | Regola | Cosa garantisce | Stato | Fase | Test | Sabotaggio |
 |---|---|---|---|---|---|
@@ -176,6 +176,7 @@ _Generato da `npm run report` il 2026-10-16. Fonte: il codice dei test (`tests/i
 | I-50 | La mappa creator contiene solo HMAC(K17, pubkey) e il conto cifrato; | in attesa | F7 | — | — |
 | I-57 | Un ordine di ritiro al distributore non contiene dati personali; | in attesa | F10 | — | — |
 | I-58 | Finestra del seme: le 24 parole compaiono solo nella finestra del seme (pagina, script e capability propri; il lato Rust controlla anche … | attiva | F4 | `inv-58-seed-window.test.js` ✅ 5 verdi | 8/8 prese |
+| I-59 | Porta di controllo del tor del nodo | attiva | F2 | `inv-59-node-tor-control.test.js` ✅ 10 verdi | **nessuna prova di sabotaggio** |
 
 **Divergenze tra documento e codice:** nessuna trovata.
 <!-- AUTO:REGOLE:FINE -->
@@ -289,41 +290,43 @@ Decise il 15/10/2026: Q1 (mance solo ai creator con split), Q2 (SEPA manuale a 1
 ### 11.1 Test automatici
 
 <!-- AUTO:TEST:INIZIO -->
-_Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-16._
+_Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-20._
 
-**Totale: 152 verdi, 0 falliti, 0 saltati, 27 in attesa.**
+**Totale: 170 verdi, 0 falliti, 0 saltati, 27 in attesa.**
 
 | File | Verdi | Falliti | Saltati | In attesa | Durata |
 |---|---|---|---|---|---|
-| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.2 s |
-| `tests/integration/two-nodes.test.js` | 2 | 0 | 0 | 0 | 31.3 s |
-| `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 7.0 s |
-| `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.4 s |
-| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 5.0 s |
-| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.5 s |
-| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
-| `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.5 s |
+| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.8 s |
+| `tests/integration/two-nodes.test.js` | 2 | 0 | 0 | 0 | 334.7 s |
+| `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 6.9 s |
+| `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.8 s |
+| `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.8 s |
+| `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.3 s |
+| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 4.6 s |
+| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.2 s |
+| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.3 s |
+| `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.3 s |
 | `tests/invariants/inv-15-no-h8-in-events.test.js` | 9 | 0 | 0 | 0 | 0.3 s |
 | `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 1.0 s |
-| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.2 s |
-| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-25-deps.test.js` | 3 | 0 | 0 | 0 | 0.2 s |
-| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 7.0 s |
-| `tests/invariants/inv-28-secrets.test.js` | 19 | 0 | 0 | 0 | 0.3 s |
+| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 2.0 s |
+| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.7 s |
+| `tests/invariants/inv-25-deps.test.js` | 3 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 7.3 s |
+| `tests/invariants/inv-28-secrets.test.js` | 19 | 0 | 0 | 0 | 0.5 s |
 | `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
-| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
+| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 1.2 s |
 | `tests/invariants/inv-31-no-keys-in-js.test.js` | 4 | 0 | 0 | 0 | 0.2 s |
 | `tests/invariants/inv-36-transport-only.test.js` | 4 | 0 | 0 | 0 | 0.2 s |
-| `tests/invariants/inv-37-tor-process.test.js` | 2 | 0 | 0 | 0 | 20.5 s |
-| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 8.4 s |
-| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 9.4 s |
+| `tests/invariants/inv-37-tor-process.test.js` | 2 | 0 | 0 | 0 | 98.8 s |
+| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 8.5 s |
+| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 10.0 s |
 | `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.4 s |
-| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 6.0 s |
-| `tests/invariants/inv-58-seed-window.test.js` | 5 | 0 | 0 | 0 | 1.0 s |
-| `tests/invariants/pending.test.js` | 0 | 0 | 0 | 27 | 0.2 s |
-| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.5 s |
+| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 6.6 s |
+| `tests/invariants/inv-58-seed-window.test.js` | 5 | 0 | 0 | 0 | 1.6 s |
+| `tests/invariants/inv-59-node-tor-control.test.js` | 10 | 0 | 0 | 0 | 41.0 s |
+| `tests/invariants/pending.test.js` | 0 | 0 | 0 | 27 | 0.1 s |
+| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.4 s |
+| `tests/unit/report-esito.test.js` | 8 | 0 | 0 | 0 | 5.0 s |
 | `tests/unit/runtime-sqlite.test.js` | 3 | 0 | 0 | 0 | 0.2 s |
 <!-- AUTO:TEST:FINE -->
 
@@ -349,6 +352,16 @@ _Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Nod
 | `tor` classico, officina e hotspot | la rete funziona | 15/10/2026 | Windows | **passata** (9 s e 31 s) |
 | `arti` CLI su Linux | Arti funziona fuori da Windows | 15/10/2026 | Linux (container Docker), rete officina | **passata** (11 s) |
 | Electron 44 avvio di prova (vecchi repo v2) | non riguarda v3 | 15/10/2026 | Windows | passata (solo storico) |
+
+### 11.2b Misure a freddo della rete Tor (storico)
+
+<!-- AUTO:TOR:INIZIO -->
+_Generato da `npm run report` dallo storico di `npm run misura:tor` (misura a freddo: nodo nuovo al primo avvio). Non è un test: non blocca niente._
+
+| Data | Ambiente | Riusciti | Riserva 5 min | tor-a | pubblicazione | rete | evento+file |
+|---|---|---|---|---|---|---|---|
+| 2026-10-16 13:20 | win32 10.0.26200 | 1/3 | 0/3 | 10.7 s | 3.5 s | 8.2 s | 1.3 s |
+<!-- AUTO:TOR:FINE -->
 
 ### 11.3 Prove che mancano
 
@@ -377,7 +390,7 @@ _Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Nod
 ## 12. Dipendenze
 
 <!-- AUTO:DIPENDENZE:INIZIO -->
-_Generato da `npm run report` il 2026-10-16, dal lockfile e da `npm audit`._
+_Generato da `npm run report` il 2026-10-20, dal lockfile e da `npm audit`._
 
 | Pacchetto | Uso | Dichiarata | Installata |
 |---|---|---|---|

@@ -195,4 +195,18 @@ module.exports = [
     find: '      await Promise.all([owner, pub].map(s => new Promise(r => { s.closeAllConnections?.(); s.close(() => r(undefined)) })))\n      try { db.close() } catch {}\n      throw e\n', replace: '      throw e\n', test: T('inv-59-node-tor-control'), timeoutMs: 1800000 },
   { id: 'i37-loopback', rule: 'I-37', name: 'file della porta di controllo accettato da qualsiasi interfaccia', file: 'app/transport/src/tor_process.rs',
     find: '    if host != "127.0.0.1" {\n        return None; // qualsiasi altra interfaccia è un errore di configurazione\n    }\n', replace: '', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+
+  // ─── Strumenti: il report non dice mai "verde" se un test non ha girato (20/10/2026) ──
+  { id: 'report-riepilogo', rule: 'strumenti', name: 'file senza riepilogo dei test contato come verde', file: 'tools/report/esito.js',
+    find: "  if (tests === null) problemi.push('nessun riepilogo dei test: il file non ha finito')\n  else if (tests === 0)", replace: '  if (tests === 0)', test: 'tests/unit/report-esito.test.js' },
+  { id: 'report-zero', rule: 'strumenti', name: 'file con un problema e 0 falliti lasciato a 0 falliti', file: 'tools/report/esito.js',
+    find: '  if (problema && !fail) fail = 1\n', replace: '', test: 'tests/unit/report-esito.test.js' },
+  { id: 'report-vuoto', rule: 'strumenti', name: 'file senza test accettato come 1 verde', file: 'tools/report/esito.js',
+    find: " problemi.push('il file non ha registrato nessun test')", replace: ' void 0', test: 'tests/unit/report-esito.test.js' },
+  { id: 'report-isolamento', rule: 'strumenti', name: 'file eseguito isolato (uscita anticipata riportata verde)', file: 'tools/report/esito.js',
+    find: "'--test', '--experimental-test-isolation=none', ", replace: "'--test', ", test: 'tests/unit/report-esito.test.js' },
+  { id: 'report-saltati', rule: 'strumenti', name: 'CI: test saltati ammessi anche con --senza-saltati', file: 'tools/report/esegui.js',
+    find: '  if (senzaSaltati && t.skipped) {', replace: '  if (false) {', test: 'tests/unit/report-esito.test.js' },
+  { id: 'report-uscita', rule: 'strumenti', name: 'CI: runner che esce con 0 anche con file falliti', file: 'tools/report/esegui.js',
+    find: 'process.exit(tot.fail ? 1 : 0)', replace: 'process.exit(0)', test: 'tests/unit/report-esito.test.js' },
 ]

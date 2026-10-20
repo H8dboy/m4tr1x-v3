@@ -1,9 +1,9 @@
-# Nota di ripresa — 16/10/2026
+# Nota di ripresa — 20/10/2026
 
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3): **135 verdi, 0 falliti**, 21 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **170 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -42,7 +42,25 @@
 24. **CI:** passo di riscaldamento, I-59 con tor vero, misura a freddo NON bloccante nel riepilogo del job; `npm run misura:tor` aggiunge allo storico `docs/generated/tor-tempi.json`, mostrato nel report (sez. 11.2b).
 25. **Da fare con l'installer del nodo:** programma da riga di comando con `onFatal` → uscita con codice 1, unità systemd con `Restart=on-failure`, servizio Windows con ripristino.
 
+## Fatto il 20/10 (lo strumento che dice "verde")
+26. Correzione alla nota del 16/10: GitHub era a `df7316f` (non `f50fc96`) e la sua CI era **rossa** (due nodi via Tor, "B non ha ricevuto l'evento da A").
+27. **Il report diceva "160 verdi, 0 falliti" con un file che non aveva girato:** I-37 si è fermato a 120 s senza stampare niente e veniva contato 0/0. Provato con Node 22.23.3: `node --test` dà VERDE anche a un file senza test e a un file che esce con `process.exit(0)` a metà (i test non eseguiti spariscono). **Regola del fondatore: un test che non risponde conta come fallito, sempre.**
+28. **Runner unico `tools/report/esegui.js` + `esito.js`**, usato da report, `npm test` e CI (job test e tor): file fermato, codice di uscita ≠ 0, senza riepilogo, 0 test, annullati, nessun test registrato → FALLITO con le ultime righe dell'output; ogni file gira senza isolamento (`--experimental-test-isolation=none`) così l'uscita anticipata porta via il riepilogo. Il report esce con 1 se c'è un fallito. Job tor con `--senza-saltati` (lì una prova saltata = non ha girato). **Tempi massimi da una sola fonte** (`TEMPI`: 120 s per test senza timeout proprio, 1 h per file), tolti i valori a mano dalla CI. Prove: `tests/unit/report-esito.test.js` con processi veri (`tests/fixtures/report/`), sabotaggi `report-*` **6/6 presi**.
+29. Il runner nuovo ha subito preso un rosso vero: due nodi via Tor fermo nella **fase "file"** a 60 s (rete già su, evento in 7 s). Il fondatore: **non liquidarlo come rete lenta**, indagare con i log del trasferimento. Quei log non esistevano: ora `fetchVerified` segnala le fasi (connessione pronta, risposta HTTP, byte ricevuti, con i ms; mai indirizzi né hash) e il test le stampa tutte, anche da verde. Giro di prova: file in 0,8 s (connessione 307 ms, risposta 704 ms).
+30. Stesso giro: fase **rete a 299,8 s su 300** (B: REQUESTED×31, FAILED NOT_FOUND×30; A annunciato con la riserva dei 5 min). Al limite: da guardare se ricapita.
+
 ## Prossimo
+
+**Decisioni aperte del fondatore sul trasferimento dei blob** (cambiano il comportamento del nodo, non fatte):
+- tempo massimo TOTALE per un trasferimento (oggi SOCKS 90 s + inattività HTTP 120 s: può restare appeso minuti in silenzio);
+- nuovo tentativo con attesa crescente (oggi un file fallito si richiede solo se cade la connessione col peer);
+- riga "file servito" lato A (registrerebbe con l'orario ogni download: solo nei test, o no).
+
+1. Controllare la CI del push del 20/10 (primo giro col runner nuovo: un test lento senza timeout proprio ora cade a 120 s).
+2. Campagna completa di sabotaggio (lunga: le prove I-59 con tor durano ~10 min ciascuna).
+3. Se ricapita il rosso nella fase "file": leggere la riga "trasferimento del file su B" dell'errore.
+4. Poi F4: feed.
+
 - OK del fondatore sulla bozza PEZZI_MANCANTI (tabella in fondo) → numeri I-42…I-50, K16, K17 entrano in SECURITY_INVARIANTS/KEYS.
 - Scrivere la procedura DSA (precondizione di F6).
 - **F4 continua:** feed/post/profilo verso un nodo di prova (firma nel lato Rust con l'identità salvata), collegare `TorProcessTransport` al guscio (stato reale), prova dinamica di I-31 con seme di prova, I-01 dinamica (namespace su Linux), `ArtiTransport` per Linux, build del guscio e `cargo deny` in CI.

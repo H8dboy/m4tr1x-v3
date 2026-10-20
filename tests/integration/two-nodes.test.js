@@ -102,7 +102,9 @@ test('due nodi via Tor si scambiano evento e file', { skip: !TOR || !fs.existsSy
     catch (e) {
       tempi[nome] = Date.now() - t0
       throw new Error(`fase "${nome}" fallita dopo ${Math.round(tempi[nome] / 1000)} s (massimo ${LIMITI_MS[nome] / 1000} s): ${/** @type {Error} */ (e).message}` +
-        ` · tempi finora: ${JSON.stringify(tempi)} · log di A: ${ultime(logA)} · log di B: ${ultime(logB)}`)
+        ` · tempi finora: ${JSON.stringify(tempi)} · log di A: ${ultime(logA)} · log di B: ${ultime(logB)}` +
+        // tutte le fasi del trasferimento del file su B: le righe HS_DESC non devono coprirle (rosso del 20/10/2026)
+        ` · trasferimento del file su B: ${logB.filter(l => l.startsWith('peer: file')).join(' | ') || '(nessuna riga: richiesta mai partita)'}`)
     } finally { clearTimeout(timer); tempi[nome] ??= Date.now() - t0 }
   }
   try {
@@ -128,6 +130,8 @@ test('due nodi via Tor si scambiano evento e file', { skip: !TOR || !fs.existsSy
     const conta = (/** @type {string[]} */ l) => Object.entries(l.reduce((/** @type {Record<string, number>} */ m, x) => {
       const e = /^tor: HS_DESC (\S+(?: \S+)?)/.exec(x)?.[1]; if (e) m[e] = (m[e] || 0) + 1; return m }, {})).map(([k, v]) => `${k}×${v}`).join(' ') || '—'
     t.diagnostic(`HS_DESC A: ${conta(logA)} · B: ${conta(logB)}`)
+    // anche quando è verde: i tempi del trasferimento servono a vedere se peggiorano
+    t.diagnostic(`file su B: ${logB.filter(l => l.startsWith('peer: file')).join(' | ') || '—'}`)
     if (b) await b.close()
     if (a) await a.close()
   }

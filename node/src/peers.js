@@ -43,8 +43,11 @@ function startPeers(ctx) {
       if (fs.existsSync(blobs.blobPath(cfg.dataDir, t[1]))) continue
       try {
         const agent = agentFor(target.loop)
-        if (agent === null) return
-        const data = await blobs.fetchVerified(target.base, t[1], { agent, allowLoopbackForTests: target.loop, headers: { Host: target.hostHeader }, maxBytes: cfg.maxBlobBytes })
+        if (agent === null) { log('peer: file non richiesto (Tor non pronto)'); return }
+        // fasi con i tempi, mai indirizzi né hash (I-18, I-59): dicono dove si ferma un trasferimento appeso
+        log('peer: file richiesto')
+        const data = await blobs.fetchVerified(target.base, t[1], { agent, allowLoopbackForTests: target.loop, headers: { Host: target.hostHeader }, maxBytes: cfg.maxBlobBytes,
+          onFase: (f, ms) => log(`peer: file, ${f} (${ms} ms)`) })
         blobs.storeVerified({ dataDir: cfg.dataDir, db }, t[1], data, ev.pubkey)
         log('peer: file replicato e verificato')
       } catch (e) { log(`peer: file non replicato (${/** @type {Error} */ (e).message})`) }
