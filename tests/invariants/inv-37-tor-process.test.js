@@ -62,7 +62,18 @@ test('I-37 con tor vero: solo onion, cookie, solo 127.0.0.1, muore con l\'app, o
   t.diagnostic((/tentativi di connessione: [^\n]*/.exec(r.out) || ['tentativi non stampati'])[0])
   // HSDir cercati dal client confrontati con quelli su cui il servizio ha caricato (misura del 20/10/2026)
   t.diagnostic((/hsdir del client: [^\n]*/.exec(r.out) || ['hsdir del client non stampati'])[0])
-  assert.equal(r.code, 0, r.out.slice(-4000))
+  // Qui girano PIÙ prove Rust: il runner rilancia una volta i rossi di rete (fase "rete"/"pubblicazione").
+  // Se fallisce anche un'altra prova (codice), il rosso NON è solo rete: le parole di fase si neutralizzano.
+  const fallite = [...r.out.matchAll(/^test (\w+) \.\.\. FAILED$/gm)].map(m => m[1])
+  let messaggio = r.out.slice(-4000)
+  if (fallite.some(n => n !== 'connect_onion_raggiunge_un_servizio_onion'))
+    messaggio = `NON solo rete: fallite anche ${fallite.join(', ')}\n` + messaggio.replace(/fase "/g, 'fase-non-rilanciabile "')
+  else {
+    // la fase della prova Rust va IN TESTA al messaggio: il runner la legge solo lì
+    const fase = /fase "(\w+)": [^\n]*/.exec(r.out)
+    if (fase) messaggio = `${fase[0]}\n${messaggio}`
+  }
+  assert.equal(r.code, 0, messaggio)
   assert.ok(!r.out.includes('SALTATO: serve M4TR1X_TOR_BIN'), 'le prove Rust si sono saltate anche se M4TR1X_TOR_BIN è impostato')
   // 4 prove + `aiuto_fa_l_app` (che senza la sua variabile non fa niente e risulta passata)
   assert.match(r.out, /test result: ok\. 5 passed/, 'attese le 4 prove di I-37 (più l\'aiuto) passate')

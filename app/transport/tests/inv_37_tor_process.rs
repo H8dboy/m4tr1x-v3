@@ -430,12 +430,15 @@ async fn connect_onion_raggiunge_un_servizio_onion() {
             }
             Err(e) => {
                 tentativi.push(format!("t+{partenza}s {e} dopo {} ms", ta.elapsed().as_millis()));
-                assert!(t1.elapsed() < Duration::from_secs(240), "onion non raggiunto: {e} · tentativi: {}", tentativi.join(" | "));
+                // stessa lingua di tutte le prove con Tor (runner: un rosso di rete si rilancia una volta):
+                // pubblicazione non confermata → "pubblicazione"; confermata ma onion non raggiunto → "rete"
+                let fase = if riserva { "pubblicazione" } else { "rete" };
+                assert!(t1.elapsed() < Duration::from_secs(240), "fase \"{fase}\": onion non raggiunto: {e} · tentativi: {}", tentativi.join(" | "));
             }
         }
         tokio::time::sleep(Duration::from_secs(3)).await;
     };
-    assert!(ok, "l'eco non torna uguale");
+    assert!(ok, "fase \"eco\": l'eco non torna uguale"); // il nostro trasporto: mai rilanciato
     eprintln!("onion raggiunto in {} s", t1.elapsed().as_secs());
     eprintln!("tentativi di connessione: {}", tentativi.join(" | "));
     let caricati_su: std::collections::HashSet<String> =

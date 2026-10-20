@@ -79,7 +79,7 @@ function esito(r) {
 
 /**
  * @param {string} rel file di test, relativo a cwd
- * @param {{ cwd: string, timeoutMs?: number, testTimeoutMs?: number, env?: NodeJS.ProcessEnv }} o
+ * @param {{ cwd: string, timeoutMs?: number, testTimeoutMs?: number, env?: NodeJS.ProcessEnv, conOutput?: boolean }} o
  *   i tempi diversi da TEMPI servono solo alle prove di questo modulo
  */
 function eseguiFile(rel, o) {
@@ -90,7 +90,52 @@ function eseguiFile(rel, o) {
   const r = spawnSync(process.execPath, ['--test', '--experimental-test-isolation=none', '--test-reporter=tap', '--test-force-exit', `--test-timeout=${o.testTimeoutMs || TEMPI.TEST_MS}`, rel],
     { cwd: o.cwd, encoding: 'utf8', timeout: o.timeoutMs || TEMPI.FILE_MS, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env })
   const out = (r.stdout || '') + (r.stderr || '')
-  return { file: rel, ...esito({ status: r.status, signal: r.signal, error: r.error, out, file: rel }), ms: Date.now() - t0 }
+  /** @type {ReturnType<typeof esito> & { file: string, ms: number, output?: string, rilancio?: { fase: string, primoGiroMs: number, primoErrore: string } }} */
+  const e = { file: rel, ...esito({ status: r.status, signal: r.signal, error: r.error, out, file: rel }), ms: Date.now() - t0 }
+  if (o.conOutput) e.output = out
+  return e
 }
 
-module.exports = { TEMPI, esito, eseguiFile, fileDiTest }
+/**
+ * Fasi della rete Tor (fondatore, 20/10/2026): un rosso SOLO in queste fasi si rilancia UNA volta.
+ * Tutte le prove con tor vero scrivono la fase nell'errore con le stesse parole: `fase "pubblicazione"`
+ * (il descrittore non è confermato sugli HSDir) e `fase "rete"` (l'onion non si raggiunge). Ogni altra
+ * fase ("evento", "file", "eco", "relay"…) è il nostro codice: resta rossa subito.
+ */
+// La fase conta solo all'INIZIO del messaggio d'errore (`error: 'fase "rete"…` o `error: |-` e a capo):
+// un errore che CITA la frase ("manca la fase "pubblicazione"") non è un rosso di rete (20/10/2026).
+const FASE_DI_RETE = /^\s+error: (?:\|-?\s*\n\s+|'|")fase \\?"(pubblicazione|rete)\\?"/m
+
+/**
+ * La fase di rete se TUTTI i test falliti del file sono caduti in una fase di rete; altrimenti null.
+ * Mai per un file fermato, uscito prima, senza test o con test annullati: quelli non sono la rete.
+ * @param {ReturnType<typeof esito>} e @param {string} out
+ */
+function faseDiRete(e, out) {
+  if (!e.fail || e.problema !== 'codice di uscita 1') return null
+  // blocchi dei test falliti di primo livello (TAP): "not ok N - nome" fino alla fine del blocco YAML
+  const falliti = out.split(/^not ok \d+ - /m).slice(1).map(b => b.split(/^ {2}\.\.\.$/m)[0])
+  if (falliti.length !== e.fail) return null
+  const fasi = falliti.map(b => FASE_DI_RETE.exec(b)?.[1])
+  return fasi.every(Boolean) ? /** @type {string} */ (fasi[0]) : null
+}
+
+/**
+ * Come `eseguiFile`, ma un file rosso SOLO per la rete Tor si rilancia una volta (mai di più), e il rilancio
+ * resta scritto nel risultato (`rilancio`) con l'errore del primo giro.
+ * @param {string} rel @param {Parameters<typeof eseguiFile>[1]} o
+ */
+function eseguiConRilancio(rel, o) {
+  const primo = eseguiFile(rel, { ...o, conOutput: true })
+  const fase = faseDiRete(primo, /** @type {string} */ (primo.output))
+  delete primo.output
+  if (!fase) return primo
+  const secondo = eseguiFile(rel, o)
+  return {
+    ...secondo,
+    ms: primo.ms + secondo.ms,
+    rilancio: { fase, primoGiroMs: primo.ms, primoErrore: (primo.uscita || '').split('\n').filter(l => /fase "/.test(l)).slice(0, 3).join(' | ') },
+  }
+}
+
+module.exports = { TEMPI, esito, eseguiFile, eseguiConRilancio, faseDiRete, fileDiTest }

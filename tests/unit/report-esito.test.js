@@ -10,7 +10,9 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('path')
 const { spawnSync } = require('child_process')
-const { esito, eseguiFile } = require('../../tools/report/esito')
+const fs = require('fs')
+const os = require('os')
+const { esito, eseguiFile, eseguiConRilancio } = require('../../tools/report/esito')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const F = (/** @type {string} */ n) => `tests/fixtures/report/${n}.js`
@@ -85,4 +87,63 @@ test('riepilogo con fail 0 ma uscita diversa da 0, o test annullati: fallito', (
   const e = esito({ status: 1, signal: null, out: '# tests 1\n# pass 0\n# fail 0\n# cancelled 1\n' })
   assert.equal(e.fail, 1)
   assert.match(String(e.problema), /annullati/)
+})
+
+// ─── Rilancio unico per la rete Tor (fondatore, 20/10/2026) ──────────────────
+/** esegue `nome` con il rilancio, contando quante volte gira davvero */
+function conRilancio(/** @type {string} */ nome, rossi = 1, timeoutMs = 60000) {
+  const contatore = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'm4-rilancio-')), 'n')
+  const env = { ...process.env, M4TR1X_PROVA_CONTATORE: contatore, M4TR1X_PROVA_ROSSI: String(rossi) }
+  const t = eseguiConRilancio(F(nome), { cwd: ROOT, timeoutMs, testTimeoutMs: 600000, env })
+  const giri = fs.existsSync(contatore) ? Number(fs.readFileSync(contatore, 'utf8')) : 0
+  return { t, giri }
+}
+
+test('rosso SOLO in fase "rete": un rilancio, e resta scritto', () => {
+  const { t, giri } = conRilancio('rete', 1)
+  assert.equal(giri, 2)
+  assert.equal(t.fail, 0)
+  assert.equal(t.rilancio?.fase, 'rete')
+  assert.match(String(t.rilancio?.primoErrore), /fase "rete" fallita/)
+})
+
+test('rosso di rete anche al secondo giro: resta rosso, mai un terzo giro', () => {
+  const { t, giri } = conRilancio('rete', 5)
+  assert.equal(giri, 2, 'un solo rilancio')
+  assert.ok(t.fail >= 1)
+})
+
+test('rosso del nostro codice (fase "file"): nessun rilancio', () => {
+  const { t, giri } = conRilancio('codice')
+  assert.equal(giri, 1)
+  assert.ok(t.fail >= 1)
+  assert.equal(t.rilancio, undefined)
+})
+
+test('un rosso di rete e uno di codice nello stesso file: nessun rilancio', () => {
+  const { t, giri } = conRilancio('misto')
+  assert.equal(giri, 1)
+  assert.equal(t.rilancio, undefined)
+})
+
+test('errore che CITA una fase di rete senza esserlo: nessun rilancio (20/10/2026)', () => {
+  const { t, giri } = conRilancio('citazione')
+  assert.equal(giri, 1, 'rilanciato un rosso di codice perché il messaggio citava "fase \\"pubblicazione\\""')
+  assert.equal(t.rilancio, undefined)
+})
+
+test('file bloccato: mai rilanciato (non è la rete)', () => {
+  const t = eseguiConRilancio(F('appeso'), { cwd: ROOT, timeoutMs: 3000, testTimeoutMs: 600000 })
+  assert.ok(t.fail >= 1)
+  assert.equal(t.rilancio, undefined)
+  assert.ok(t.ms < 10000, `rilanciato? ${t.ms} ms`)
+})
+
+test('runner della CI: il rilancio si scrive nel log', () => {
+  const contatore = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'm4-rilancio-')), 'n')
+  const env = { ...process.env, M4TR1X_PROVA_CONTATORE: contatore, M4TR1X_PROVA_ROSSI: '1' }
+  delete env.NODE_TEST_CONTEXT
+  const r = spawnSync(process.execPath, ['tools/report/esegui.js', F('rete')], { cwd: ROOT, encoding: 'utf8', env, timeout: 120000 })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /RILANCIO tests\/fixtures\/report\/rete\.js \(rete Tor, fase "rete"\)/)
 })

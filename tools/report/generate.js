@@ -16,7 +16,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { spawnSync } = require('child_process')
-const { eseguiFile, fileDiTest } = require('./esito')
+const { eseguiConRilancio, fileDiTest } = require('./esito')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const DOC = path.join(ROOT, 'docs', 'STATO_M4TR1X.md')
@@ -73,7 +73,8 @@ function runTests() {
   // stesso runner, stessi tempi e stesso elenco di file della CI e di `npm test` (tools/report/esito.js):
   // un file che non risponde conta come fallito
   return fileDiTest(ROOT, ['tests']).map(rel => {
-    const t = eseguiFile(rel, { cwd: ROOT })
+    const t = eseguiConRilancio(rel, { cwd: ROOT })
+    if (t.rilancio) console.error(`RILANCIO ${rel} (rete Tor, fase "${t.rilancio.fase}"): ${t.rilancio.primoErrore}`)
     if (t.problema) console.error(`FALLITO ${rel}: ${t.problema}\n${t.uscita}\n`)
     return t
   })
@@ -145,7 +146,8 @@ function main() {
     `**Totale: ${tot.pass} verdi, ${tot.fail} falliti, ${tot.skipped} saltati, ${tot.todo} in attesa.**`,
     '',
     table(['File', 'Verdi', 'Falliti', 'Saltati', 'In attesa', 'Durata'], tests.map(t => [
-      `\`${t.file}\``, String(t.pass), t.fail ? `**${t.fail}**${t.problema ? ` (${t.problema.replace(/\|/g, '/')})` : ''}` : '0', t.skipped ? `${t.skipped} (${t.skipReasons.join('; ').slice(0, 80)})` : '0', String(t.todo), `${(t.ms / 1000).toFixed(1)} s`])),
+      // un rilancio per la rete Tor resta scritto nel report: se diventano frequenti, si vede
+      `\`${t.file}\`${t.rilancio ? ` (rilanciato una volta: fase "${t.rilancio.fase}")` : ''}`, String(t.pass), t.fail ? `**${t.fail}**${t.problema ? ` (${t.problema.replace(/\|/g, '/')})` : ''}` : '0', t.skipped ? `${t.skipped} (${t.skipReasons.join('; ').slice(0, 80)})` : '0', String(t.todo), `${(t.ms / 1000).toFixed(1)} s`])),
     ...tests.filter(t => t.problema).map(t => `\n**\`${t.file}\` non ha risposto** (${t.problema}). Ultime righe:\n\n\`\`\`\n${t.uscita}\n\`\`\``),
   ].join('\n')
 

@@ -12,7 +12,7 @@
  * Esce con 1 se c'è anche un solo fallito.
  */
 const path = require('path')
-const { eseguiFile, fileDiTest } = require('./esito')
+const { eseguiConRilancio, fileDiTest } = require('./esito')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const argv = process.argv.slice(2)
@@ -23,7 +23,9 @@ if (!files.length) { console.error('nessun file di test trovato'); process.exit(
 
 const tot = { pass: 0, fail: 0, skipped: 0, todo: 0 }
 for (const rel of files) {
-  const t = eseguiFile(rel, { cwd: ROOT })
+  const t = eseguiConRilancio(rel, { cwd: ROOT })
+  // un rosso SOLO di rete Tor si rilancia una volta, e si scrive (fondatore, 20/10/2026)
+  if (t.rilancio) console.log(`RILANCIO ${rel} (rete Tor, fase "${t.rilancio.fase}"): primo giro rosso dopo ${(t.rilancio.primoGiroMs / 1000).toFixed(1)} s · ${t.rilancio.primoErrore}`)
   if (senzaSaltati && t.skipped) {
     t.problema = [t.problema, `${t.skipped} test saltati (${t.skipReasons.join('; ')})`].filter(Boolean).join('; ')
     t.fail += t.skipped

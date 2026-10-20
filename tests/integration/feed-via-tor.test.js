@@ -72,10 +72,12 @@ test('il feed dell\'app legge via Tor i post verificati di un nodo vero (e misur
     const dopo = await app(a.node.onion, dati) // stesso tor, stessa cartella: "dopo un riavvio dell'app"
     const letture = [...primo.filter(x => x.lettura !== 'bootstrap'), ...dopo.filter(x => x.lettura !== 'bootstrap').map(x => ({ ...x, lettura: x.lettura === 'primo collegamento' ? 'dopo un riavvio (stessa cartella)' : 'secondo dopo il riavvio' }))]
     t.diagnostic(`feed (annuncio del nodo: ${annuncio}): ` + letture.map(x => `${x.lettura}=${x.errore ? `ERRORE ${x.errore}` : `${x.secondi}s/${x.tentativi} tent.`}`).join(' · '))
+    // Fasi con le stesse parole delle altre prove con Tor (il runner rilancia una volta SOLO "pubblicazione"
+    // e "rete"): onion non raggiunto → "rete"; collegati ma relay rotto → "relay"; post mancanti → "feed".
     for (const x of letture) {
-      assert.ok(!x.errore, `${x.lettura}: ${x.errore}`)
-      assert.ok(x.ids.includes(ev.id), `${x.lettura}: il post pubblicato non è nel feed`)
-      assert.equal(x.scartati, 0, `${x.lettura}: eventi scartati da un nodo onesto`)
+      if (x.errore) assert.fail(`fase "${/relay:/.test(x.errore) ? 'relay' : 'rete'}": ${x.lettura}: ${x.errore}`)
+      assert.ok(x.ids.includes(ev.id), `fase "feed": ${x.lettura}: il post pubblicato non è nel feed`)
+      assert.equal(x.scartati, 0, `fase "feed": ${x.lettura}: eventi scartati da un nodo onesto`)
     }
   } finally {
     await a.close()

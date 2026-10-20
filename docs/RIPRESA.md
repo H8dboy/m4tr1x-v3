@@ -3,7 +3,7 @@
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **187 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **196 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -74,6 +74,9 @@
 49. **Prova di fine corsa** `tests/integration/feed-via-tor.test.js` (anche nel job tor della CI): nodo vero, post pubblicato, l'app (`app/feed/examples/misura.rs`) lo legge via Tor due volte, poi un secondo processo con la STESSA cartella dati ("dopo un riavvio"). Legge solo con pubblicazione del nodo CONFERMATA (fondatore); con la sola riserva: fase "pubblicazione" esplicita. **Errore mio trovato e corretto:** lanciavo l'app con `spawnSync`, che ferma il ciclo degli eventi del nodo nello stesso processo → "tempo massimo nell'apertura" a ogni tentativo (dimostrato con una sonda: upgrade a mano 101 in 0,3 s, `Relay::apri` 0,5 s, feed 6 s sullo stesso nodo).
 50. **Misure (punto 46 confermato):** stessa sessione 0–3 s; **dopo un riavvio la ricerca riparte da zero** (3–6 s di solito, 104–124 s con un HSDir lento); primo collegamento fino a 186 s, dentro il budget. Un rosso da 306 s (messaggio perso per un mio filtro dell'output) non si è ripetuto in 6 giri; poi nel report un rosso IDENTICO (305 s) col messaggio nuovo: "fase pubblicazione: il nodo è arrivato solo alla riserva dei 5 minuti" → quasi certamente era quello. Con un nodo appena creato capita ~1 volta su 7: rete Tor, si rilancia. Le misure ora si salvano intere.
 51. **Sabotaggio: falso verde chiuso per categoria.** Una prova "presa" perché il codice sabotato NON COMPILA non dimostra niente: `tools/sabotage/run.js` ora la segna "non-compila" (verificato rimettendo la vecchia prova difettosa). Ripasso delle 25 prove di oggi: tutte prese davvero. Sabotaggi feed nuovi: firma non controllata, ogni kind, senza ripresa.
+
+52. **Rilancio unico per la rete Tor** (fondatore): nel runner (`eseguiConRilancio`, CI + report + `npm test`) un file si rilancia UNA volta solo se TUTTI i suoi test falliti cominciano l'errore con `fase "pubblicazione"` o `fase "rete"`; ogni altra fase (evento, file, eco, relay, feed), file bloccati/usciti prima/senza test: rossi subito. Il rilancio si scrive nel log ("RILANCIO … fase …: primo errore") e nel report ("rilanciato una volta"). **Difetto trovato dal suo stesso controllo:** la prima versione rilanciava un rosso di CODICE che CITAVA la frase "manca la fase "pubblicazione"": ora la fase conta solo all'INIZIO del messaggio (prova di regressione `citazione.js`). Verificato sul rosso vero del report (feed, "pubblicazione"). Sabotaggi `report-rilancio-*` 3/3.
+53. **Stessa lingua per tutte le prove che raggiungono un onion** (fondatore): due nodi (pubblicazione, rete, evento, file), feed (pubblicazione, rete, relay, feed), I-37 (pubblicazione, rete, eco; la fase della prova Rust va in testa al messaggio JS; se fallisce anche un'altra prova Rust il rilancio si neutralizza). `tests/unit/fasi-tor.test.js` lo controlla e scopre le prove nuove con Tor fuori dall'elenco. I-59 non raggiunge onion: un suo rosso è codice.
 
 ## Prossimo
 
