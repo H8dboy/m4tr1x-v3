@@ -7,6 +7,8 @@
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
+const path = require('path')
+const { spawnSync } = require('child_process')
 const keys = require('../../packages/keys')
 const protocol = require('../../packages/protocol')
 
@@ -37,4 +39,17 @@ test('verifyEvent rifiuta anche eventi ricevuti con dati H8', () => {
 test('un evento normale passa', () => {
   const ev = protocol.buildEvent({ kind: 1, content: 'Testimonianza da Albania, ore 21', tags: [['t', 'diaspora']] }, identity, NET)
   assert.ok(protocol.verifyEvent(ev, NET))
+})
+
+// Lato Rust dell'app (app/protocol, F4): stessa regola sugli eventi ricevuti, stessi esiti del
+// JavaScript sui vettori congelati (packages/protocol/vectors/eventi.json), confini di parola compresi.
+const ROOT = path.resolve(__dirname, '..', '..')
+const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' })
+test('lato Rust (app/protocol): eventi con dati H8 rifiutati come in JavaScript', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 900000 }, () => {
+  const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(ROOT, 'app', 'Cargo.toml'), '-p', 'm4tr1x-protocol'],
+    { cwd: path.join(ROOT, 'app'), encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
+  const out = (r.stdout || '') + (r.stderr || '')
+  assert.equal(r.status, 0, out.slice(-4000))
+  for (const t of ['confini_di_parola_come_il_javascript', 'stesso_esito_del_javascript_su_ogni_vettore', 'i_rifiuti_hanno_il_motivo_giusto'])
+    assert.match(out, new RegExp(`${t} \\.\\.\\. ok`), `manca o fallisce la prova ${t}`)
 })

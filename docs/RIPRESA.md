@@ -3,7 +3,7 @@
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **174 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **181 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -52,8 +52,16 @@
 31. CI di `f39ee26` (primo giro col runner nuovo) **verde**: job tor 0 saltati (due nodi 2/2, I-59 10/10, I-37 2/2); job test 163 verdi, 7 saltati (tor/cargo assenti lì).
 32. **Blob, decisioni del fondatore applicate:** (1) tempo massimo TOTALE **30 s per tentativo** (`TEMPO_MASSIMO_BLOB_MS`, chiude anche una connessione SOCKS in corso); (2) **3 tentativi**, attese 2 s e 4 s (`TENTATIVI_BLOB`, `ATTESA_BLOB_MS` in peers.js), niente tentativi paralleli dello stesso file; un file arrivato SBAGLIATO (hash diverso, troppo grande) non si ritenta; (3) **"file servito" solo nei test**: è la funzione `onBlobServitoForTests`, che un file di configurazione JSON non può contenere (`true`/stringhe si scartano) e non passa dal log del nodo. Prove `tests/integration/blob-replica.test.js` (peer che manda un byte alla volta, file che arriva tardi, stop dopo 3, JSON) + sabotaggi `blob-*` **4/4 presi**. La prova dei due nodi ora dice anche se la richiesta è arrivata ad A.
 
+## Fatto il 20/10, F4: feed (passi 1–2) e controlli Rust
+33. **Decisioni del fondatore sul feed:** mostra gli ultimi post del nodo di prova (non "chi seguo"); client WebSocket del relay DENTRO `transport` (I-36 invariata); nodo di prova e tor.exe da variabili d'ambiente (`M4TR1X_NODO_PROVA`, `M4TR1X_TOR_BIN`), l'onion non passa mai dall'interfaccia.
+34. **Passo 1 — `app/protocol`** (nessuna rete): id e verifica degli eventi (forma, tag `net`, dati H8, id, firma BIP-340), più severo del JS mai più permissivo (`created_at` ≤ 2^53−1 senza decimali). H8 senza la libreria `regex`: il `\b` del JS conosce solo l'ASCII. **Vettori condivisi CONGELATI** `packages/protocol/vectors/eventi.json` (generatore `tools/vettori/eventi.js`, firme in due metà per lo scanner): 32 eventi, **stessi esiti in JS e Rust al primo colpo**. Rust agganciato a I-15; sabotaggi `i15-rust-*` + `protocollo-rust-firma` 3/3.
+35. **Passo 2 — `app/transport/src/relay.rs`**: `Relay::apri(flusso onion, &OnionV3)`, `richiedi(filtro)` fino a EOSE poi CLOSE; ≤ 512 KiB per messaggio, ≤ 500 eventi, 60 s per richiesta. `tokio-tungstenite` 0.30.0 SENZA `connect` né TLS (solo `handshake`). Crate nuovi nel lockfile: tungstenite, tokio-tungstenite, sha1, rand, chacha20. Prove contro un relay finto in memoria (6/6, tempo virtuale); agganciate a I-36 con il controllo statico delle funzioni; sabotaggi `i36-relay-*` 3/3.
+36. **cargo deny + cargo audit in CI** (job deps), binari ufficiali con versione e SHA-256 fissati (cargo-deny 0.20.2, somme pubblicate verificate; cargo-audit 0.22.2, hash fissato al primo scaricamento: il progetto non pubblica somme). `app/deny.toml`: licenze compatibili con AGPL, solo crates.io, crate ritirati vietati, **I-36 sull'albero intero** (tokio-tungstenite solo da `m4tr1x-transport`, tungstenite solo da tokio-tungstenite, reqwest/hyper solo da Tauri). Eccezioni (uguali in `.cargo/audit.toml`, controllate da I-25): glib RUSTSEC-2024-0429 e proc-macro-error RUSTSEC-2024-0370, entrambe stack GTK di Tauri, solo Linux. Sabotaggi `i25-*` nuovi 3/3.
+37. **Da sapere per F9:** `reqwest`/`hyper` arrivano da Tauri SOLO su Android/iOS (non compilati su Windows/Linux/macOS): I-01 su mobile va guardato lì.
+
 ## Prossimo
 
+- **F4 feed, passi 3–4:** tor avviato dal guscio (`M4TR1X_TOR_BIN`, hash da `app/tor-windows.lock.json`) e `stato` reale; comando `feed` (eventi verificati in Rust, `textContent` nell'interfaccia) + prova di fine corsa con un nodo vero via Tor.
 - **Per l'installer del nodo (punto 25):** la configurazione di produzione si legge SOLO da file (JSON), così nessuna opzione `…ForTests` che sia una funzione può accendersi.
 
 1. Campagna completa di sabotaggio (lunga: le prove I-59 con tor durano ~10 min ciascuna).

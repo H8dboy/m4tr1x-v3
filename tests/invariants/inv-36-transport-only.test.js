@@ -19,6 +19,7 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('fs')
 const path = require('path')
+const { spawnSync } = require('child_process')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const APP = path.join(ROOT, 'app')
@@ -78,4 +79,29 @@ test('connect_onion accetta solo un OnionV3 validato', () => {
   // OnionV3 non ha campi pubblici: si costruisce solo da parse() o da una chiave
   const onion = read(path.join(APP, 'transport', 'src', 'onion.rs'))
   assert.ok(/pub struct OnionV3\s*\{\s*pubkey:/.test(onion), 'OnionV3 con campi pubblici')
+})
+
+// Client del relay (app/transport/src/relay.rs, F4): il WebSocket lavora SOLO sul flusso onion che
+// riceve. La libreria è compilata senza `connect` (aprirebbe socket TCP propri) e senza TLS.
+test('client del relay: tokio-tungstenite senza connect né TLS', () => {
+  const toml = read(path.join(APP, 'transport', 'Cargo.toml'))
+  const riga = /^\s*tokio-tungstenite\s*=\s*(.*)$/m.exec(toml)
+  assert.ok(riga, 'tokio-tungstenite non dichiarato nel trasporto')
+  assert.match(riga[1], /default-features\s*=\s*false/, 'tokio-tungstenite con le funzioni predefinite (connect)')
+  const f = /features\s*=\s*\[([^\]]*)\]/.exec(riga[1])
+  const funzioni = f ? f[1].split(',').map(s => s.trim().replace(/"/g, '')).filter(Boolean) : []
+  assert.deepEqual(funzioni, ['handshake'], `funzioni ammesse: solo handshake (trovate: ${funzioni})`)
+  const rs = read(path.join(APP, 'transport', 'src', 'relay.rs'))
+  assert.ok(!/connect_async|TcpStream|tokio::net/.test(rs), 'relay.rs apre connessioni proprie')
+  assert.match(rs, /pub async fn apri\(flusso: Stream, host: &OnionV3\)/, 'Relay::apri deve prendere un flusso già aperto e un OnionV3')
+})
+
+const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' })
+test('client del relay (Rust): limiti di tempo, eventi e dimensione contro un relay finto', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 900000 }, () => {
+  const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(APP, 'Cargo.toml'), '-p', 'm4tr1x-transport', '--test', 'relay'],
+    { cwd: APP, encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
+  const out = (r.stdout || '') + (r.stderr || '')
+  assert.equal(r.status, 0, out.slice(-4000))
+  for (const t of ['richiesta_eventi_fino_a_eose_poi_close', 'troppi_eventi_e_un_errore', 'messaggio_troppo_grande_e_un_errore', 'nodo_muto_tempo_massimo'])
+    assert.match(out, new RegExp(`${t} \\.\\.\\. ok`), `manca o fallisce la prova ${t}`)
 })

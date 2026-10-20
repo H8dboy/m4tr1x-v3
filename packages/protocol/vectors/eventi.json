@@ -1,0 +1,716 @@
+{
+  "_nota": "Generato da tools/vettori/eventi.js e CONGELATO. Seme pubblico di prova, rete m4tr1x-test. sig in due metà da 64 caratteri. Lo leggono tests/unit/protocol-vectors.test.js (JS) e app/protocol (Rust): stesso esito su ogni evento.",
+  "rete": "m4tr1x-test",
+  "vettori": [
+    {
+      "nome": "testo semplice",
+      "valido": true,
+      "evento": {
+        "id": "1a11ba3905cc10d6518cdc055a39ba92d5c425cfafcb057b725867ade4864176",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "testimonianza di prova",
+        "sig": [
+          "33c922fe2664a2db0d6298f129d811cfb9d3ecb192a40cd4450774fecd5bb6db",
+          "5b4a34ad3c47dc0f26b181de6fbe43c7dbc3008b56a52e28bfa1be8fb6a6af70"
+        ]
+      }
+    },
+    {
+      "nome": "unicode: accenti, albanese, emoji",
+      "valido": true,
+      "evento": {
+        "id": "dcc5669055a587354b304da5495fb71a278faa6f9dd6eca8df516421e7de1a06",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "Nderë e çelës — città 🦅🇦🇱 ありがとう",
+        "sig": [
+          "7d770849440edad00313f368250e76901cb3c877d5b43535cb84da856b257797",
+          "3f9dd01f682d5bda755828ccb955d5e7a42eff47d6b017e11b281065dabbe668"
+        ]
+      }
+    },
+    {
+      "nome": "caratteri da scappare",
+      "valido": true,
+      "evento": {
+        "id": "e88555d54d6f31a8cc4598617da3f59bbc4da145406121e5ca15d5769605a592",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "virgolette \" barra \\ a capo \n tab \t ritorno \r ctrl \u0001 \u001f del  sep     html </script> / fine",
+        "sig": [
+          "ba97782bd6d302b4893009fd849fd2c0a69c362e940a2e4a5e3d47e18fba61f6",
+          "6695095404f958d8b805616520308e504431724aefb3e819149c3fccee566bd1"
+        ]
+      }
+    },
+    {
+      "nome": "tag vari con unicode",
+      "valido": true,
+      "evento": {
+        "id": "92bf4561ed0605287b978b643d0806233bdaaba37e0a4e49d9f6fd5b4368d45b",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "e",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          [
+            "p",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "wss://esempio",
+            "reply"
+          ],
+          [
+            "t",
+            "città"
+          ],
+          [
+            "x",
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          ],
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "con tag",
+        "sig": [
+          "1204a24d7a2ef8cdb48aa7cdd43f18a8191a30f0eb1f486700058a9eb7e54baf",
+          "d73da7ffc298edd723f765be267869c9b7c3ebaf28e73fac968ddff6f45a7135"
+        ]
+      }
+    },
+    {
+      "nome": "profilo kind 0, contenuto vuoto",
+      "valido": true,
+      "evento": {
+        "id": "3f1b093b688f39e60a0ff746b20dd312e0e449af7f4a8c32c7a17a76e81faba1",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 0,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "",
+        "sig": [
+          "f55afdaa4c6008a29af68803ccb55d2b3446ed2b8a32eff99f1a5362a229db4f",
+          "abe39b6b51cdf11f407c34067d7a65ac7c368c91648289930fd6ceb5c6606e55"
+        ]
+      }
+    },
+    {
+      "nome": "kind 65535 e created_at 0",
+      "valido": true,
+      "evento": {
+        "id": "d01c73b51b952bd0e1152f1b91435f7a67f2801cc0fb23224613a6e79c4f2725",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 0,
+        "kind": 65535,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "limite",
+        "sig": [
+          "5c7ffd391e642beb98cfffab68dc68dcd292bf3532bfd5a37cf84e7b7a46a9e1",
+          "3b1ddc8c40b4c1e73836a146aed6ba0a343065f414dce1051cb05fd14a94ebcd"
+        ]
+      }
+    },
+    {
+      "nome": "H8: 31 esadecimali dopo m4a1 (non è un conto)",
+      "valido": true,
+      "evento": {
+        "id": "b65cffd8f2dfb701f207a015c651f47a5877e194aa8bb346e6bf16b7e097e578",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "m4a1123456789abcdef0123456789abcdef",
+        "sig": [
+          "d5e5415691b13baf55f123c41c60055e58e9ae068b17a5bdd0399eb35d068c59",
+          "833a7d30b3dc21cdb5be6d6afc53a4da2a709bee5cf850d313f3b2f73876d286"
+        ]
+      }
+    },
+    {
+      "nome": "H8: lettera ASCII prima (nessun confine di parola)",
+      "valido": true,
+      "evento": {
+        "id": "7836ecacde277f37c9774ee6fc58a02be58e3550bab308ea30880db72905e92e",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "xm4a10123456789abcdef0123456789abcdef",
+        "sig": [
+          "ee3fbf77c1f944076a889442dcbc88fd7ebc78178ebab1cda2e47838cd9d67e2",
+          "c1cefb06da8228124818ee79b34c1c4865f3db927f65503757d3262e36355a97"
+        ]
+      }
+    },
+    {
+      "nome": "H8: trattino basso dopo (nessun confine)",
+      "valido": true,
+      "evento": {
+        "id": "8660634cf20f4d84b06cf101f1fe7e1f9caed32e538999691c51f4168e3b2da9",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "m4a10123456789abcdef0123456789abcdef_",
+        "sig": [
+          "93300f5ed6e433eba5ef5c1ed2cd2df76610a927db6d0440ceeeb8b86ad8058c",
+          "e8a6a3a8b98af9c991a714ae16d23ab05780e76a80ed54e52b89a006a0d87269"
+        ]
+      }
+    },
+    {
+      "nome": "H8: 33 esadecimali (nessun confine dopo il 32°)",
+      "valido": true,
+      "evento": {
+        "id": "a10852b931e31bab0f4d0e3b7cac8c7ca14260570ac628427886ec281493acd5",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "m4a10123456789abcdef0123456789abcdef0",
+        "sig": [
+          "2291da9b28d6de849e0d54ae772cbf259b02002aa67e41d24b123b34bd6a15da",
+          "493e1e79e400d350074ceefff112689c153f1327a1b2beb8d481890a68c8db7b"
+        ]
+      }
+    },
+    {
+      "nome": "H8: tag \"h8x\" non è vietato",
+      "valido": true,
+      "evento": {
+        "id": "306e065a56dabfcff92f459316f828d1f70a2f36d1568ef7dcd43b3dc5a2256a",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "h8x",
+            "v"
+          ],
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "bbe0ddf5f2722e413285bce5a300bbf17d7de256067e7ea5fac36e95a72e156f",
+          "58c43eb7928ae7869c7057f257c5452d5f5cfe54a4c796626daa31cd0b8228c1"
+        ]
+      }
+    },
+    {
+      "nome": "H8: conto nel contenuto",
+      "valido": false,
+      "evento": {
+        "id": "3abec50feffdb6a9cea45a283c6af87c21bfa22cda4f88db435c707765c0620f",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "paga m4a10123456789abcdef0123456789abcdef grazie",
+        "sig": [
+          "dcbb8119a2279781119675893795742d536b95e52d7b3f9f6301dd0567f1043b",
+          "9a4032708d86e7d123652081607b276596b9537051b93b457524ceacbe63ed82"
+        ]
+      }
+    },
+    {
+      "nome": "H8: conto in maiuscolo",
+      "valido": false,
+      "evento": {
+        "id": "45ce0dab7ba0fb605d64fd20ff3766f585cb34dccdea353e48ff6975e3ae0986",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "M4A10123456789ABCDEF0123456789ABCDEF",
+        "sig": [
+          "81ec1f290cd6ecb2de235d99940793940509bfe183e2737bb8dbc260b779dcfe",
+          "0951f8f3c3a7d9575bcfff6a7eff6bc64aff0c1a3bb156f6704d1ce121258bed"
+        ]
+      }
+    },
+    {
+      "nome": "H8: lettera non ASCII prima (in JS è un confine di parola)",
+      "valido": false,
+      "evento": {
+        "id": "203b2141bff573576ebe230552f1b6a05bd4d851db4371fbbc5b0308fe6cef51",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "àm4a10123456789abcdef0123456789abcdef",
+        "sig": [
+          "cb605c35ac4d4bcf8a8a7e581ef0cd1691642d72b22a376628235e8e0a790b96",
+          "35f6b81c4f9edd2cee740488b4291f9978fff7b419d6cd1cb5d2a15987389748"
+        ]
+      }
+    },
+    {
+      "nome": "H8: indirizzo vecchio nel contenuto",
+      "valido": false,
+      "evento": {
+        "id": "1d15888bed22816e7573663f90b43042f0ce9c64783e5fe67bc09a384a15f84b",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "H80123456789abcdef0123456789abcdef012345",
+        "sig": [
+          "1ace2e1ea9c65aa5fcc3e2714d869cbb59f91bc8d7da5336536d6c4922a7f201",
+          "f85d1d0e3ba42cf96bbb6ff7e599f76f095098d02ca18e0158be8c1bac5a8ac3"
+        ]
+      }
+    },
+    {
+      "nome": "H8: conto in un tag",
+      "valido": false,
+      "evento": {
+        "id": "31633fc48ddf0acfc66b553e49b7eb0e83a4e38fb04a734358d067823615d213",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "t",
+            "m4a10123456789abcdef0123456789abcdef"
+          ],
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "e1f7e02a134990109a8f9be538131ae4b71114cce9b1c797a3e6fd95e22a5209",
+          "3d3427249e447961bea020e307faa6356a53b965fac4de4d6d5da62b7922d135"
+        ]
+      }
+    },
+    {
+      "nome": "H8: tag \"wallet\" vietato",
+      "valido": false,
+      "evento": {
+        "id": "e7fed87d9b6e15ab76d4186b3d1f1dc467e8160ea8f1f73e9e08715f1d119372",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "wallet",
+            "x"
+          ],
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "7bc901e09129cda9a5a38fd59a64d486d35154a760f755883c252b238cdec05b",
+          "e3d5895ca8c0b9b98183350566aafafcdae76d45c55e277fb55e4f012e301b0e"
+        ]
+      }
+    },
+    {
+      "nome": "H8: tag \"H8Account\" vietato (maiuscole)",
+      "valido": false,
+      "evento": {
+        "id": "d67b020ef7c6f555e1cb85dd34178c09593cbb1bfe9b3e4d9f1f8c66aac29ab0",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "H8Account",
+            "x"
+          ],
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "ef1fc493290f23282f86eef2a9157e144aec1b7fa94349ba3da51fb93e8e55e9",
+          "7f705bb0df5162d96fe46e719045984d62d4120672a31b3f356d82cb322639c9"
+        ]
+      }
+    },
+    {
+      "nome": "rete sbagliata",
+      "valido": false,
+      "evento": {
+        "id": "b890479a55d3bf9c5c8ec009f2fa3e32030c5eddf4f8fb1aeb4999128dbac717",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-main"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "9fda317c18d1ec62c30b68ce8a0b001ad38bcaddb3bcfd9156d996a60028780a",
+          "16fcc161eeddd3131db4f7756c30d6c763c20319db5d79cc0cf0e3ffbfa804d4"
+        ]
+      }
+    },
+    {
+      "nome": "senza tag net",
+      "valido": false,
+      "evento": {
+        "id": "176b824b5e7f159533f4a2c2ff8d946d8db5b9d11a60bbbd037ec9bfd8436a80",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [],
+        "content": "ok",
+        "sig": [
+          "beb8dbabdf66d5bdb6d76e7ec2ddc4d69f6e3840e58625580a9ac6d5759a9905",
+          "b03ad0fa49352340e40f6ed2ac1812d7ebc29aea04ae3900795d54a5a4a0afa0"
+        ]
+      }
+    },
+    {
+      "nome": "due tag net",
+      "valido": false,
+      "evento": {
+        "id": "4893c1b2cdb452609ed35f4454a888c0245b67af2d09b65d541a4ebaa65e957a",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ],
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "e5d4024b472d323e567d670690c447a91d7f3b5d7c272d7cd356756c470218e9",
+          "fe6e65564a50fc6c1187a973b0aec2f36397a478ed0088cc0b0231ae739f6adc"
+        ]
+      }
+    },
+    {
+      "nome": "kind 65536",
+      "valido": false,
+      "evento": {
+        "id": "7d0f3c2a2ccb4ea6b18a2f4b4d16630072dcd737a47e4c132e93fae1b851ce11",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 65536,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "3a22b218e4228920da4a723d99bfc0567493d9b985d52a185477d2fb883292bf",
+          "5ca3bca8ff3be80e11066e9fe6fc0c3355f351445cb98a7c5b7bd7f286951a18"
+        ]
+      }
+    },
+    {
+      "nome": "tag vuoto",
+      "valido": false,
+      "evento": {
+        "id": "74f59a5cf9f916eaf2dc480c92314867049f2d585012c13b8485986a40156947",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [],
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "276b5011849f55d475d7799d29df6293ff2dd2dae43ff8d4fc7e3cff73c72411",
+          "bc939bdd576c000ff63bcb02957740b44bd07ab58bb715b108e3bfe1fd512030"
+        ]
+      }
+    },
+    {
+      "nome": "tag con un numero",
+      "valido": false,
+      "evento": {
+        "id": "e8827d5e4867b178a4e726cfbff0287ef4772dd3102b52aaae70e6e7cb4c8797",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "t",
+            5
+          ],
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "d2196a4530f7087e6fa50d7cee33c77c318e675a8b5bfe1b9d7fb3c231888c2f",
+          "363af4eebdc05203d30cc90ea4fdacb018143461dcf8a270ef8f75e2bff7e9e4"
+        ]
+      }
+    },
+    {
+      "nome": "created_at negativo",
+      "valido": false,
+      "evento": {
+        "id": "de5dc9d608800d534b78f6e7ac8723d26f813f50f6fe65c86244195da41d1cd0",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": -1,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "43afd6133b815ec65900fb7406b2a9d9d829a3c7a7bc475449b44712c64f4dbc",
+          "ad89c49c3fb3a0eddb3b78b1f1b43d0daf0e58ad716255ae051c393fe59bae1b"
+        ]
+      }
+    },
+    {
+      "nome": "created_at non intero",
+      "valido": false,
+      "evento": {
+        "id": "894fad1c427d78d438e095bd5f726cd9dccfa04c21e249322bf3e32225518fe7",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1.5,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "ok",
+        "sig": [
+          "2ec17c4596e26f3343e6ecce4c584f2a34debe3f1097139231504947b65caf7a",
+          "1a9fabd3b33a4394d6251a96b437a6704b4246f8fd63c09a0847b112ed69a7cc"
+        ]
+      }
+    },
+    {
+      "nome": "contenuto cambiato dopo la firma",
+      "valido": false,
+      "evento": {
+        "id": "b1ebf89499426986d108c4be09a34b456091d93baffc0ea68546098e50c3d994",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "cambiato",
+        "sig": [
+          "5a495534dc45c66e597c5d29e3f54608dcfa01a2ac6421d089403ed16fc6f62c",
+          "9b598a36bd74a3707ff8c12ee0ebd74bbd7f3952089145ce46fa68624f2031fd"
+        ]
+      }
+    },
+    {
+      "nome": "firma alterata di un bit",
+      "valido": false,
+      "evento": {
+        "id": "b1ebf89499426986d108c4be09a34b456091d93baffc0ea68546098e50c3d994",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "originale",
+        "sig": [
+          "4a495534dc45c66e597c5d29e3f54608dcfa01a2ac6421d089403ed16fc6f62c",
+          "9b598a36bd74a3707ff8c12ee0ebd74bbd7f3952089145ce46fa68624f2031fd"
+        ]
+      }
+    },
+    {
+      "nome": "chiave pubblica di un altro",
+      "valido": false,
+      "evento": {
+        "id": "b1ebf89499426986d108c4be09a34b456091d93baffc0ea68546098e50c3d994",
+        "pubkey": "d2f184cb121675cfab83351bc3cb0150d566e212ef1658b03c1b4983b5598f88",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "originale",
+        "sig": [
+          "5a495534dc45c66e597c5d29e3f54608dcfa01a2ac6421d089403ed16fc6f62c",
+          "9b598a36bd74a3707ff8c12ee0ebd74bbd7f3952089145ce46fa68624f2031fd"
+        ]
+      }
+    },
+    {
+      "nome": "id in maiuscolo",
+      "valido": false,
+      "evento": {
+        "id": "B1EBF89499426986D108C4BE09A34B456091D93BAFFC0EA68546098E50C3D994",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "originale",
+        "sig": [
+          "5a495534dc45c66e597c5d29e3f54608dcfa01a2ac6421d089403ed16fc6f62c",
+          "9b598a36bd74a3707ff8c12ee0ebd74bbd7f3952089145ce46fa68624f2031fd"
+        ]
+      }
+    },
+    {
+      "nome": "contenuto non stringa",
+      "valido": false,
+      "evento": {
+        "id": "b1ebf89499426986d108c4be09a34b456091d93baffc0ea68546098e50c3d994",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": 5,
+        "sig": [
+          "5a495534dc45c66e597c5d29e3f54608dcfa01a2ac6421d089403ed16fc6f62c",
+          "9b598a36bd74a3707ff8c12ee0ebd74bbd7f3952089145ce46fa68624f2031fd"
+        ]
+      }
+    },
+    {
+      "nome": "firma valida di un altro evento",
+      "valido": false,
+      "evento": {
+        "id": "b1ebf89499426986d108c4be09a34b456091d93baffc0ea68546098e50c3d994",
+        "pubkey": "817d2b662e9c2c6e080c5fd5d9c4866a8342d194dbea7f98c1f4fc30e069bed7",
+        "created_at": 1760000000,
+        "kind": 1,
+        "tags": [
+          [
+            "net",
+            "m4tr1x-test"
+          ]
+        ],
+        "content": "originale",
+        "sig": [
+          "2a651bf9829712f24e519ef8b0acd0c5dd7d835f181e054f1c41d3d9c49a01e1",
+          "affde1148a2742e22a9ae93e1918edc1e36c7c34d916a85afc6853fd266a347f"
+        ]
+      }
+    }
+  ]
+}

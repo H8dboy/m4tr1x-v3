@@ -210,6 +210,30 @@ module.exports = [
   { id: 'report-uscita', rule: 'strumenti', name: 'CI: runner che esce con 0 anche con file falliti', file: 'tools/report/esegui.js',
     find: 'process.exit(tot.fail ? 1 : 0)', replace: 'process.exit(0)', test: 'tests/unit/report-esito.test.js' },
 
+  // ─── F4: eventi nel lato Rust (app/protocol), stessi esiti del JavaScript ──
+  { id: 'i15-rust-contenuto', rule: 'I-15', name: 'Rust: conto H8 nel contenuto non controllato', file: 'app/protocol/src/lib.rs',
+    find: '    if contiene_h8(content) {', replace: '    if false && contiene_h8(content) {', test: T('inv-15-no-h8-in-events'), timeoutMs: 900000 },
+  { id: 'i15-rust-confine', rule: 'I-15', name: 'Rust: confine di parola Unicode (come la libreria regex), "àm4a1…" sfugge', file: 'app/protocol/src/lib.rs',
+    find: '        (i == 0 || !di_parola(s[i - 1]))', replace: '        (i == 0 || !(di_parola(s[i - 1]) || s[i - 1] >= 0x80))', test: T('inv-15-no-h8-in-events'), timeoutMs: 900000 },
+  { id: 'protocollo-rust-firma', rule: 'protocollo', name: 'Rust: firma dell\'evento non verificata', file: 'app/protocol/src/lib.rs',
+    find: '    verifica_firma(pubkey, id, sig)?;\n', replace: '', test: T('inv-15-no-h8-in-events'), timeoutMs: 900000 },
+
+  // ─── F4: cargo deny e cargo audit (I-25) ──
+  { id: 'i25-audit-eccezione', rule: 'I-25', name: 'eccezione aggiunta solo a cargo audit (senza motivo in deny.toml)', file: 'app/.cargo/audit.toml',
+    find: '  "RUSTSEC-2024-0370", #', replace: '  "RUSTSEC-2025-0001",\n  "RUSTSEC-2024-0370", #', test: T('inv-25-deps') },
+  { id: 'i25-deny-websocket', rule: 'I-25', name: 'deny.toml: WebSocket ammesso ovunque', file: 'app/deny.toml',
+    find: '  { crate = "tokio-tungstenite", wrappers = ["m4tr1x-transport"] },\n', replace: '', test: T('inv-25-deps') },
+  { id: 'i25-ci-hash', rule: 'I-25', name: 'CI: cargo-audit scaricato senza controllare l\'hash', file: '.github/workflows/ci.yml',
+    find: '          echo "7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428  audit.tgz" | sha256sum -c -\n', replace: '', test: T('inv-25-deps') },
+
+  // ─── F4: client del relay nel trasporto (I-36) ──
+  { id: 'i36-relay-connect', rule: 'I-36', name: 'tokio-tungstenite con connect (socket TCP propri)', file: 'app/transport/Cargo.toml',
+    find: 'features = ["handshake"] }', replace: 'features = ["handshake", "connect"] }', test: T('inv-36-transport-only') },
+  { id: 'i36-relay-eventi', rule: 'I-36', name: 'client del relay senza tetto agli eventi', file: 'app/transport/src/relay.rs',
+    find: '                    if eventi.len() == MASSIMO_EVENTI {', replace: '                    if false && eventi.len() == MASSIMO_EVENTI {', test: T('inv-36-transport-only'), timeoutMs: 900000 },
+  { id: 'i36-relay-tempo', rule: 'I-36', name: 'client del relay che aspetta per sempre un nodo muto', file: 'app/transport/src/relay.rs',
+    find: '        let scadenza = Instant::now() + TEMPO_MASSIMO;\n        self.manda(', replace: '        let scadenza = Instant::now() + TEMPO_MASSIMO * 1000;\n        self.manda(', test: T('inv-36-transport-only'), timeoutMs: 900000 },
+
   // ─── Scaricamento dei file dai peer (decisioni del fondatore, 20/10/2026) ──
   { id: 'blob-tempo', rule: 'blob', name: 'nessun tempo massimo totale per tentativo (solo inattività)', file: 'node/src/blobs.js',
     find: "    scadenza = setTimeout(() => req.destroy(new Error(`tempo massimo del tentativo superato (${tempoMassimo / 1000} s)`)), tempoMassimo)\n", replace: '', test: 'tests/integration/blob-replica.test.js' },

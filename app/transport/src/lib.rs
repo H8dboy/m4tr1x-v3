@@ -10,9 +10,11 @@
 //! un metodo per collegarsi a un host in chiaro.
 
 pub mod onion;
+pub mod relay;
 pub mod tor_process;
 
 pub use onion::{OnionError, OnionV3};
+pub use relay::Relay;
 pub use tor_process::{TorProcessConfig, TorProcessTransport};
 
 use std::future::Future;
@@ -53,6 +55,8 @@ pub enum TransportError {
     Connessione(String),
     #[error("porta 0 non valida")]
     Porta,
+    #[error("relay: {0}")]
+    Relay(String),
 }
 
 pub type Result<T> = std::result::Result<T, TransportError>;

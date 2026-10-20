@@ -1,0 +1,8 @@
+# cargo audit per l'app M4TR1X (I-25; attivato in F4 il 20/10/2026). In CI: `cargo audit --deny warnings`.
+# STESSO elenco di app/deny.toml ([advisories] ignore), con i motivi scritti lì:
+# lo controlla tests/invariants/inv-25-deps.test.js.
+[advisories]
+ignore = [
+  "RUSTSEC-2024-0429", # glib: solo Linux, via Tauri (GTK); VariantStrIter non usato da noi
+  "RUSTSEC-2024-0370", # proc-macro-error: solo compilazione, via glib-macros (GTK di Tauri, Linux)
+]

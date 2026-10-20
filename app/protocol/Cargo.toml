@@ -1,0 +1,15 @@
+[package]
+name = "m4tr1x-protocol"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Eventi M4TR1X nel lato Rust dell'app: id, verifica della firma, rete, dati H8 vietati (stessi esiti di packages/protocol)"
+
+# Versioni esatte (I-25). Nessuna libreria di rete (I-36): qui si leggono e controllano eventi, non si apre niente.
+[dependencies]
+k256 = { version = "=0.13.4", default-features = false, features = ["std", "schnorr"] }
+sha2 = "=0.10.9"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"

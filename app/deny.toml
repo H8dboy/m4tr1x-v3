@@ -1,0 +1,78 @@
+# cargo-deny per l'app M4TR1X (I-25, I-36; attivato in F4 il 20/10/2026).
+# Gira in CI (job deps) con il binario a versione e hash fissati. Ogni eccezione qui sotto ha un motivo
+# scritto: aggiungerne una è una scelta esplicita in review, come le dipendenze stesse.
+
+[graph]
+# Le piattaforme che l'app distribuisce o distribuirà (ADR-0016: Windows con tor, il resto con Arti; F9 mobile).
+targets = [
+  "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "aarch64-linux-android",
+]
+all-features = false
+
+[advisories]
+version = 2
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+# STESSO elenco in .cargo/audit.toml (cargo audit): lo controlla tests/invariants/inv-25-deps.test.js.
+ignore = [
+  # glib 0.18.5 (VariantStrIter): stack GTK di Tauri, SOLO Linux desktop. Il nostro codice non usa glib.
+  # Da rivedere a ogni aggiornamento di Tauri (wry/tao passano a gtk4).
+  { id = "RUSTSEC-2024-0429", reason = "glib: solo Linux, via Tauri (GTK); VariantStrIter non usato da noi" },
+  # proc-macro-error 1.0.4: macro di compilazione di glib-macros (stesso stack GTK di Tauri, solo Linux).
+  # Gira solo durante la compilazione, non finisce nell'app.
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: solo compilazione, via glib-macros (GTK di Tauri, Linux)" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+# Compatibili con AGPL-3.0-only (la nostra). MPL-2.0: copyleft per file, compatibile.
+allow = [
+  "AGPL-3.0-only",
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "0BSD",
+  "Zlib",
+  "Unicode-3.0",
+  "CC0-1.0",
+  "Unlicense",
+  "MPL-2.0",
+]
+
+[bans]
+multiple-versions = "allow"   # Tauri porta più versioni degli stessi crate: non è un rischio di sicurezza
+wildcards = "deny"
+allow-wildcard-paths = true   # solo i nostri crate tra loro (path = "../…", publish = false); da crates.io mai
+# I-36 sull'albero INTERO, non solo sui nostri Cargo.toml: le librerie di rete stanno solo dove devono.
+deny = [
+  # client HTTP: solo Tauri li porta, e solo su Android/iOS (protocollo degli asset). Mai da un nostro crate.
+  # Da riguardare in F9 (I-01 su mobile).
+  { crate = "reqwest", wrappers = ["tauri"] },
+  { crate = "hyper", wrappers = ["hyper-util", "reqwest"] },
+  { crate = "hyper-util", wrappers = ["reqwest"] },
+  # WebSocket: solo il client del relay nel trasporto (relay.rs), sopra un flusso onion già aperto.
+  { crate = "tokio-tungstenite", wrappers = ["m4tr1x-transport"] },
+  { crate = "tungstenite", wrappers = ["tokio-tungstenite"] },
+  # mai nell'app: client HTTP alternativi e plugin di rete di Tauri
+  { crate = "ureq" },
+  { crate = "isahc" },
+  { crate = "curl" },
+  { crate = "surf" },
+  { crate = "tauri-plugin-http" },
+  { crate = "tauri-plugin-websocket" },
+  { crate = "tauri-plugin-upload" },
+  { crate = "tauri-plugin-shell" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

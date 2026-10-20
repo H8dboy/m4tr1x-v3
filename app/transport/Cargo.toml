@@ -19,6 +19,11 @@ tokio = { version = "=1.53.3", default-features = false, features = ["process", 
 sha2 = "=0.10.9"
 # credenziali SOCKS casuali per sessione
 getrandom = "=0.3.4"
+# client del relay del nodo (relay.rs): SOLO la stretta di mano WebSocket su un flusso onion gia' aperto.
+# Senza funzioni predefinite: niente `connect` (aprirebbe socket TCP propri) e niente TLS.
+tokio-tungstenite = { version = "=0.30.0", default-features = false, features = ["handshake"] }
+futures-util = { version = "=0.3.34", default-features = false, features = ["sink", "std"] }
+serde_json = "=1.0.154"
 
 [dev-dependencies]
-tokio = { version = "=1.53.3", default-features = false, features = ["process", "net", "io-util", "time", "sync", "rt-multi-thread", "macros"] }
+tokio = { version = "=1.53.3", default-features = false, features = ["process", "net", "io-util", "time", "sync", "rt-multi-thread", "macros", "test-util"] }

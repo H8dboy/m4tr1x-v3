@@ -1,9 +1,9 @@
 {
-  "date": "2026-10-20T06:58:40.173Z",
+  "date": "2026-10-20T07:19:59.599Z",
   "env": "Node 22.23.3 · win32 10.0.26200 · 2026-10-20",
   "pinnedOk": true,
   "totals": {
-    "pass": 174,
+    "pass": 181,
     "fail": 0,
     "todo": 27,
     "skipped": 0
@@ -17,7 +17,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 22357
+      "ms": 22418
     },
     {
       "file": "tests/integration/directory.test.js",
@@ -27,7 +27,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 2009
+      "ms": 2100
     },
     {
       "file": "tests/integration/two-nodes.test.js",
@@ -37,7 +37,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 29641
+      "ms": 20728
     },
     {
       "file": "tests/invariants/inv-02-bind.test.js",
@@ -47,7 +47,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 6839
+      "ms": 6850
     },
     {
       "file": "tests/invariants/inv-03-host.test.js",
@@ -57,7 +57,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 774
+      "ms": 779
     },
     {
       "file": "tests/invariants/inv-04-cors.test.js",
@@ -67,7 +67,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 767
+      "ms": 769
     },
     {
       "file": "tests/invariants/inv-05-onion-only.test.js",
@@ -77,7 +77,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 3250
+      "ms": 3254
     },
     {
       "file": "tests/invariants/inv-06-keys-at-rest.test.js",
@@ -87,7 +87,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 4595
+      "ms": 4603
     },
     {
       "file": "tests/invariants/inv-06b-node-secrets.test.js",
@@ -97,7 +97,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 2251
+      "ms": 2264
     },
     {
       "file": "tests/invariants/inv-07-role-separation.test.js",
@@ -117,17 +117,17 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 317
+      "ms": 318
     },
     {
       "file": "tests/invariants/inv-15-no-h8-in-events.test.js",
-      "pass": 9,
+      "pass": 10,
       "fail": 0,
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 256
+      "ms": 865
     },
     {
       "file": "tests/invariants/inv-17-blob-hash.test.js",
@@ -137,7 +137,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 858
+      "ms": 871
     },
     {
       "file": "tests/invariants/inv-18-no-ip-logs.test.js",
@@ -147,7 +147,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 1076
+      "ms": 1064
     },
     {
       "file": "tests/invariants/inv-23-release-gate.test.js",
@@ -157,17 +157,17 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 497
+      "ms": 519
     },
     {
       "file": "tests/invariants/inv-25-deps.test.js",
-      "pass": 3,
+      "pass": 5,
       "fail": 0,
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 198
+      "ms": 200
     },
     {
       "file": "tests/invariants/inv-26-fuzz.test.js",
@@ -177,7 +177,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 6794
+      "ms": 6775
     },
     {
       "file": "tests/invariants/inv-28-secrets.test.js",
@@ -187,7 +187,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 204
+      "ms": 201
     },
     {
       "file": "tests/invariants/inv-29-descriptor.test.js",
@@ -197,7 +197,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 291
+      "ms": 286
     },
     {
       "file": "tests/invariants/inv-30-33-admin-onion.test.js",
@@ -207,7 +207,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 786
+      "ms": 792
     },
     {
       "file": "tests/invariants/inv-31-no-keys-in-js.test.js",
@@ -217,17 +217,17 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 100
+      "ms": 98
     },
     {
       "file": "tests/invariants/inv-36-transport-only.test.js",
-      "pass": 4,
+      "pass": 6,
       "fail": 0,
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 94
+      "ms": 631
     },
     {
       "file": "tests/invariants/inv-37-tor-process.test.js",
@@ -237,7 +237,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 14018
+      "ms": 9790
     },
     {
       "file": "tests/invariants/inv-38-expiry.test.js",
@@ -247,7 +247,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 13670
+      "ms": 8384
     },
     {
       "file": "tests/invariants/inv-39-anchor-limits.test.js",
@@ -257,7 +257,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 8688
+      "ms": 9283
     },
     {
       "file": "tests/invariants/inv-40-signature-families.test.js",
@@ -267,7 +267,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 320
+      "ms": 344
     },
     {
       "file": "tests/invariants/inv-41-relay-space.test.js",
@@ -277,7 +277,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 5741
+      "ms": 5879
     },
     {
       "file": "tests/invariants/inv-58-seed-window.test.js",
@@ -287,7 +287,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 741
+      "ms": 776
     },
     {
       "file": "tests/invariants/inv-59-node-tor-control.test.js",
@@ -297,7 +297,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 35640
+      "ms": 35263
     },
     {
       "file": "tests/invariants/pending.test.js",
@@ -307,7 +307,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 101
+      "ms": 102
     },
     {
       "file": "tests/unit/keys-vectors.test.js",
@@ -317,7 +317,17 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 281
+      "ms": 279
+    },
+    {
+      "file": "tests/unit/protocol-vectors.test.js",
+      "pass": 2,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "problema": null,
+      "ms": 200
     },
     {
       "file": "tests/unit/report-esito.test.js",
@@ -327,7 +337,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 4522
+      "ms": 4588
     },
     {
       "file": "tests/unit/runtime-sqlite.test.js",
@@ -337,7 +347,7 @@
       "skipped": 0,
       "skipReasons": [],
       "problema": null,
-      "ms": 116
+      "ms": 115
     }
   ],
   "rules": [
@@ -458,7 +468,7 @@
       "Nessun indirizzo o conto H8 in un evento Nostr pubblicato.",
       "attiva",
       "F1",
-      "`inv-15-no-h8-in-events.test.js` ✅ 9 verdi",
+      "`inv-15-no-h8-in-events.test.js` ✅ 10 verdi",
       "1/1 prese"
     ],
     [
@@ -538,7 +548,7 @@
       "Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti; GitHub Actions fissate per hash del c…",
       "attiva",
       "F0",
-      "`inv-25-deps.test.js` ✅ 3 verdi",
+      "`inv-25-deps.test.js` ✅ 5 verdi",
       "2/2 prese"
     ],
     [
@@ -626,7 +636,7 @@
       "Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016)",
       "attiva",
       "F4",
-      "`inv-36-transport-only.test.js` ✅ 4 verdi",
+      "`inv-36-transport-only.test.js` ✅ 6 verdi",
       "4/4 prese"
     ],
     [

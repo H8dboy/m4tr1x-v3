@@ -73,3 +73,37 @@ test('GitHub Actions fissate per hash del commit', () => {
   }
   assert.ok(seen > 0, 'nessun "uses:" trovato: il controllo non sta guardando niente')
 })
+
+// Rust (app/), da F4: cargo deny e cargo audit in CI, con le stesse eccezioni e ognuna col suo motivo.
+const APP = path.join(ROOT, 'app')
+const idsTra = (/** @type {string} */ testo) => [...testo.matchAll(/RUSTSEC-\d{4}-\d{4}/g)].map(m => m[0]).sort()
+
+test('cargo deny e cargo audit: stesse eccezioni, ognuna con il motivo', () => {
+  const deny = fs.readFileSync(path.join(APP, 'deny.toml'), 'utf8')
+  const audit = fs.readFileSync(path.join(APP, '.cargo', 'audit.toml'), 'utf8')
+  const ignoraDeny = /\[advisories\][\s\S]*?\nignore\s*=\s*\[([\s\S]*?)\n\]/.exec(deny)
+  const ignoraAudit = /\nignore\s*=\s*\[([\s\S]*?)\n\]/.exec(audit)
+  assert.ok(ignoraDeny && ignoraAudit, 'elenco ignore mancante in deny.toml o audit.toml')
+  assert.deepEqual(idsTra(ignoraAudit[1]), idsTra(ignoraDeny[1]), 'le eccezioni di cargo audit e cargo deny devono coincidere')
+  for (const riga of ignoraDeny[1].split('\n').filter(r => /RUSTSEC-/.test(r)))
+    assert.match(riga, /reason\s*=\s*"[^"]{20,}"/, `eccezione senza motivo scritto: ${riga.trim()}`)
+  // gravità: gli avvisi non mantenuti/unsound contano, i crate ritirati bloccano
+  assert.match(deny, /^yanked\s*=\s*"deny"/m)
+  assert.match(deny, /^unmaintained\s*=\s*"all"/m)
+  assert.match(deny, /^unsound\s*=\s*"all"/m)
+  // solo crates.io
+  assert.match(deny, /^unknown-registry\s*=\s*"deny"/m)
+  assert.match(deny, /^unknown-git\s*=\s*"deny"/m)
+  // I-36 sull'albero intero: WebSocket solo dal trasporto
+  assert.match(deny, /\{\s*crate\s*=\s*"tokio-tungstenite",\s*wrappers\s*=\s*\["m4tr1x-transport"\]\s*\}/)
+})
+
+test('CI: cargo deny e cargo audit con versione e SHA-256 fissati, audit senza tolleranza', () => {
+  const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8')
+  for (const [file, nome] of [['deny.tgz', 'cargo-deny'], ['audit.tgz', 'cargo-audit']]) {
+    assert.match(ci, new RegExp(`echo "[0-9a-f]{64}  ${file.replace('.', '\\.')}" \\| sha256sum -c -`), `${nome}: hash non verificato prima dell'uso`)
+  }
+  assert.match(ci, /cargo-deny --locked check/)
+  assert.match(ci, /cargo-audit audit --deny warnings/)
+  assert.ok(!/cargo install cargo-(deny|audit)/.test(ci), 'strumenti compilati in CI invece dei binari con hash')
+})

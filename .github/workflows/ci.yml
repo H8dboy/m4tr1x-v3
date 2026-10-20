@@ -3,7 +3,7 @@
 #   (tools/report/esegui.js: un file che non risponde, esce prima o non ha test conta
 #   come FALLITO; stessi tempi massimi ovunque)
 # - secrets: gitleaks sulla storia intera + scanner M4TR1X sui file tracciati
-# - deps: audit delle dipendenze (npm audit; cargo deny dalla F4)
+# - deps: audit delle dipendenze (npm audit; cargo deny e cargo audit sull'app Rust, dalla F4)
 # - release-gate: sui tag v*, nessuna pubblicazione senza release.json firmato (I-23)
 name: ci
 
@@ -71,6 +71,29 @@ jobs:
             (cd "$(dirname "$lock")" && npm audit --audit-level=high)
           done
           [ "$found" = 0 ] && echo "nessuna dipendenza npm: niente da controllare" || true
+      # Rust (app/), attivati in F4: binari ufficiali con versione e SHA-256 fissati (come tor.exe e le Actions).
+      # cargo-deny pubblica le somme (verificate il 20/10/2026); cargo-audit no: hash fissato al primo
+      # scaricamento dalla release ufficiale (rustsec/rustsec, 20/10/2026). Cambiare versione = cambiare l'hash qui.
+      - name: Strumenti Rust (versione e hash fissati)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSLo deny.tgz https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz
+          echo "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f  deny.tgz" | sha256sum -c -
+          curl -fsSLo audit.tgz "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv0.22.2/cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz"
+          echo "7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428  audit.tgz" | sha256sum -c -
+          tar xzf deny.tgz && tar xzf audit.tgz
+          mkdir -p "$RUNNER_TEMP/bin"
+          install -m 755 cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny cargo-audit-x86_64-unknown-linux-musl-v0.22.2/cargo-audit "$RUNNER_TEMP/bin/"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Licenze, sorgenti, avvisi e I-36 sull'albero INTERO delle dipendenze (app/deny.toml)
+      - name: cargo deny (I-25, I-36)
+        working-directory: app
+        run: cargo-deny --locked check
+      # Vulnerabilità note (RustSec); eccezioni in app/.cargo/audit.toml, uguali a deny.toml
+      - name: cargo audit (I-25)
+        working-directory: app
+        run: cargo-audit audit --deny warnings
 
   # Prova di accettazione F2 via Tor vero: due nodi si scambiano evento e file
   tor:
