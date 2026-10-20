@@ -22,15 +22,22 @@ function vedi(/** @type {string} */ id, /** @type {boolean} */ si) {
   if (el) el.hidden = !si
 }
 
+/** "spento" all'apertura può voler dire "tor non ancora partito": si riprova per qualche secondo. */
+let tentativiSpento = 5
+
+/** Stato del trasporto: si richiede ogni secondo finché tor è in avvio (poi si ferma). */
 async function aggiornaStato() {
+  let ancora = false
   try {
     const s = await invoke('stato')
     mostra('versione', String(s.versione))
     mostra('trasporto', NOMI[/** @type {keyof typeof NOMI} */ (s.trasporto)] || '?')
     mostra('percento', s.trasporto === 'avvio' ? `${Number(s.percento)}%` : '')
+    ancora = s.trasporto === 'avvio' || (s.trasporto === 'spento' && tentativiSpento-- > 0)
   } catch {
     mostra('trasporto', 'non raggiungibile')
   }
+  if (ancora) setTimeout(aggiornaStato, 1000)
 }
 
 /** @type {ReturnType<typeof setInterval>|null} */ let attesa = null

@@ -2,4 +2,4 @@
 'use strict'
 const test = require('node:test')
 test('uno', () => {})
-test('due', async () => { await new Promise(r => setTimeout(r, 20)) })
+test('due', async (t) => { t.diagnostic('fase di prova=0.02s'); await new Promise(r => setTimeout(r, 20)) })

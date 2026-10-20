@@ -44,10 +44,23 @@ test('I-37 senza tor: binario con hash sbagliato non parte; porta di controllo s
 test('I-37 con tor vero: solo onion, cookie, solo 127.0.0.1, muore con l\'app, onion raggiunto', {
   skip: noCargo || (!TOR || !fs.existsSync(TOR) ? 'M4TR1X_TOR_BIN non impostato: prove con tor vero saltate' : false),
   timeout: 900000,
-}, () => {
+}, (t) => {
   const r = cargoTest(['--test', 'inv_37_tor_process'])
+  // anche da verde: il tempo per raggiungere l'onion di prova serve a vedere se peggiora (CI del 20/10:
+  // "SOCKS ha risposto 6" dopo 240 s, e nessuno storico con cui confrontarlo)
+  t.diagnostic(`onion: ${(/onion raggiunto in \d+ s|onion non raggiunto[^\n]*/.exec(r.out) || ['tempo non stampato'])[0]}`)
   assert.equal(r.code, 0, r.out.slice(-4000))
   assert.ok(!r.out.includes('SALTATO: serve M4TR1X_TOR_BIN'), 'le prove Rust si sono saltate anche se M4TR1X_TOR_BIN è impostato')
   // 4 prove + `aiuto_fa_l_app` (che senza la sua variabile non fa niente e risulta passata)
   assert.match(r.out, /test result: ok\. 5 passed/, 'attese le 4 prove di I-37 (più l\'aiuto) passate')
+})
+
+// Tor dell'APP (F4, passo 3): l'app accetta solo il tor.exe con l'hash del lock, incluso alla compilazione
+// (app/transport/tests/config_app.rs). Con il tor.exe del lock (Windows) l'avvia davvero nella sua cartella.
+test('I-37 app: hash solo dal lock incluso alla compilazione; tor diverso non parte', { skip: noCargo, timeout: 900000 }, (t) => {
+  const r = cargoTest(['--test', 'config_app'])
+  assert.equal(r.code, 0, r.out.slice(-4000))
+  for (const p of ['l_hash_incluso_e_quello_del_lock', 'senza_tor_indicato_nessuna_configurazione', 'l_app_usa_solo_l_hash_del_lock', 'tor_con_hash_diverso_non_parte'])
+    assert.match(r.out, new RegExp(`${p} \\.\\.\\. ok`), `manca o fallisce la prova ${p}`)
+  t.diagnostic(r.out.includes('SALTATO') ? 'avvio con il tor.exe del lock: saltato (serve il tor.exe del lock, Windows)' : 'avvio con il tor.exe del lock: provato')
 })

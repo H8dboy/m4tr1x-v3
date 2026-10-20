@@ -69,6 +69,9 @@ function esito(r) {
   return {
     pass: num('pass') || 0, fail, todo: num('todo') || 0, skipped: num('skipped') || 0,
     skipReasons: [...r.out.matchAll(/# SKIP (.*)$/gm)].map(x => x[1].trim()),
+    // diagnostiche dei test (t.diagnostic: fasi della prova dei due nodi, tempo dell'onion…), anche da verde:
+    // sono lo storico con cui capire se un rosso è rete o codice. Fuori il riepilogo finale del runner.
+    diagnostiche: [...r.out.matchAll(/^\s*# (?!Subtest:|(?:tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) \d)(.+)$/gm)].map(x => x[1].trim()),
     problema,
     uscita: problema ? r.out.trimEnd().split('\n').slice(-RIGHE_USCITA).join('\n') : undefined,
   }

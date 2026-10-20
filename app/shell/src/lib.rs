@@ -13,9 +13,10 @@ use api::{Identita, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::Sistema;
-use m4tr1x_transport::TransportStatus;
-use std::sync::Mutex;
-use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use m4tr1x_transport::{TorProcessConfig, TorProcessTransport, Transport, TransportStatus};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use zeroize::Zeroize;
 
 const FINESTRA_SEME: &str = "seme";
@@ -57,10 +58,31 @@ fn escludi_dalle_catture(_w: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+/// Tor dell'app (I-37, ADR-0016). `None`: tor non indicato (in F4 la variabile `M4TR1X_TOR_BIN`)
+/// oppure piattaforma che userà Arti (non ancora fatto): il trasporto resta spento e lo stato lo dice.
+struct Rete(Option<Arc<TorProcessTransport>>);
+
+/// Avvia tor in background: hash dal lock incluso alla compilazione, cartella dati dell'app.
+/// Gli errori restano nello stato del trasporto (`Errore`); all'interfaccia arriva solo "errore" (api.rs).
+fn avvia_rete(app: &tauri::App) -> Result<Rete, Box<dyn std::error::Error>> {
+    let dati = app.path().app_data_dir()?;
+    let cfg = if cfg!(windows) { TorProcessConfig::per_l_app(std::env::var_os("M4TR1X_TOR_BIN").map(PathBuf::from), dati) } else { None };
+    let tor = cfg.map(|c| Arc::new(TorProcessTransport::new(c)));
+    if let Some(t) = tor.clone() {
+        tauri::async_runtime::spawn(async move {
+            if t.avvia().await.is_ok() {
+                let _ = t.bootstrap().await;
+            }
+        });
+    }
+    Ok(Rete(tor))
+}
+
 /// Stato dell'app per l'interfaccia. Nessun dato sensibile.
 #[tauri::command]
-fn stato() -> Stato {
-    Stato::new(env!("CARGO_PKG_VERSION"), &TransportStatus::Spento)
+fn stato(rete: tauri::State<'_, Rete>) -> Stato {
+    let t = rete.0.as_ref().map(|t| t.status()).unwrap_or(TransportStatus::Spento);
+    Stato::new(env!("CARGO_PKG_VERSION"), &t)
 }
 
 /// Identità salvata (solo chiavi pubbliche), se c'è.
@@ -140,6 +162,11 @@ fn seme_recupera(window: WebviewWindow, mut parole: String) -> Result<Identita, 
 pub fn run() {
     tauri::Builder::default()
         .manage(StatoSeme::default())
+        .setup(|app| {
+            let rete = avvia_rete(app)?;
+            app.manage(rete);
+            Ok(())
+        })
         .on_window_event(|w, ev| {
             // finestra del seme chiusa senza conferma: le parole si cancellano subito
             if w.label() == FINESTRA_SEME && matches!(ev, tauri::WindowEvent::Destroyed) {
@@ -149,6 +176,14 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera])
-        .run(tauri::generate_context!())
-        .expect("avvio dell'app fallito");
+        .build(tauri::generate_context!())
+        .expect("avvio dell'app fallito")
+        .run(|app, ev| {
+            // l'app si chiude: tor si chiude con lei (oltre a TAKEOWNERSHIP, che lo chiude anche se l'app muore)
+            if let RunEvent::Exit = ev {
+                if let Some(t) = app.try_state::<Rete>().and_then(|r| r.0.clone()) {
+                    tauri::async_runtime::block_on(t.shutdown());
+                }
+            }
+        });
 }

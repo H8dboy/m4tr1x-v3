@@ -23,6 +23,11 @@ test('file con test che passano: verde, nessun problema', () => {
   assert.equal(t.fail, 0)
 })
 
+test('le diagnostiche dei test arrivano anche da verde (fasi, tempi), senza il riepilogo del runner', () => {
+  const t = esegui('buono')
+  assert.deepEqual(t.diagnostiche, ['fase di prova=0.02s'])
+})
+
 test('file con un test che fallisce: 1 fallito', () => {
   const t = esegui('rotto')
   assert.equal(t.pass, 1)

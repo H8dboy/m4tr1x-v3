@@ -32,6 +32,7 @@ for (const rel of files) {
   const riga = `${t.fail ? 'FALLITO' : 'ok     '} ${rel} — ${t.pass} verdi, ${t.fail} falliti, ${t.skipped} saltati, ${t.todo} in attesa (${(t.ms / 1000).toFixed(1)} s)`
   console.log(riga)
   if (t.problema) console.log(`  ${t.problema}`)
+  for (const d of t.diagnostiche) console.log(`  # ${d}`)
   // le ultime righe dei file falliti: in CI servono per capire senza rieseguire
   if (t.uscita) console.log(t.uscita)
 }

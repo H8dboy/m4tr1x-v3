@@ -33,6 +33,32 @@ pub struct TorProcessConfig {
     pub bootstrap_timeout: Duration,
 }
 
+/// Lock del tor per Windows (`app/tor-windows.lock.json`), incluso nel programma alla COMPILAZIONE:
+/// l'hash atteso non si legge da disco mentre l'app gira, quindi non si può cambiare accanto all'app.
+const LOCK_TOR_WINDOWS: &str = include_str!("../../tor-windows.lock.json");
+
+/// SHA-256 fissato del tor.exe che l'app accetta (campo `tor_exe_sha256` del lock).
+pub fn sha256_tor_windows() -> String {
+    let v: serde_json::Value = serde_json::from_str(LOCK_TOR_WINDOWS).expect("app/tor-windows.lock.json non valido");
+    let h = v["tor_exe_sha256"].as_str().expect("tor_exe_sha256 mancante nel lock").to_owned();
+    assert!(h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "tor_exe_sha256 non è un SHA-256");
+    h
+}
+
+impl TorProcessConfig {
+    /// Configurazione dell'APP: tor da `tor_bin` (in F4 la variabile `M4TR1X_TOR_BIN`; dall'installer in F8),
+    /// hash SOLO dal lock, cartella dati dell'app, 180 s per il bootstrap (come il nodo).
+    /// `None` se tor non è indicato: il trasporto resta spento e l'app lo mostra.
+    pub fn per_l_app(tor_bin: Option<PathBuf>, data_dir: PathBuf) -> Option<Self> {
+        Some(Self {
+            tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,
+            tor_sha256: sha256_tor_windows(),
+            data_dir,
+            bootstrap_timeout: Duration::from_secs(180),
+        })
+    }
+}
+
 struct Running {
     child: Child,
     control: BufReader<TcpStream>,

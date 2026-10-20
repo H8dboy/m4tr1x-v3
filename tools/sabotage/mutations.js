@@ -205,6 +205,8 @@ module.exports = [
     find: " problemi.push('il file non ha registrato nessun test')", replace: ' void 0', test: 'tests/unit/report-esito.test.js' },
   { id: 'report-isolamento', rule: 'strumenti', name: 'file eseguito isolato (uscita anticipata riportata verde)', file: 'tools/report/esito.js',
     find: "'--test', '--experimental-test-isolation=none', ", replace: "'--test', ", test: 'tests/unit/report-esito.test.js' },
+  { id: 'report-diagnostiche', rule: 'strumenti', name: 'diagnostiche dei test verdi perse (fasi della prova dei due nodi)', file: 'tools/report/esito.js',
+    find: "    diagnostiche: [...r.out.matchAll(", replace: "    diagnostiche: [] || [...r.out.matchAll(", test: 'tests/unit/report-esito.test.js' },
   { id: 'report-saltati', rule: 'strumenti', name: 'CI: test saltati ammessi anche con --senza-saltati', file: 'tools/report/esegui.js',
     find: '  if (senzaSaltati && t.skipped) {', replace: '  if (false) {', test: 'tests/unit/report-esito.test.js' },
   { id: 'report-uscita', rule: 'strumenti', name: 'CI: runner che esce con 0 anche con file falliti', file: 'tools/report/esegui.js',
@@ -217,6 +219,12 @@ module.exports = [
     find: '        (i == 0 || !di_parola(s[i - 1]))', replace: '        (i == 0 || !(di_parola(s[i - 1]) || s[i - 1] >= 0x80))', test: T('inv-15-no-h8-in-events'), timeoutMs: 900000 },
   { id: 'protocollo-rust-firma', rule: 'protocollo', name: 'Rust: firma dell\'evento non verificata', file: 'app/protocol/src/lib.rs',
     find: '    verifica_firma(pubkey, id, sig)?;\n', replace: '', test: T('inv-15-no-h8-in-events'), timeoutMs: 900000 },
+
+  // ─── F4: tor dell'app (passo 3) ──
+  { id: 'i37-app-hash-del-binario', rule: 'I-37', name: 'app che si fida dell\'hash del binario stesso invece del lock', file: 'app/transport/src/tor_process.rs',
+    find: '            tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,\n            tor_sha256: sha256_tor_windows(),',
+    replace: '            tor_sha256: tor_bin.as_deref().and_then(|p| sha256_file(p).ok()).unwrap_or_default(),\n            tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,',
+    test: T('inv-37-tor-process'), timeoutMs: 900000 },
 
   // ─── F4: cargo deny e cargo audit (I-25) ──
   { id: 'i25-audit-eccezione', rule: 'I-25', name: 'eccezione aggiunta solo a cargo audit (senza motivo in deny.toml)', file: 'app/.cargo/audit.toml',

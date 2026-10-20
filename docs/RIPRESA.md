@@ -3,7 +3,7 @@
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **181 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **183 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -59,9 +59,15 @@
 36. **cargo deny + cargo audit in CI** (job deps), binari ufficiali con versione e SHA-256 fissati (cargo-deny 0.20.2, somme pubblicate verificate; cargo-audit 0.22.2, hash fissato al primo scaricamento: il progetto non pubblica somme). `app/deny.toml`: licenze compatibili con AGPL, solo crates.io, crate ritirati vietati, **I-36 sull'albero intero** (tokio-tungstenite solo da `m4tr1x-transport`, tungstenite solo da tokio-tungstenite, reqwest/hyper solo da Tauri). Eccezioni (uguali in `.cargo/audit.toml`, controllate da I-25): glib RUSTSEC-2024-0429 e proc-macro-error RUSTSEC-2024-0370, entrambe stack GTK di Tauri, solo Linux. Sabotaggi `i25-*` nuovi 3/3.
 37. **Da sapere per F9:** `reqwest`/`hyper` arrivano da Tauri SOLO su Android/iOS (non compilati su Windows/Linux/macOS): I-01 su mobile va guardato lì.
 
+38. **Passo 3 — Tor dentro l'app:** `TorProcessConfig::per_l_app(bin, cartella)` in `transport`: hash SOLO da `app/tor-windows.lock.json`, incluso nel programma alla COMPILAZIONE (`include_str!`, nessun file da manomettere accanto all'app); senza `M4TR1X_TOR_BIN` il trasporto resta spento. Il guscio avvia tor in background all'apertura (cartella `%APPDATA%\org.m4tr1x.app\tor`), `stato` legge lo stato vero, alla chiusura `shutdown` (più TAKEOWNERSHIP). L'interfaccia aggiorna lo stato ogni secondo durante l'avvio. Prove `transport/tests/config_app.rs` (5/5, con il tor.exe del lock avviato davvero) agganciate a I-37; sabotaggio `i37-app-hash-del-binario` preso. **Prova sull'app vera:** tor figlio dell'app, "Tor: pronto" nella finestra, chiusa l'app → nessun tor rimasto.
+39. **Aperto:** il PRIMO avvio dell'app vera (20/10) si è chiuso da solo prima di avviare tor, senza errori visibili; non riprodotto in 3 tentativi (cartella nuova, cartella esistente, stesso comando). Ipotesi non verificate: finestra chiusa a mano, primo controllo dell'antivirus sull'eseguibile appena compilato. Se ricapita: rilanciare con `-RedirectStandardError` e guardare il Visualizzatore eventi.
+40. **CI di `ccc304f`:** job tor rosso in I-37 `connect_onion_raggiunge_un_servizio_onion` ("SOCKS ha risposto 6" = tempo scaduto dentro Tor, dopo i 240 s di tentativi); codice di I-37 NON cambiato da `27caade` (verde). Il tempo per raggiungere l'onion veniva stampato solo da rosso: ora il test lo mostra sempre (`# onion: …`), per avere uno storico. **Rilancio: verde** (rosso = fase "raggiungere l'onion", cioè rete). Locale: 29 s e poi **196 s** sullo stesso codice, contro un limite di 240 s: il limite è stretto.
+41. **Buco mio di stamattina chiuso:** col runner nuovo le diagnostiche dei test VERDI (`# fasi …` dei due nodi, `# onion: …`) non comparivano in CI. Ora `esegui.js` le stampa sempre; prova + sabotaggio `report-diagnostiche` preso. Regola del fondatore (memoria): rosso in "rete"/"pubblicazione" → rilancio; in "evento"/"file" → codice, indagare.
+42. **Proposta aperta (I-37, onion di prova):** invece di riprovare alla cieca per 240 s, dare al tor del servizio di prova una porta di controllo e aspettare gli UPLOADED del descrittore, come fa già il nodo (I-59). Da decidere.
+
 ## Prossimo
 
-- **F4 feed, passi 3–4:** tor avviato dal guscio (`M4TR1X_TOR_BIN`, hash da `app/tor-windows.lock.json`) e `stato` reale; comando `feed` (eventi verificati in Rust, `textContent` nell'interfaccia) + prova di fine corsa con un nodo vero via Tor.
+- **F4 feed, passo 4:** comando `feed` (eventi verificati in Rust, `textContent` nell'interfaccia) + prova di fine corsa con un nodo vero via Tor.
 - **Per l'installer del nodo (punto 25):** la configurazione di produzione si legge SOLO da file (JSON), così nessuna opzione `…ForTests` che sia una funzione può accendersi.
 
 1. Campagna completa di sabotaggio (lunga: le prove I-59 con tor durano ~10 min ciascuna).
