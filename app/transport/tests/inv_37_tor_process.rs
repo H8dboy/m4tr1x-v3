@@ -406,7 +406,10 @@ async fn connect_onion_raggiunge_un_servizio_onion() {
     let t = transport(&bin, &dir.join("app"));
     // Questa è la prova che il trasporto funziona davvero: qui si aspetta il bootstrap
     // COMPLETO della rete Tor (mai `avvia()`), e si controlla che sia arrivato al 100%.
-    t.bootstrap().await.expect("bootstrap");
+    // bootstrap fermo: rete Tor (fase "tor", il runner la rilancia una volta)
+    if let Err(e) = t.bootstrap().await {
+        panic!("fase \"tor\": il tor dell'app non ha finito il bootstrap: {e}");
+    }
     assert_eq!(t.status(), TransportStatus::Pronto, "bootstrap() è tornato prima del 100%");
     // Fase "pubblicazione" (rete Tor): si aspetta il descrittore, non si riprova alla cieca.
     // Fase "connessione" (il nostro trasporto): da qui un rosso NON è più la rete che pubblica.

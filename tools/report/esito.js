@@ -99,12 +99,15 @@ function eseguiFile(rel, o) {
 /**
  * Fasi della rete Tor (fondatore, 20/10/2026): un rosso SOLO in queste fasi si rilancia UNA volta.
  * Tutte le prove con tor vero scrivono la fase nell'errore con le stesse parole: `fase "pubblicazione"`
- * (il descrittore non è confermato sugli HSDir) e `fase "rete"` (l'onion non si raggiunge). Ogni altra
+ * (il descrittore non è confermato sugli HSDir), `fase "rete"` (l'onion non si raggiunge) e `fase "tor"`
+ * (il bootstrap di tor non arriva al 100%). Ogni altra
  * fase ("evento", "file", "eco", "relay"…) è il nostro codice: resta rossa subito.
  */
 // La fase conta solo all'INIZIO del messaggio d'errore (`error: 'fase "rete"…` o `error: |-` e a capo):
 // un errore che CITA la frase ("manca la fase "pubblicazione"") non è un rosso di rete (20/10/2026).
-const FASE_DI_RETE = /^\s+error: (?:\|-?\s*\n\s+|'|")fase \\?"(pubblicazione|rete)\\?"/m
+// "tor" (fondatore, 20/10/2026): il bootstrap di tor fermo (es. "fermo al 53%") è la rete Tor, non il nostro
+// codice. "tor-a"/"tor-b" della prova dei due nodi contano come "tor".
+const FASE_DI_RETE = /^\s+error: (?:\|-?\s*\n\s+|'|")fase \\?"(pubblicazione|rete|tor)(?:-[ab])?\\?"/m
 
 /**
  * La fase di rete se TUTTI i test falliti del file sono caduti in una fase di rete; altrimenti null.

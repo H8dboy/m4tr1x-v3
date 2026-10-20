@@ -16,8 +16,8 @@ const read = (/** @type {string} */ p) => fs.readFileSync(path.join(ROOT, p), 'u
 
 const PROVE = {
   'tests/integration/two-nodes.test.js': ['pubblicazione', 'rete', 'evento', 'file'],
-  'tests/integration/feed-via-tor.test.js': ['pubblicazione', 'rete', 'relay', 'feed', 'invio', 'firma'],
-  'app/transport/tests/inv_37_tor_process.rs': ['pubblicazione', 'rete', 'eco'],
+  'tests/integration/feed-via-tor.test.js': ['pubblicazione', 'rete', 'tor', 'relay', 'feed', 'invio', 'firma'],
+  'app/transport/tests/inv_37_tor_process.rs': ['pubblicazione', 'rete', 'tor', 'eco'],
 }
 
 test('le prove che raggiungono un onion scrivono la fase', () => {

@@ -1,4 +1,5 @@
-// Prova per tests/unit/report-esito.test.js: rosso in fase "rete" per le prime M4TR1X_PROVA_ROSSI esecuzioni, poi verde.
+// Prova per tests/unit/report-esito.test.js: rosso nella fase M4TR1X_PROVA_FASE (predefinita "rete") per le prime
+// M4TR1X_PROVA_ROSSI esecuzioni, poi verde.
 'use strict'
 const test = require('node:test')
 const fs = require('fs')
@@ -10,4 +11,4 @@ function esecuzione() {
   return n
 }
 const n = esecuzione()
-test('raggiunge l\'onion', () => { if (n <= Number(process.env.M4TR1X_PROVA_ROSSI || 1)) throw new Error('fase "rete" fallita dopo 300 s (massimo 300 s): scaduta') })
+test('raggiunge l\'onion', () => { if (n <= Number(process.env.M4TR1X_PROVA_ROSSI || 1)) throw new Error(`fase "${process.env.M4TR1X_PROVA_FASE || 'rete'}" fallita dopo 300 s (massimo 300 s): scaduta`) })

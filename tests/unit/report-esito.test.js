@@ -91,9 +91,9 @@ test('riepilogo con fail 0 ma uscita diversa da 0, o test annullati: fallito', (
 
 // ─── Rilancio unico per la rete Tor (fondatore, 20/10/2026) ──────────────────
 /** esegue `nome` con il rilancio, contando quante volte gira davvero */
-function conRilancio(/** @type {string} */ nome, rossi = 1, timeoutMs = 60000) {
+function conRilancio(/** @type {string} */ nome, rossi = 1, timeoutMs = 60000, fase = 'rete') {
   const contatore = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'm4-rilancio-')), 'n')
-  const env = { ...process.env, M4TR1X_PROVA_CONTATORE: contatore, M4TR1X_PROVA_ROSSI: String(rossi) }
+  const env = { ...process.env, M4TR1X_PROVA_CONTATORE: contatore, M4TR1X_PROVA_ROSSI: String(rossi), M4TR1X_PROVA_FASE: fase }
   const t = eseguiConRilancio(F(nome), { cwd: ROOT, timeoutMs, testTimeoutMs: 600000, env })
   const giri = fs.existsSync(contatore) ? Number(fs.readFileSync(contatore, 'utf8')) : 0
   return { t, giri }
@@ -105,6 +105,20 @@ test('rosso SOLO in fase "rete": un rilancio, e resta scritto', () => {
   assert.equal(t.fail, 0)
   assert.equal(t.rilancio?.fase, 'rete')
   assert.match(String(t.rilancio?.primoErrore), /fase "rete" fallita/)
+})
+
+test('fase "tor" (bootstrap fermo) e "tor-a"/"tor-b": un rilancio come la rete (fondatore, 20/10/2026)', () => {
+  for (const fase of ['tor', 'tor-a', 'tor-b']) {
+    const { t, giri } = conRilancio('rete', 1, 60000, fase)
+    assert.equal(giri, 2, `fase "${fase}": non rilanciata`)
+    assert.equal(t.rilancio?.fase, 'tor')
+  }
+})
+
+test('una fase che INIZIA con "tor" ma non lo è: nessun rilancio', () => {
+  const { t, giri } = conRilancio('rete', 1, 60000, 'torre')
+  assert.equal(giri, 1)
+  assert.equal(t.rilancio, undefined)
 })
 
 test('rosso di rete anche al secondo giro: resta rosso, mai un terzo giro', () => {

@@ -3,7 +3,7 @@
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **200 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **202 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -90,9 +90,22 @@
 61. **Difetti trovati lavorando al profilo:** (1) il relay finto delle prove ignorava i filtri delle `REQ`: due prove del feed contavano come "scartati" eventi che il nodo vero non manderebbe mai; ora filtra come il nodo (kinds, authors, ids). (2) `Evento` aveva i campi tutti pubblici: chiunque poteva costruirne uno NON verificato, contro il suo commento; ora un campo privato lo impedisce, provato con un doctest `compile_fail`. (3) una mia prova di sabotaggio non toglieva davvero la verifica: riscritta (toglie id e firma nel protocollo). Sabotaggi `profilo-*` 3/3.
 62. **Prova di fine corsa:** l'app salva via Tor il profilo "Prova M4TR1X", pubblica un post, e il feed riletto lo mostra con quel nome.
 
+63. **20/10, 15:32 — profilo dall'app VERA (fondatore), identità usa e getta:** nome "H8db0y", descrizione "h8 for all", poi il post "rama ne burg". Dal nodo, in locale: profilo con SOLO `name` e `about`, nessun carattere invisibile o di direzione, firme valide per il JavaScript. Poi pulizia: app e nodo chiusi, 3 voci di prova cancellate dal portachiavi, nessun crash.log.
+64. **Fase "tor" (fondatore): rilanciabile una volta.** Un bootstrap di tor fermo (report: "fermo al 53%", panic muto non rilanciato) è la rete Tor. Gli esempi del feed scrivono `errore_tor` invece del panic e la prova lo dichiara `fase "tor"`; I-37 idem; "tor-a"/"tor-b" dei due nodi contano come "tor". Prove: rilancio per tor/tor-a/tor-b, nessun rilancio per una fase che inizia con "tor" senza esserlo; sabotaggio `report-rilancio-senza-tor` preso.
+65. **Errore mio preso dallo scanner dei dati personali prima del commit:** in una prova del profilo avevo scritto come nome d'esempio il cognome vero del fondatore. Sostituito con "Arta Prova"; nessuna occorrenza nel repo.
+
+66. **CI di `96ae792` (profilo): rosso in I-59** "il nodo non ha chiesto a tor quale descrittore è l'attuale entro 120 s dai primi caricamenti" (`node/src/tor.js`). Due cause possibili: (1) RETE: tor non ha mai iniziato a caricare in 120 s; (2) NOSTRO CODICE: `chiediAttuale` fa `GETINFO hs/service/desc/id`, se la risposta non è leggibile scrive "descrittore attuale non leggibile" e NON riprova (solo `return`) finché non vede un id nuovo. Quale delle due: NON ancora dimostrato (il test non stampa il log di tor del nodo quando fallisce).
+
+## Stato alla chiusura del 20/10 (sera)
+
+- GitHub a `96ae792` (profilo). CI di `96ae792`: test/secrets/deps verdi, tor ROSSO solo per I-59 (punto 66).
+- `fase "tor"` COMMITTATA dopo report verde (202 verdi, 0 falliti); da controllare la sua CI.
+
 ## Prossimo
 
-- **Provare il profilo dall'app vera** (identità usa e getta come per il primo post).
+1. **I-59, prima di tutto (solo misura):** quando `attualeNoto` scade, il test stampa le righe di tor del nodo (`n.logs`: eventi HS_DESC visti, eventuali "non leggibile"); poi giri locali di I-59 finché il caso si ripete. Se è la causa (2): nuovo tentativo di GETINFO dopo qualche secondo quando non è leggibile, con una prova che simula la prima risposta illeggibile + sabotaggio.
+2. Controllare la CI del commit della `fase "tor"`.
+
 
 - **F4 continua:** post (firma nel lato Rust con l'identità salvata), profilo; prova dinamica di I-31 con seme di prova, I-01 dinamica, `ArtiTransport` per Linux, build del guscio in CI.
 - **Per l'installer del nodo (punto 25):** la configurazione di produzione si legge SOLO da file (JSON), così nessuna opzione `…ForTests` che sia una funzione può accendersi.

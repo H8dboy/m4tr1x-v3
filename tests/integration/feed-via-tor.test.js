@@ -69,8 +69,10 @@ test('il feed dell\'app legge via Tor i post verificati di un nodo vero (e misur
     ws.close()
     assert.equal(ok.at(-1)[2], true, JSON.stringify(ok.at(-1)))
 
-    const primo = await app(a.node.onion, dati)
-    const dopo = await app(a.node.onion, dati) // stesso tor, stessa cartella: "dopo un riavvio dell'app"
+    // il tor dell'app che non finisce il bootstrap è la rete Tor: fase "tor" (fondatore, 20/10/2026)
+    const senzaTor = (/** @type {any[]} */ righe) => { const x = righe.find(r => r.errore_tor); if (x) assert.fail(`fase "tor": il tor dell'app non ha finito il bootstrap: ${x.errore_tor}`); return righe }
+    const primo = senzaTor(await app(a.node.onion, dati))
+    const dopo = senzaTor(await app(a.node.onion, dati)) // stesso tor, stessa cartella: "dopo un riavvio dell'app"
     const letture = [...primo.filter(x => x.lettura !== 'bootstrap'), ...dopo.filter(x => x.lettura !== 'bootstrap').map(x => ({ ...x, lettura: x.lettura === 'primo collegamento' ? 'dopo un riavvio (stessa cartella)' : 'secondo dopo il riavvio' }))]
     t.diagnostic(`feed (annuncio del nodo: ${annuncio}): ` + letture.map(x => `${x.lettura}=${x.errore ? `ERRORE ${x.errore}` : `${x.secondi}s/${x.tentativi} tent.`}`).join(' · '))
     // Fasi con le stesse parole delle altre prove con Tor (il runner rilancia una volta SOLO "pubblicazione"
@@ -86,7 +88,7 @@ test('il feed dell\'app legge via Tor i post verificati di un nodo vero (e misur
     // Fasi: onion non raggiunto → "rete"; nodo che dice no o relay rotto → "invio"; firma non valida per il
     // JavaScript → "firma"; non riletto dal feed → "feed".
     const testo = `Nderë: primo post PUBBLICATO dall'app via Tor 🦅 ${Date.now()}`
-    const [pub] = await app(a.node.onion, dati, 'pubblica', [testo])
+    const [pub] = senzaTor(await app(a.node.onion, dati, 'pubblica', [testo]))
     t.diagnostic(`post: ${pub.errore ? `ERRORE ${pub.errore}` : `pubblicato in ${pub.secondi}s/${pub.tentativi} tent., riletto dal feed: ${pub.riletto}, nome: ${pub.nome}`}`)
     if (pub.errore) assert.fail(`fase "${/NonRaggiungibile/.test(pub.errore) ? 'rete' : 'invio'}": pubblicazione: ${pub.errore}`)
     const ws2 = await wsOpen(a.node.port)

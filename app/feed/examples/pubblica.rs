@@ -21,8 +21,16 @@ async fn main() {
     let testo = a.next().expect("testo del post");
     let bin = std::path::PathBuf::from(std::env::var("M4TR1X_TOR_BIN").expect("M4TR1X_TOR_BIN"));
     let t = TorProcessTransport::new(TorProcessConfig { tor_sha256: sha256_file(&bin).expect("hash di tor"), tor_bin: bin, data_dir: dati, bootstrap_timeout: Duration::from_secs(180) });
-    t.avvia().await.expect("avvio di tor");
-    t.bootstrap().await.expect("bootstrap");
+    // bootstrap fermo (es. "fermo al 53%"): rete Tor, la prova lo dichiara fase "tor" (non un panic muto)
+    let b = match async { t.avvia().await?; t.bootstrap().await }.await {
+        Ok(b) => b.millisecondi,
+        Err(e) => {
+            println!("{{\"errore_tor\":{:?}}}", e.to_string());
+            t.shutdown().await;
+            return;
+        }
+    };
+    let _ = b;
 
     let seme = seme_da_parole(&(["abandon"; 23].join(" ") + " art"), "").unwrap();
     let k = deriva(&seme, Ruolo::Identity, 1).unwrap();

@@ -24,8 +24,15 @@ async fn main() {
         data_dir: dati,
         bootstrap_timeout: Duration::from_secs(180),
     });
-    t.avvia().await.expect("avvio di tor");
-    let b = t.bootstrap().await.expect("bootstrap").millisecondi;
+    // bootstrap fermo (es. "fermo al 53%"): rete Tor, la prova lo dichiara fase "tor" (non un panic muto)
+    let b = match async { t.avvia().await?; t.bootstrap().await }.await {
+        Ok(b) => b.millisecondi,
+        Err(e) => {
+            println!("{{\"errore_tor\":{:?}}}", e.to_string());
+            t.shutdown().await;
+            return;
+        }
+    };
     println!("{{\"lettura\":\"bootstrap\",\"ms\":{b}}}");
     for lettura in ["primo collegamento", "secondo nella stessa sessione"] {
         // come l'app: budget, poi un minuto di attesa e una ripresa
