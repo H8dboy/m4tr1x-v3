@@ -94,6 +94,9 @@ function createHttp(ctx) {
       try { st = fs.statSync(file) } catch { return json(res, 404, { error: 'non trovato' }) }
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': st.size, 'Cache-Control': 'public, max-age=31536000, immutable' })
       if (req.method === 'HEAD') return res.end()
+      // solo nei test (config.js): in produzione non si registra chi scarica cosa né quando
+      const servito = cfg.onBlobServitoForTests
+      if (servito) res.on('finish', () => servito(st.size))
       return fs.createReadStream(file).on('error', () => res.destroy()).pipe(res)
     }
 

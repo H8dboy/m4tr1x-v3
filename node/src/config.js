@@ -27,6 +27,9 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
  * @property {number} quotaBytes            per pubkey
  * @property {string[]} peers               URL http://<onion v3>[:porta]
  * @property {boolean} allowLoopbackPeersForTests
+ * @property {((bytes: number) => void)} [onBlobServitoForTests] SOLO TEST: chiamata quando il nodo ha servito un file.
+ *   È una funzione apposta: un file di configurazione (JSON) non può contenerla, quindi in produzione non si accende mai
+ *   (decisione del fondatore, 20/10/2026: registrare ogni download con l'orario è un metadato da non tenere)
  * @property {string[]} anchors             ancore della directory: URL http://<onion v3>
  * @property {Partial<typeof import('./directory').DEFAULT_LIMITS>} anchorLimits  solo ruolo anchor
  * @property {number} descriptorTtlSec       scadenza della scheda del nodo (≤ 7 giorni)
@@ -67,6 +70,8 @@ function normalize(c) {
     quotaBytes: c.quotaBytes ?? 2 * 1024 * 1024 * 1024,
     peers: list(c.peers),
     allowLoopbackPeersForTests: !!c.allowLoopbackPeersForTests,
+    // solo una funzione vera: `true` o una stringa (da un file di configurazione) si scartano
+    onBlobServitoForTests: typeof c.onBlobServitoForTests === 'function' ? c.onBlobServitoForTests : undefined,
     anchors: list(c.anchors),
     anchorLimits: c.anchorLimits || {},
     descriptorTtlSec: c.descriptorTtlSec ?? 3 * 86400,

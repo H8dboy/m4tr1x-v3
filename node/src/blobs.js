@@ -15,6 +15,8 @@ const protocol = require('../../packages/protocol')
 const { isOnionV3 } = require('./socks')
 
 const SHA_RE = /^[0-9a-f]{64}$/
+/** Tempo massimo totale di UN tentativo di scaricare un file da un peer (decisione del fondatore, 20/10/2026). */
+const TEMPO_MASSIMO_BLOB_MS = 30000
 
 /** @param {string} dataDir @param {string} sha */
 function blobPath(dataDir, sha) {
@@ -101,12 +103,16 @@ function storeVerified(ctx, sha, data, pubkey) {
  * @param {string} baseUrl @param {string} sha
  * `onFase` riceve le fasi del trasferimento con i ms dall'inizio (connessione via Tor pronta,
  * risposta, fine): servono a capire DOVE si ferma un trasferimento appeso.
- * @param {{ agent?: import('http').Agent, allowLoopbackForTests?: boolean, headers?: Record<string,string>, maxBytes?: number, onFase?: (fase: string, ms: number) => void }} [o]
+ * `tempoMassimoMs`: tempo massimo TOTALE del tentativo (connessione via Tor + risposta + corpo),
+ * non solo di inattività: oltre, la richiesta si chiude con errore (decisione del fondatore, 20/10/2026: 30 s).
+ * @param {{ agent?: import('http').Agent, allowLoopbackForTests?: boolean, headers?: Record<string,string>, maxBytes?: number, onFase?: (fase: string, ms: number) => void, tempoMassimoMs?: number }} [o]
  * @returns {Promise<Buffer>}
  */
 function fetchVerified(baseUrl, sha, o = {}) {
   const t0 = Date.now()
   const fase = (/** @type {string} */ f) => o.onFase?.(f, Date.now() - t0)
+  const tempoMassimo = o.tempoMassimoMs ?? TEMPO_MASSIMO_BLOB_MS
+  /** @type {NodeJS.Timeout | undefined} */ let scadenza
   return new Promise((resolve, reject) => {
     if (!SHA_RE.test(sha)) return reject(new Error('hash non valido'))
     let u
@@ -132,7 +138,9 @@ function fetchVerified(baseUrl, sha, o = {}) {
     req.on('socket', () => fase('connessione pronta'))
     req.on('timeout', () => req.destroy(new Error('tempo scaduto')))
     req.on('error', reject)
-  })
+    // distrugge anche una connessione SOCKS ancora in corso: il socket che arriva dopo viene chiuso da http
+    scadenza = setTimeout(() => req.destroy(new Error(`tempo massimo del tentativo superato (${tempoMassimo / 1000} s)`)), tempoMassimo)
+  }).finally(() => clearTimeout(scadenza))
 }
 
-module.exports = { SHA_RE, blobPath, checkUploadAuth, receiveUpload, storeVerified, fetchVerified }
+module.exports = { SHA_RE, TEMPO_MASSIMO_BLOB_MS, blobPath, checkUploadAuth, receiveUpload, storeVerified, fetchVerified }

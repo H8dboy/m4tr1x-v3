@@ -3,7 +3,7 @@
 > Fonte di verità: codice e test.
 
 ## Stato
-- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **170 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
+- Repo privato `H8dboy/m4tr1x-v3`. Test locali (Node 22.23.3, 20/10, con tor vero, runner nuovo che conta come fallito un file che non risponde): **174 verdi, 0 falliti, 0 saltati**, 26 regole attive, 0 divergenze doc↔codice (`npm run report`).
 - Sabotaggio completo: **64/66 prese** (16/10, con tor vero; 2 non applicabili poi corrette) (`docs/generated/sabotage.json`). Corretta una prova invecchiata (I-38 purge: il testo cercato era cambiato con I-41).
 - Fasi chiuse: **F0, F1, F2, F3**. F4a aperta (serve telefono Android; Arti non regge su Windows → ADR-0016).
 
@@ -49,17 +49,16 @@
 29. Il runner nuovo ha subito preso un rosso vero: due nodi via Tor fermo nella **fase "file"** a 60 s (rete già su, evento in 7 s). Il fondatore: **non liquidarlo come rete lenta**, indagare con i log del trasferimento. Quei log non esistevano: ora `fetchVerified` segnala le fasi (connessione pronta, risposta HTTP, byte ricevuti, con i ms; mai indirizzi né hash) e il test le stampa tutte, anche da verde. Giro di prova: file in 0,8 s (connessione 307 ms, risposta 704 ms).
 30. Stesso giro: fase **rete a 299,8 s su 300** (B: REQUESTED×31, FAILED NOT_FOUND×30; A annunciato con la riserva dei 5 min). Al limite: da guardare se ricapita.
 
+31. CI di `f39ee26` (primo giro col runner nuovo) **verde**: job tor 0 saltati (due nodi 2/2, I-59 10/10, I-37 2/2); job test 163 verdi, 7 saltati (tor/cargo assenti lì).
+32. **Blob, decisioni del fondatore applicate:** (1) tempo massimo TOTALE **30 s per tentativo** (`TEMPO_MASSIMO_BLOB_MS`, chiude anche una connessione SOCKS in corso); (2) **3 tentativi**, attese 2 s e 4 s (`TENTATIVI_BLOB`, `ATTESA_BLOB_MS` in peers.js), niente tentativi paralleli dello stesso file; un file arrivato SBAGLIATO (hash diverso, troppo grande) non si ritenta; (3) **"file servito" solo nei test**: è la funzione `onBlobServitoForTests`, che un file di configurazione JSON non può contenere (`true`/stringhe si scartano) e non passa dal log del nodo. Prove `tests/integration/blob-replica.test.js` (peer che manda un byte alla volta, file che arriva tardi, stop dopo 3, JSON) + sabotaggi `blob-*` **4/4 presi**. La prova dei due nodi ora dice anche se la richiesta è arrivata ad A.
+
 ## Prossimo
 
-**Decisioni aperte del fondatore sul trasferimento dei blob** (cambiano il comportamento del nodo, non fatte):
-- tempo massimo TOTALE per un trasferimento (oggi SOCKS 90 s + inattività HTTP 120 s: può restare appeso minuti in silenzio);
-- nuovo tentativo con attesa crescente (oggi un file fallito si richiede solo se cade la connessione col peer);
-- riga "file servito" lato A (registrerebbe con l'orario ogni download: solo nei test, o no).
+- **Per l'installer del nodo (punto 25):** la configurazione di produzione si legge SOLO da file (JSON), così nessuna opzione `…ForTests` che sia una funzione può accendersi.
 
-1. Controllare la CI del push del 20/10 (primo giro col runner nuovo: un test lento senza timeout proprio ora cade a 120 s).
-2. Campagna completa di sabotaggio (lunga: le prove I-59 con tor durano ~10 min ciascuna).
-3. Se ricapita il rosso nella fase "file": leggere la riga "trasferimento del file su B" dell'errore.
-4. Poi F4: feed.
+1. Campagna completa di sabotaggio (lunga: le prove I-59 con tor durano ~10 min ciascuna).
+2. Se ricapita il rosso nella fase "file": leggere le righe "trasferimento del file su B" e "su A" dell'errore.
+3. Poi F4: feed.
 
 - OK del fondatore sulla bozza PEZZI_MANCANTI (tabella in fondo) → numeri I-42…I-50, K16, K17 entrano in SECURITY_INVARIANTS/KEYS.
 - Scrivere la procedura DSA (precondizione di F6).

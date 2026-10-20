@@ -104,11 +104,14 @@ test('due nodi via Tor si scambiano evento e file', { skip: !TOR || !fs.existsSy
       throw new Error(`fase "${nome}" fallita dopo ${Math.round(tempi[nome] / 1000)} s (massimo ${LIMITI_MS[nome] / 1000} s): ${/** @type {Error} */ (e).message}` +
         ` · tempi finora: ${JSON.stringify(tempi)} · log di A: ${ultime(logA)} · log di B: ${ultime(logB)}` +
         // tutte le fasi del trasferimento del file su B: le righe HS_DESC non devono coprirle (rosso del 20/10/2026)
-        ` · trasferimento del file su B: ${logB.filter(l => l.startsWith('peer: file')).join(' | ') || '(nessuna riga: richiesta mai partita)'}`)
+        ` · trasferimento del file su B: ${logB.filter(l => l.startsWith('peer: file')).join(' | ') || '(nessuna riga: richiesta mai partita)'}` +
+        ` · su A: ${logA.filter(l => l.startsWith('peer: file')).join(' | ') || '(file mai servito: la richiesta non è arrivata ad A)'}`)
     } finally { clearTimeout(timer); tempi[nome] ??= Date.now() - t0 }
   }
   try {
-    a = await fase('tor-a', () => startTestNode({ uploaders: [owner.publicKey], tor: true, torBin: TOR, log: l => logA.push(l) }))
+    a = await fase('tor-a', () => startTestNode({ uploaders: [owner.publicKey], tor: true, torBin: TOR, log: l => logA.push(l),
+      // solo nei test: dice se la richiesta del file è arrivata ad A (rete Tor) o no
+      onBlobServitoForTests: (/** @type {number} */ n) => logA.push(`peer: file servito (${n} byte)`) }))
     cacheCalda = a.torCacheWarm
     assert.ok(a.node.onion && /^[a-z2-7]{56}\.onion$/.test(a.node.onion), 'A non ha un onion')
     decisioneA = await fase('pubblicazione', () => a.node.announceDecision)
@@ -131,7 +134,7 @@ test('due nodi via Tor si scambiano evento e file', { skip: !TOR || !fs.existsSy
       const e = /^tor: HS_DESC (\S+(?: \S+)?)/.exec(x)?.[1]; if (e) m[e] = (m[e] || 0) + 1; return m }, {})).map(([k, v]) => `${k}×${v}`).join(' ') || '—'
     t.diagnostic(`HS_DESC A: ${conta(logA)} · B: ${conta(logB)}`)
     // anche quando è verde: i tempi del trasferimento servono a vedere se peggiorano
-    t.diagnostic(`file su B: ${logB.filter(l => l.startsWith('peer: file')).join(' | ') || '—'}`)
+    t.diagnostic(`file su B: ${logB.filter(l => l.startsWith('peer: file')).join(' | ') || '—'} · su A: ${logA.filter(l => l.startsWith('peer: file')).join(' | ') || '—'}`)
     if (b) await b.close()
     if (a) await a.close()
   }

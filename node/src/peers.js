@@ -12,6 +12,10 @@ const WebSocket = require('ws')
 const blobs = require('./blobs')
 const { isOnionV3, TorAgent } = require('./socks')
 
+/** Scaricamento di un file da un peer: 3 tentativi, attese di 2 s e 4 s tra uno e l'altro (fondatore, 20/10/2026). */
+const TENTATIVI_BLOB = 3
+const ATTESA_BLOB_MS = 2000
+
 /**
  * @param {object} ctx
  * @param {import('./config').NodeConfig} ctx.cfg
@@ -36,22 +40,56 @@ function startPeers(ctx) {
     return p ? new TorAgent(p) : null
   }
 
+  /** file in scaricamento: un evento rimandato dal peer durante i tentativi non ne apre altri in parallelo */
+  /** @type {Set<string>} */ const inCorso = new Set()
+
   /** @param {string} peer @param {any} ev @param {{base: string, loop: boolean, hostHeader: string}} target */
   async function replicateBlobs(peer, ev, target) {
     for (const t of ev.tags) {
       if (t[0] !== 'x' || !blobs.SHA_RE.test(t[1] || '')) continue
-      if (fs.existsSync(blobs.blobPath(cfg.dataDir, t[1]))) continue
-      try {
-        const agent = agentFor(target.loop)
-        if (agent === null) { log('peer: file non richiesto (Tor non pronto)'); return }
-        // fasi con i tempi, mai indirizzi né hash (I-18, I-59): dicono dove si ferma un trasferimento appeso
-        log('peer: file richiesto')
-        const data = await blobs.fetchVerified(target.base, t[1], { agent, allowLoopbackForTests: target.loop, headers: { Host: target.hostHeader }, maxBytes: cfg.maxBlobBytes,
-          onFase: (f, ms) => log(`peer: file, ${f} (${ms} ms)`) })
-        blobs.storeVerified({ dataDir: cfg.dataDir, db }, t[1], data, ev.pubkey)
-        log('peer: file replicato e verificato')
-      } catch (e) { log(`peer: file non replicato (${/** @type {Error} */ (e).message})`) }
+      if (fs.existsSync(blobs.blobPath(cfg.dataDir, t[1])) || inCorso.has(t[1])) continue
+      inCorso.add(t[1])
+      try { await scaricaConTentativi(t[1], ev.pubkey, target) } finally { inCorso.delete(t[1]) }
     }
+  }
+
+  /**
+   * Fino a TENTATIVI_BLOB tentativi da TEMPO_MASSIMO_BLOB_MS ciascuno, con attesa crescente tra uno e l'altro
+   * (decisione del fondatore, 20/10/2026). Non si ritenta un file arrivato sbagliato (hash diverso o troppo
+   * grande): il peer ha mandato quei dati, rimandarli non cambia niente.
+   * Nel log: fasi con i tempi, mai indirizzi né hash (I-18, I-59).
+   * @param {string} sha @param {string} pubkey @param {{base: string, loop: boolean, hostHeader: string}} target
+   */
+  async function scaricaConTentativi(sha, pubkey, target) {
+    for (let n = 1; n <= TENTATIVI_BLOB && !stopped; n++) {
+      const agent = agentFor(target.loop)
+      if (agent === null) log(`peer: file, tentativo ${n}/${TENTATIVI_BLOB} non partito (Tor non pronto)`)
+      else {
+        try {
+          log(`peer: file richiesto (tentativo ${n}/${TENTATIVI_BLOB})`)
+          const data = await blobs.fetchVerified(target.base, sha, { agent, allowLoopbackForTests: target.loop, headers: { Host: target.hostHeader }, maxBytes: cfg.maxBlobBytes,
+            onFase: (f, ms) => log(`peer: file, ${f} (${ms} ms)`) })
+          if (stopped) return
+          blobs.storeVerified({ dataDir: cfg.dataDir, db }, sha, data, pubkey)
+          log('peer: file replicato e verificato')
+          return
+        } catch (e) {
+          const msg = /** @type {Error} */ (e).message
+          log(`peer: file non replicato, tentativo ${n}/${TENTATIVI_BLOB} (${msg})`)
+          if (/hash non corrispondente|troppo grande/.test(msg)) return
+        }
+      }
+      if (n < TENTATIVI_BLOB) await attendi(ATTESA_BLOB_MS * 2 ** (n - 1))
+    }
+  }
+
+  /** attesa che si interrompe alla chiusura del nodo */
+  function attendi(/** @type {number} */ ms) {
+    return new Promise(r => {
+      if (stopped) return r(undefined)
+      const t = setTimeout(() => { timers.delete(t); r(undefined) }, ms)
+      timers.add(t)
+    })
   }
 
   /** @param {string} peer @param {number} attempt */
@@ -112,4 +150,4 @@ function parsePeer(peer, allowLoop) {
   return { base: `http://${u.host}`, ws: `ws://${u.host}/relay`, loop, hostHeader: loop ? 'localhost' : u.hostname }
 }
 
-module.exports = { startPeers, parsePeer }
+module.exports = { startPeers, parsePeer, TENTATIVI_BLOB, ATTESA_BLOB_MS }

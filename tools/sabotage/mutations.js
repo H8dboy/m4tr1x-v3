@@ -209,4 +209,15 @@ module.exports = [
     find: '  if (senzaSaltati && t.skipped) {', replace: '  if (false) {', test: 'tests/unit/report-esito.test.js' },
   { id: 'report-uscita', rule: 'strumenti', name: 'CI: runner che esce con 0 anche con file falliti', file: 'tools/report/esegui.js',
     find: 'process.exit(tot.fail ? 1 : 0)', replace: 'process.exit(0)', test: 'tests/unit/report-esito.test.js' },
+
+  // ─── Scaricamento dei file dai peer (decisioni del fondatore, 20/10/2026) ──
+  { id: 'blob-tempo', rule: 'blob', name: 'nessun tempo massimo totale per tentativo (solo inattività)', file: 'node/src/blobs.js',
+    find: "    scadenza = setTimeout(() => req.destroy(new Error(`tempo massimo del tentativo superato (${tempoMassimo / 1000} s)`)), tempoMassimo)\n", replace: '', test: 'tests/integration/blob-replica.test.js' },
+  { id: 'blob-un-tentativo', rule: 'blob', name: 'un solo tentativo (nessun nuovo tentativo)', file: 'node/src/peers.js',
+    find: 'const TENTATIVI_BLOB = 3', replace: 'const TENTATIVI_BLOB = 1', test: 'tests/integration/blob-replica.test.js' },
+  { id: 'blob-senza-fine', rule: 'blob', name: 'tentativi senza fine', file: 'node/src/peers.js',
+    find: '    for (let n = 1; n <= TENTATIVI_BLOB && !stopped; n++) {', replace: '    for (let n = 1; !stopped; n++) {', test: 'tests/integration/blob-replica.test.js' },
+  { id: 'blob-servito-json', rule: 'blob', name: '"file servito" accendibile da un file di configurazione', file: 'node/src/config.js',
+    find: "    onBlobServitoForTests: typeof c.onBlobServitoForTests === 'function' ? c.onBlobServitoForTests : undefined,",
+    replace: "    onBlobServitoForTests: c.onBlobServitoForTests ? (typeof c.onBlobServitoForTests === 'function' ? c.onBlobServitoForTests : (/** @type {number} */ n) => c.log?.(`file servito (${n} byte)`)) : undefined,", test: 'tests/integration/blob-replica.test.js' },
 ]
