@@ -158,6 +158,92 @@ jobs:
           M4TR1X_TOR_BIN: /usr/bin/tor
         run: node tools/tor/misura.js 1
 
+  # I-01 dinamica (decisioni del fondatore, 21/10/2026, opzione A): l'app VERA, guidata con WebDriver, gira
+  # come utente dedicato m4app; iptables ammette per lui solo il loopback (meno ogni resolver locale) e i relay
+  # Tor (elenco da fonti verificate, tools/i01/consentiti.js); tutto il resto si conta. Verde solo con 0
+  # violazioni E traffico vero verso i relay e sul loopback. Limite in I-01: relay come destinazione non visto.
+  i01-rete:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          package-manager-cache: false
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts
+      - name: Pacchetti (WebKitGTK, WebKitWebDriver, Xvfb, ipset, ACL, tor di Ubuntu per il nodo)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev webkit2gtk-driver xvfb xauth dbus ipset acl tor
+      - name: Versioni di WebKitWebDriver e WebKitGTK (firme apt di Ubuntu)
+        run: dpkg-query -W -f='${Package} ${Version}\n' webkit2gtk-driver libwebkit2gtk-4.1-0
+      - name: tauri-driver (versione e hash fissati)
+        run: |
+          L=tools/i01/strumenti.lock.json
+          url=$(node -p "require('./$L').tauri_driver.crate_url")
+          sha=$(node -p "require('./$L').tauri_driver.crate_sha256")
+          ver=$(node -p "require('./$L').tauri_driver.versione")
+          curl -fsSLo "$RUNNER_TEMP/tauri-driver.crate" "$url"
+          echo "$sha  $RUNNER_TEMP/tauri-driver.crate" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/td-src"
+          tar -xzf "$RUNNER_TEMP/tauri-driver.crate" -C "$RUNNER_TEMP/td-src"
+          cargo install --locked --path "$RUNNER_TEMP/td-src/tauri-driver-$ver" --root "$RUNNER_TEMP/td"
+      - name: App (guscio)
+        run: cargo build --locked --manifest-path app/Cargo.toml -p m4tr1x-shell
+      - name: Tor del lock Linux (bundle verificato)
+        run: |
+          url=$(node -p "require('./app/tor-linux.lock.json').bundle_url")
+          sha=$(node -p "require('./app/tor-linux.lock.json').bundle_sha256")
+          curl -fsSLo "$RUNNER_TEMP/tor-bundle.tgz" "$url"
+          echo "$sha  $RUNNER_TEMP/tor-bundle.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/tor-bundle"
+          tar -xzf "$RUNNER_TEMP/tor-bundle.tgz" -C "$RUNNER_TEMP/tor-bundle" tor/tor tor/libcrypto.so.3 tor/libssl.so.3 tor/libevent-2.1.so.7
+      # la cartella del runner non è leggibile da altri utenti: app, tor e tauri-driver in /opt/m4i01
+      - name: File della prova leggibili dall'utente dell'app
+        run: |
+          sudo install -d -m 755 /opt/m4i01 /opt/m4i01/tor
+          sudo install -m 755 app/target/debug/m4tr1x-shell "$RUNNER_TEMP/td/bin/tauri-driver" /opt/m4i01/
+          sudo install -m 755 "$RUNNER_TEMP"/tor-bundle/tor/* /opt/m4i01/tor/
+      - name: Riscaldamento della cache di tor (consenso per l'elenco dei relay)
+        env:
+          M4TR1X_TOR_BIN: /usr/bin/tor
+        run: node tools/tor/riscalda.js
+      - name: Nodo di prova con onion vero (fuori dalle regole dell'utente dell'app)
+        env:
+          M4TR1X_TOR_BIN: /usr/bin/tor
+        run: |
+          nohup node tools/i01/nodo.js "$RUNNER_TEMP/onion" > "$RUNNER_TEMP/nodo.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/nodo.pid"
+          for i in $(seq 1 600); do
+            [ -s "$RUNNER_TEMP/onion" ] && break
+            kill -0 "$(cat "$RUNNER_TEMP/nodo.pid")" 2>/dev/null || { cat "$RUNNER_TEMP/nodo.log"; exit 1; }
+            sleep 1
+          done
+          [ -s "$RUNNER_TEMP/onion" ] || { echo 'fase "pubblicazione": nodo non pronto in 10 minuti'; cat "$RUNNER_TEMP/nodo.log"; exit 1; }
+          cat "$RUNNER_TEMP/nodo.log"
+      - name: Rete dell'utente dell'app (solo relay Tor, nessun resolver locale)
+        run: |
+          node tools/i01/consentiti.js /opt/m4i01/tor/tor /tmp/m4tr1x-tor-cache/cached-microdesc-consensus > "$RUNNER_TEMP/m4relay.ipset"
+          sudo bash tools/i01/rete.sh prepara "$RUNNER_TEMP/m4relay.ipset"
+      - name: Controllo positivo (le regole vedono e bloccano)
+        run: sudo bash tools/i01/rete.sh controllo
+      - name: App vera guidata con WebDriver, come utente dedicato
+        run: |
+          sudo -u m4app env -i HOME=/home/m4app PATH=/usr/bin:/bin M4TR1X_TOR_BIN=/opt/m4i01/tor/tor M4TR1X_NODO_PROVA="$(cat "$RUNNER_TEMP/onion")" \
+            xvfb-run -a dbus-run-session -- /opt/m4i01/tauri-driver --port 4444 > "$RUNNER_TEMP/driver.log" 2>&1 &
+          node tools/i01/prova.js /opt/m4i01/m4tr1x-shell || { echo '--- tauri-driver/app:'; tail -n 80 "$RUNNER_TEMP/driver.log"; exit 1; }
+      - name: Contatori (I-01)
+        if: always()
+        run: |
+          sudo bash tools/i01/rete.sh conta | tee "$RUNNER_TEMP/conta.txt" | node tools/i01/verifica.js || { echo '--- pacchetti registrati:'; sudo dmesg | grep 'M4-I01 ' | tail -n 40; exit 1; }
+      - name: Pulizia
+        if: always()
+        run: |
+          sudo pkill -u m4app || true
+          kill "$(cat "$RUNNER_TEMP/nodo.pid" 2>/dev/null)" 2>/dev/null || true
+          sudo bash tools/i01/rete.sh pulisci || true
+
   # Sabotaggi delle difese che esistono SOLO su Linux (21/10/2026, richiesta del fondatore): cartella della
   # copia di tor 0700, tor avviato con l'ambiente pulito. Su Windows risultano "altra-piattaforma": senza
   # questo job non girerebbero mai. Base verde prima di ogni sabotaggio; nessuna prova scelta = errore.
