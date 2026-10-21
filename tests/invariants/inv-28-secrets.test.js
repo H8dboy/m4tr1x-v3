@@ -9,7 +9,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('path')
-const { scanFile, scanRepo } = require('../../tools/security/scan-secrets')
+const { scanFile, scanRepo, oscura } = require('../../tools/security/scan-secrets')
 
 const FAKE = {
   nsec: 'nsec1' + 'q'.repeat(58),
@@ -65,6 +65,45 @@ test('eccezione version="…" solo in .xml, solo per il valore intero, solo per 
 
 test('un IP vero accanto a uno di documentazione viene comunque segnalato', () => {
   assert.ok(scanFile('src/x.js', 'a = "203.0.113.5"; b = "' + FAKE.pub.split('@')[1] + '"').length > 0)
+})
+
+// oscura (21/10/2026): il report copia l'uscita dei test falliti; senza oscurarla un rosso dello scanner
+// finiva in report.json e il repo restava rosso anche dopo la correzione.
+test('oscura: dopo, lo scanner non trova più niente nel contenuto (ogni tipo di segreto)', () => {
+  for (const [name, sample] of Object.entries(FAKE)) {
+    const testo = `uscita del test:\n  errore: "${sample}" e ancora ${sample}\n`
+    const o = oscura('docs/generated/report.json', testo)
+    assert.deepEqual(scanFile('docs/generated/report.json', o), [], `${name}: resta visibile dopo oscura`)
+    assert.match(o, /\[oscurato: [^\]]+\]/, `${name}: niente segnaposto`)
+  }
+})
+
+test('oscura: un testo pulito resta identico (ogni file tracciato del repo, eccezioni comprese)', () => {
+  const root = path.resolve(__dirname, '..', '..')
+  const { execFileSync } = require('child_process')
+  const fs = require('fs')
+  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root }).toString('utf8').split('\0').filter(Boolean)
+  let controllati = 0
+  for (const f of files) {
+    const abs = path.join(root, f)
+    if (!fs.existsSync(abs) || scanFile(f, '').length) continue
+    const buf = fs.readFileSync(abs)
+    if (buf.includes(0)) continue
+    const testo = buf.toString('utf8')
+    if (scanFile(f, testo).length) continue   // file esclusi dal controllo (lo scanner stesso, questo test)
+    assert.equal(oscura(f, testo), testo, `${f}: oscura cambia un file pulito`)
+    controllati++
+  }
+  assert.ok(controllati > 100, `controllati solo ${controllati} file`)
+  assert.equal(oscura('docs/x.md', 'v 192.0.2.10 198.51.100.4 203.0.113.5 127.0.0.1'), 'v 192.0.2.10 198.51.100.4 203.0.113.5 127.0.0.1')
+  assert.equal(oscura('a/m.xml', '<a version="1.0.0.0"/>'), '<a version="1.0.0.0"/>')
+})
+
+test('il report scrive STATO_M4TR1X.md e report.json passando da oscura', () => {
+  const src = require('fs').readFileSync(path.resolve(__dirname, '..', '..', 'tools', 'report', 'generate.js'), 'utf8')
+  assert.match(src, /fs\.writeFileSync\(DOC, oscura\('docs\/STATO_M4TR1X\.md', md\)\)/, 'STATO_M4TR1X.md scritto senza oscura')
+  assert.match(src, /fs\.writeFileSync\(path\.join\(ROOT, 'docs', 'generated', 'report\.json'\), oscura\('docs\/generated\/report\.json', JSON\.stringify\(/, 'report.json scritto senza oscura')
+  assert.equal([...src.matchAll(/fs\.writeFileSync\(/g)].length, 2, 'il report scrive altri file: passano da oscura?')
 })
 
 test('il repo non contiene segreti nei file tracciati', () => {

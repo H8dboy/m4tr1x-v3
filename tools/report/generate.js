@@ -17,6 +17,7 @@ const os = require('os')
 const path = require('path')
 const { spawnSync } = require('child_process')
 const { eseguiConRilancio, fileDiTest } = require('./esito')
+const { oscura } = require('../security/scan-secrets')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const DOC = path.join(ROOT, 'docs', 'STATO_M4TR1X.md')
@@ -180,9 +181,12 @@ function main() {
     if (!re.test(md)) throw new Error(`marcatori AUTO:${name} assenti in STATO_M4TR1X.md`)
     md = md.replace(re, `$1\n${body}\n$2`)
   }
-  fs.writeFileSync(DOC, md)
+  // Il report copia l'uscita dei test falliti: un segreto o un IP che lo scanner ha bloccato finirebbe nel
+  // repo e il repo resterebbe rosso anche dopo la correzione (21/10/2026). Ultimo passo: oscurato tutto
+  // ciò che lo scanner vieterebbe, con le stesse regole.
+  fs.writeFileSync(DOC, oscura('docs/STATO_M4TR1X.md', md))
   fs.mkdirSync(path.join(ROOT, 'docs', 'generated'), { recursive: true })
-  fs.writeFileSync(path.join(ROOT, 'docs', 'generated', 'report.json'), JSON.stringify({ date: now.toISOString(), env, pinnedOk, totals: tot, tests, rules: ruleRows, divergences, deps: d }, null, 2) + '\n')
+  fs.writeFileSync(path.join(ROOT, 'docs', 'generated', 'report.json'), oscura('docs/generated/report.json', JSON.stringify({ date: now.toISOString(), env, pinnedOk, totals: tot, tests, rules: ruleRows, divergences, deps: d }, null, 2) + '\n'))
   console.log(`report aggiornato: ${tot.pass} verdi, ${tot.fail} falliti · ${active} regole attive · ${divergences.length} divergenze`)
   if (!pinnedOk) { console.error(`ATTENZIONE: Node ${process.versions.node} ≠ ${PINNED}`); process.exitCode = 1 }
   // un report con test falliti non è verde: esce con errore

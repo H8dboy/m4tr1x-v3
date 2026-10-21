@@ -29,6 +29,13 @@ module.exports = [
   { id: 'i28-doc', rule: 'I-28', name: 'IP vero ammesso se accanto a uno di documentazione', file: 'tools/security/scan-secrets.js',
     find: "    const real = name === 'IP pubblico'\n      ? [...content.matchAll(rx)]",
     replace: "    const real = name === 'IP pubblico' && hits.some(ip => DOC_IP_PREFIXES.some(d => ip.startsWith(d))) ? [] : name === 'IP pubblico'\n      ? [...content.matchAll(rx)]", test: T('inv-28-secrets') },
+  // oscura (21/10/2026): il report non riporta nel repo ciò che lo scanner blocca
+  { id: 'i28-oscura-report', rule: 'I-28', name: 'report.json scritto senza oscurare l\'uscita dei test falliti', file: 'tools/report/generate.js',
+    find: "'report.json'), oscura('docs/generated/report.json', JSON.stringify(", replace: "'report.json'), ((/** @type {string} */ _p, /** @type {string} */ s) => s)('docs/generated/report.json', JSON.stringify(", test: T('inv-28-secrets') },
+  { id: 'i28-oscura-regole', rule: 'I-28', name: 'oscura lascia passare tutto tranne gli IP', file: 'tools/security/scan-secrets.js',
+    find: "      if (name !== 'IP pubblico') return `[oscurato: ${name}]`\n", replace: "      if (name !== 'IP pubblico') return hit\n", test: T('inv-28-secrets') },
+  { id: 'i28-oscura-doc', rule: 'I-28', name: 'oscura cancella anche gli IP di documentazione (testo pulito cambiato)', file: 'tools/security/scan-secrets.js',
+    find: '      return DOC_IP_PREFIXES.some(d => hit.startsWith(d)) || versioneXml(', replace: '      return versioneXml(', test: T('inv-28-secrets') },
   // eccezione version="…" nei .xml (21/10/2026): ognuno dei tre vincoli ha la sua prova
   { id: 'i28-xml-ovunque', rule: 'I-28', name: 'eccezione version="…" valida in ogni tipo di file, non solo .xml', file: 'tools/security/scan-secrets.js',
     find: "  if (!p.endsWith('.xml') || m.index === undefined) return false\n", replace: '  if (m.index === undefined) return false\n', test: T('inv-28-secrets') },

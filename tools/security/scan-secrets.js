@@ -77,6 +77,31 @@ function scanFile(relPath, content) {
   return out
 }
 
+/**
+ * Il testo con ogni contenuto vietato sostituito da `[oscurato: <regola>]`: stesse regole e stesse
+ * eccezioni di scanFile (21/10/2026). Serve a chi scrive nel repo testo che non controlla, come il report
+ * che copia l'uscita dei test falliti: senza, un rosso dello scanner finiva in report.json e il repo
+ * restava rosso anche dopo aver corretto la causa. Proprietà (provata in inv-28): scanFile non trova più
+ * niente nel contenuto, e un testo pulito resta identico.
+ * @param {string} relPath @param {string} content
+ */
+function oscura(relPath, content) {
+  const p = relPath.replace(/\\/g, '/')
+  if (CONTENT_ALLOWLIST.some(re => re.test(p))) return content   // come scanFile
+  let out = content
+  for (const [name, re] of RULES) {
+    const rx = /** @type {RegExp} */ (re)
+    const g = new RegExp(rx.source, rx.flags.includes('g') ? rx.flags : rx.flags + 'g')
+    out = out.replace(g, (/** @type {string} */ hit, /** @type {any[]} */ ...rest) => {
+      if (name !== 'IP pubblico') return `[oscurato: ${name}]`
+      const index = /** @type {number} */ (rest.at(-2)), testo = /** @type {string} */ (rest.at(-1))
+      const m = /** @type {RegExpMatchArray} */ (Object.assign([hit], { index, input: testo }))
+      return DOC_IP_PREFIXES.some(d => hit.startsWith(d)) || versioneXml(p, testo, m) ? hit : `[oscurato: ${name}]`
+    })
+  }
+  return out
+}
+
 /** @param {string} root */
 function scanRepo(root) {
   const files = execFileSync('git', ['ls-files', '-z'], { cwd: root }).toString('utf8').split('\0').filter(Boolean)
@@ -91,7 +116,7 @@ function scanRepo(root) {
   return out
 }
 
-module.exports = { scanFile, scanRepo, DOC_IP_PREFIXES }
+module.exports = { scanFile, scanRepo, oscura, DOC_IP_PREFIXES }
 
 if (require.main === module) {
   const found = scanRepo(path.resolve(__dirname, '..', '..'))
