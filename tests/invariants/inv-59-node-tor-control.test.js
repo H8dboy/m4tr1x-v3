@@ -15,7 +15,7 @@ const fs = require('fs')
 const path = require('path')
 const net = require('net')
 const os = require('os')
-const { buildTorrc, hsDescLog, creaTracciatore, attendiAnnuncio, chiaveAccecataDalDescrittore, PUBBLICAZIONE_MINIMA } = require('../../node/src/tor')
+const { buildTorrc, hsDescLog, creaTracciatore, attendiAnnuncio, chiaveAccecataDalDescrittore, creaRichiestaAttuale, PUBBLICAZIONE_MINIMA } = require('../../node/src/tor')
 const { spawnSync } = require('child_process')
 const { startTestNode } = require('../helpers/node')
 
@@ -118,6 +118,72 @@ test('chiave accecata letta dal certificato del descrittore (solo byte, nessuna 
   assert.equal(chiaveAccecataDalDescrittore(testo.replace(b64, altro.toString('base64'))), null)
 })
 
+/** Descrittore minimo con la chiave accecata dentro (stessa struttura della prova sopra). */
+function descrittoreDiProva(/** @type {Buffer} */ accecata) {
+  const der = Buffer.concat([Buffer.from([1, 8, 0, 0, 0, 1, 1]), Buffer.alloc(32, 0x11), Buffer.from([1, 0, 32, 4, 0]), accecata, Buffer.alloc(64, 0x22)])
+  return `hs-descriptor 3\ndescriptor-signing-key-cert\n-----BEGIN ED25519 CERT-----\n${der.toString('base64')}\n-----END ED25519 CERT-----\n`
+}
+
+test('descrittore attuale non leggibile: il nodo richiede dopo pochi secondi, senza aspettare un id nuovo', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const svuota = () => new Promise(r => setImmediate(r))   // lascia finire le promesse (setImmediate non è finto)
+  const accecata = Buffer.alloc(32, 0x5a)
+  // tor risponde: 552 (non ancora costruito), 250 illeggibile, connessione che si rompe, 551, 551, 551, poi il descrittore
+  const risposte = [
+    { codice: 552, righe: ['Unknown onion service'] },
+    { codice: 250, righe: ['hs/service/desc/id/xxx=', 'hs-descriptor 3'] },
+    'errore',
+    { codice: 551, righe: [] }, { codice: 551, righe: [] }, { codice: 551, righe: [] },
+    { codice: 250, righe: [descrittoreDiProva(accecata)] },
+  ]
+  /** @type {string[]} */ const comandi = [], log = [], trovati = []
+  const r = creaRichiestaAttuale({
+    comando: async cmd => { comandi.push(cmd); const x = risposte.shift(); if (x === 'errore' || !x) throw new Error('connessione rotta'); return /** @type {any} */ (x) },
+    host: () => 'host-di-prova', log: s => log.push(s), trovato: id => trovati.push(id),
+  })
+  r.chiedi()
+  /** avanza di ms e verifica quante domande sono partite in tutto */
+  const dopo = async (/** @type {number} */ ms, /** @type {number} */ attese) => {
+    t.mock.timers.tick(ms); await svuota(); await svuota()
+    assert.equal(comandi.length, attese, `dopo altri ${ms} ms: ${comandi.length} domande invece di ${attese}`)
+  }
+  await dopo(1499, 0)
+  await dopo(1, 1)              // prima domanda a 1,5 s dall'id nuovo
+  await dopo(4999, 1); await dopo(1, 2)    // 552 → riprova a 5 s
+  await dopo(9999, 2); await dopo(1, 3)    // 250 illeggibile → 10 s
+  await dopo(19999, 3); await dopo(1, 4)   // connessione rotta → 20 s
+  await dopo(40000, 5)                      // 551 → 40 s
+  await dopo(60000, 6)                      // tetto 60 s (non 80)
+  await dopo(59999, 6); await dopo(1, 7)    // ancora 60 s, poi il descrittore
+  assert.deepEqual(trovati, [accecata.toString('base64').replace(/=+$/, '')])
+  assert.ok(comandi.every(c => c === 'GETINFO hs/service/desc/id/host-di-prova'))
+  assert.equal(log.filter(l => l.startsWith('tor: descrittore attuale non leggibile, riprovo tra')).length, 6, log.join('\n'))
+  assert.ok(log.at(-1) === 'tor: descrittore attuale individuato')
+  // letto: nessun'altra domanda finché non arriva un id nuovo
+  await dopo(600000, 7)
+
+  // spenta (connessione chiusa o nodo fermo): niente più domande, nemmeno quelle già in coda
+  const comandi2 = /** @type {string[]} */ ([])
+  const r2 = creaRichiestaAttuale({ comando: async c => { comandi2.push(c); return { codice: 552, righe: [] } }, host: () => 'h', log: () => {}, trovato: () => {} })
+  r2.chiedi(); t.mock.timers.tick(1500); await svuota(); await svuota()
+  assert.equal(comandi2.length, 1)
+  r2.ferma(); t.mock.timers.tick(600000); await svuota()
+  assert.equal(comandi2.length, 1, 'domande a tor dopo ferma()')
+  r2.chiedi(); t.mock.timers.tick(600000); await svuota()
+  assert.equal(comandi2.length, 1, 'chiedi() dopo ferma() ha riacceso le domande')
+
+  // chiusura mentre una domanda è già partita: la risposta tardiva non rimette in coda niente
+  /** @type {(v: any) => void} */ let rispondi = () => {}
+  const comandi3 = /** @type {string[]} */ ([]), log3 = /** @type {string[]} */ ([])
+  const r3 = creaRichiestaAttuale({ comando: c => { comandi3.push(c); return new Promise(res => { rispondi = res }) }, host: () => 'h', log: s => log3.push(s), trovato: () => {} })
+  r3.chiedi(); t.mock.timers.tick(1500); await svuota()
+  assert.equal(comandi3.length, 1)
+  r3.ferma(); rispondi({ codice: 552, righe: [] }); await svuota(); await svuota()
+  t.mock.timers.tick(600000); await svuota()
+  assert.equal(comandi3.length, 1, 'domanda a tor dopo una risposta arrivata a connessione chiusa')
+  assert.deepEqual(log3, [], 'riga di nuovo tentativo scritta dopo la chiusura')
+})
+
 test('la scheda si annuncia comunque dopo il tempo massimo (un nodo non resta invisibile)', async () => {
   assert.equal(await attendiAnnuncio(new Promise(() => {}), 50).esito, 'scadenza')
   assert.equal(await attendiAnnuncio(Promise.resolve(), 5000).esito, 'confermata')
@@ -183,7 +249,10 @@ test('con tor vero: cookie obbligatorio, niente fuori da 127.0.0.1, onion mai ne
     // deve averlo scelto uguale. RETE TOR (misurata, non rigida): quante conferme arrivano.
     const t4 = /** @type {any} */ (n.node._torForTests)
     const noto = await Promise.race([t4.attualeNoto.then(() => true), new Promise(r => setTimeout(() => r(false), 120000))])
-    assert.ok(noto, 'il nodo non ha chiesto a tor quale descrittore è l\'attuale entro 120 s dai primi caricamenti')
+    // MISURA: se fallisce, le ultime righe del nodo dicono se tor non ha caricato (rete)
+    // o se GETINFO è stato chiesto e non letto (codice). I log non contengono l'onion (provato sotto).
+    assert.ok(noto, 'il nodo non ha chiesto a tor quale descrittore è l\'attuale entro 120 s dai primi caricamenti\n' +
+      `ultime righe del nodo:\n${n.logs.filter(l => !l.includes(String(n.node.onion).replace(/\.onion$/, ''))).slice(-40).join('\n')}`)
     const host = String(n.node.onion).replace(/\.onion$/, '')
     // il descrittore che il nodo conta come ATTUALE è quello che tor dice attuale:
     // lo chiediamo qui, per conto nostro, con lo stesso cookie (stesso utente del nodo)

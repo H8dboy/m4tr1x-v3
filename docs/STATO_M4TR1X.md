@@ -118,7 +118,7 @@ flowchart TB
 ## 5. Difese (regole I-xx)
 
 <!-- AUTO:REGOLE:INIZIO -->
-_Generato da `npm run report` il 2026-10-20. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
+_Generato da `npm run report` il 2026-10-21. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
 
 **26 regole attive, 27 in attesa, 0 assenti.** Prove di sabotaggio: 64/66 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
 
@@ -176,7 +176,7 @@ _Generato da `npm run report` il 2026-10-20. Fonte: il codice dei test (`tests/i
 | I-50 | La mappa creator contiene solo HMAC(K17, pubkey) e il conto cifrato; | in attesa | F7 | — | — |
 | I-57 | Un ordine di ritiro al distributore non contiene dati personali; | in attesa | F10 | — | — |
 | I-58 | Finestra del seme: le 24 parole compaiono solo nella finestra del seme (pagina, script e capability propri; il lato Rust controlla anche … | attiva | F4 | `inv-58-seed-window.test.js` ✅ 5 verdi | 8/8 prese |
-| I-59 | Porta di controllo del tor del nodo | attiva | F2 | `inv-59-node-tor-control.test.js` ✅ 10 verdi | **nessuna prova di sabotaggio** |
+| I-59 | Porta di controllo del tor del nodo | attiva | F2 | `inv-59-node-tor-control.test.js` ✅ 11 verdi | **nessuna prova di sabotaggio** |
 
 **Divergenze tra documento e codice:** nessuna trovata.
 <!-- AUTO:REGOLE:FINE -->
@@ -290,50 +290,50 @@ Decise il 15/10/2026: Q1 (mance solo ai creator con split), Q2 (SEPA manuale a 1
 ### 11.1 Test automatici
 
 <!-- AUTO:TEST:INIZIO -->
-_Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-20._
+_Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-21._
 
-**Totale: 202 verdi, 0 falliti, 0 saltati, 27 in attesa.**
+**Totale: 203 verdi, 0 falliti, 0 saltati, 27 in attesa.**
 
 | File | Verdi | Falliti | Saltati | In attesa | Durata |
 |---|---|---|---|---|---|
-| `tests/integration/blob-replica.test.js` | 4 | 0 | 0 | 0 | 22.9 s |
-| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.5 s |
-| `tests/integration/feed-via-tor.test.js` | 1 | 0 | 0 | 0 | 646.2 s |
-| `tests/integration/two-nodes.test.js` | 2 | 0 | 0 | 0 | 24.4 s |
+| `tests/integration/blob-replica.test.js` | 4 | 0 | 0 | 0 | 22.8 s |
+| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.2 s |
+| `tests/integration/feed-via-tor.test.js` | 1 | 0 | 0 | 0 | 77.4 s |
+| `tests/integration/two-nodes.test.js` | 2 | 0 | 0 | 0 | 79.7 s |
 | `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 7.0 s |
-| `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.8 s |
-| `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.8 s |
+| `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.9 s |
+| `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.9 s |
 | `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.4 s |
-| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 4.7 s |
-| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.3 s |
-| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-15-no-h8-in-events.test.js` | 10 | 0 | 0 | 0 | 2.0 s |
-| `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.1 s |
-| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-25-deps.test.js` | 5 | 0 | 0 | 0 | 0.2 s |
-| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 6.8 s |
-| `tests/invariants/inv-28-secrets.test.js` | 19 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 0.8 s |
-| `tests/invariants/inv-31-no-keys-in-js.test.js` | 6 | 0 | 0 | 0 | 0.7 s |
-| `tests/invariants/inv-36-transport-only.test.js` | 6 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-37-tor-process.test.js` | 3 | 0 | 0 | 0 | 66.2 s |
-| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 8.1 s |
-| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 8.9 s |
+| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 5.2 s |
+| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.5 s |
+| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-15-no-h8-in-events.test.js` | 10 | 0 | 0 | 0 | 6.4 s |
+| `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 1.1 s |
+| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.3 s |
+| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.7 s |
+| `tests/invariants/inv-25-deps.test.js` | 5 | 0 | 0 | 0 | 0.3 s |
+| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 7.1 s |
+| `tests/invariants/inv-28-secrets.test.js` | 19 | 0 | 0 | 0 | 2.6 s |
+| `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 1.1 s |
+| `tests/invariants/inv-31-no-keys-in-js.test.js` | 6 | 0 | 0 | 0 | 1.7 s |
+| `tests/invariants/inv-36-transport-only.test.js` | 6 | 0 | 0 | 0 | 2.3 s |
+| `tests/invariants/inv-37-tor-process.test.js` | 3 | 0 | 0 | 0 | 18.2 s |
+| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 8.9 s |
+| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 9.1 s |
 | `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 5.8 s |
-| `tests/invariants/inv-58-seed-window.test.js` | 5 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-59-node-tor-control.test.js` | 10 | 0 | 0 | 0 | 41.2 s |
+| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 5.9 s |
+| `tests/invariants/inv-58-seed-window.test.js` | 5 | 0 | 0 | 0 | 1.4 s |
+| `tests/invariants/inv-59-node-tor-control.test.js` | 11 | 0 | 0 | 0 | 135.8 s |
 | `tests/invariants/pending.test.js` | 0 | 0 | 0 | 27 | 0.1 s |
-| `tests/unit/crash-log.test.js` | 2 | 0 | 0 | 0 | 0.7 s |
+| `tests/unit/crash-log.test.js` | 2 | 0 | 0 | 0 | 1.1 s |
 | `tests/unit/fasi-tor.test.js` | 2 | 0 | 0 | 0 | 0.1 s |
-| `tests/unit/feed.test.js` | 1 | 0 | 0 | 0 | 1.0 s |
+| `tests/unit/feed.test.js` | 1 | 0 | 0 | 0 | 2.1 s |
 | `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.3 s |
-| `tests/unit/profilo.test.js` | 1 | 0 | 0 | 0 | 1.3 s |
-| `tests/unit/protocol-vectors.test.js` | 3 | 0 | 0 | 0 | 0.7 s |
-| `tests/unit/report-esito.test.js` | 18 | 0 | 0 | 0 | 9.3 s |
+| `tests/unit/profilo.test.js` | 1 | 0 | 0 | 0 | 1.4 s |
+| `tests/unit/protocol-vectors.test.js` | 3 | 0 | 0 | 0 | 1.6 s |
+| `tests/unit/report-esito.test.js` | 18 | 0 | 0 | 0 | 9.4 s |
 | `tests/unit/runtime-sqlite.test.js` | 3 | 0 | 0 | 0 | 0.1 s |
 <!-- AUTO:TEST:FINE -->
 
@@ -397,7 +397,7 @@ _Generato da `npm run report` dallo storico di `npm run misura:tor` (misura a fr
 ## 12. Dipendenze
 
 <!-- AUTO:DIPENDENZE:INIZIO -->
-_Generato da `npm run report` il 2026-10-20, dal lockfile e da `npm audit`._
+_Generato da `npm run report` il 2026-10-21, dal lockfile e da `npm audit`._
 
 | Pacchetto | Uso | Dichiarata | Installata |
 |---|---|---|---|

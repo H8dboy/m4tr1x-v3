@@ -181,6 +181,47 @@ function chiaveAccecataDalDescrittore(testo) {
   return null
 }
 
+/**
+ * Domanda a tor "quale descrittore è l'attuale" (GETINFO hs/service/desc/id). Se la risposta
+ * non arriva o non si legge (descrittore non ancora costruito, codice 55x, risposta troncata)
+ * la rifà DA SOLA: dopo 5 s, poi 10, 20… fino a 60 s, finché non la legge. Prima si aspettava
+ * un id nuovo, che può non arrivare per ore (I-59). Un id nuovo fa ripartire da capo; ferma()
+ * la spegne quando la connessione di controllo si chiude o il nodo si ferma.
+ * @param {{ comando: (cmd: string) => Promise<{ codice: number, righe: string[] }>, host: () => string,
+ *   log: (s: string) => void, trovato: (id: string) => void, attesaMs?: number, riprovaMs?: number, riprovaMaxMs?: number }} o
+ */
+function creaRichiestaAttuale(o) {
+  const attesaMs = o.attesaMs ?? 1500, base = o.riprovaMs ?? 5000, max = o.riprovaMaxMs ?? 60000
+  /** @type {NodeJS.Timeout|null} */ let timer = null
+  let fallite = 0, spenta = false
+  const programma = (/** @type {number} */ ms) => { if (timer) clearTimeout(timer); timer = setTimeout(prova, ms) }
+  async function prova() {
+    timer = null
+    if (spenta) return
+    /** @type {string|null} */ let id = null
+    try {
+      const r = await o.comando(`GETINFO hs/service/desc/id/${o.host()}`)
+      id = r.codice === 250 ? chiaveAccecataDalDescrittore(r.righe.join('\n')) : null
+    } catch {}
+    if (spenta) return
+    if (!id) {
+      if (timer) return   // nel frattempo è arrivato un id nuovo: c'è già una domanda in coda
+      fallite++
+      const ms = Math.min(max, base * 2 ** (fallite - 1))
+      o.log(`tor: descrittore attuale non leggibile, riprovo tra ${Math.round(ms / 1000)} s (tentativo ${fallite})`)
+      programma(ms)
+      return
+    }
+    fallite = 0
+    o.log('tor: descrittore attuale individuato')
+    o.trovato(id)
+  }
+  return {
+    chiedi() { if (spenta) return; fallite = 0; programma(attesaMs) },
+    ferma() { spenta = true; if (timer) clearTimeout(timer); timer = null },
+  }
+}
+
 /** Permessi del cookie: solo l'utente del nodo (su Linux/macOS 0600; su Windows lo controlla I-59). */
 function restringiCookie(/** @type {string} */ file) {
   try { fs.chmodSync(file, 0o600) } catch {}
@@ -293,7 +334,6 @@ async function startTor(o) {
   async function collega() {
     tracciatore = creaTracciatore()   // tor ricarica i descrittori da capo
     let idNoti = 0
-    /** @type {NodeJS.Timeout|null} */ let chiedi = null
     const fatto = () => {
       const s = tracciatore.stato(), a = s.attuale
       o.log(`tor: descrittore onion pubblicato (periodo attuale: ${a?.caricati} HSDir su ${a?.caricamenti}, ${a ? a.caricamenti - a.risposte : 0} ancora senza risposta, ${a?.falliti} falliti; gruppi ${s.gruppi.join(' ')})`)
@@ -305,7 +345,8 @@ async function startTor(o) {
       c.once('error', reject)
     })
     sock = /** @type {net.Socket} */ (s)
-    /** @type {() => void} */ let chiediAttuale = () => {}
+    /** @type {ReturnType<typeof creaRichiestaAttuale>|null} */ let richiesta = null
+    const chiediAttuale = () => richiesta?.chiedi()
     const ctl = creaControllo(sock, line => {
       const ev = hsDescLog(line)
       if (!ev) return
@@ -315,18 +356,12 @@ async function startTor(o) {
       if (tracciatore.idVisti().length > idNoti) { idNoti = tracciatore.idVisti().length; chiediAttuale() }
       if (pubblicato) fatto()
     })
-    chiediAttuale = () => {
-      if (chiedi) clearTimeout(chiedi)
-      chiedi = setTimeout(async () => {
-        chiedi = null
-        const r = await ctl.comando(`GETINFO hs/service/desc/id/${onion.replace(/\.onion$/, '')}`)
-        const id = r.codice === 250 ? chiaveAccecataDalDescrittore(r.righe.join('\n')) : null
-        if (!id) { o.log('tor: descrittore attuale non leggibile'); return }
-        o.log('tor: descrittore attuale individuato')
-        segnaAttualeNoto()
-        if (tracciatore.impostaAttuale(id)) fatto()
-      }, 1500)
-    }
+    richiesta = creaRichiestaAttuale({
+      comando: cmd => ctl.comando(cmd), host: () => onion.replace(/\.onion$/, ''), log: o.log,
+      trovato: id => { segnaAttualeNoto(); if (tracciatore.impostaAttuale(id)) fatto() },
+    })
+    const questa = richiesta
+    sock.once('close', () => questa.ferma())
     const auth = await ctl.comando(`AUTHENTICATE ${cookie}`)
     if (auth.codice !== 250) throw new Error(`tor: porta di controllo, autenticazione rifiutata (${auth.codice})`)
     await ctl.comando('SETEVENTS HS_DESC')
@@ -375,4 +410,4 @@ async function startTor(o) {
   }
 }
 
-module.exports = { startTor, freePort, buildTorrc, hsDescLog, creaTracciatore, attendiAnnuncio, chiaveAccecataDalDescrittore, creaControllo, PUBBLICAZIONE_MINIMA }
+module.exports = { startTor, freePort, buildTorrc, hsDescLog, creaTracciatore, attendiAnnuncio, chiaveAccecataDalDescrittore, creaControllo, creaRichiestaAttuale, PUBBLICAZIONE_MINIMA }
