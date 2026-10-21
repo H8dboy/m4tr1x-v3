@@ -16,7 +16,9 @@
 const { TESTO } = require('./nodo')
 
 const BASE = 'http://127.0.0.1:4444'
-const ELEMENTO = 'element-6066-11e4-a52e-4f735a3d4f6e'
+// chiave del riferimento all'elemento nello standard W3C WebDriver ("web element identifier"); la prima
+// versione l'aveva scritta a memoria e sbagliata (CI del 21/10/2026: WebKitWebDriver risponde con questa)
+const ELEMENTO = 'element-6066-11e4-a52e-4f735466cecf'
 const pausa = (/** @type {number} */ ms) => new Promise(r => setTimeout(r, ms))
 
 /** @param {string} metodo @param {string} via @param {any} [corpo] */
