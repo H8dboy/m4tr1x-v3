@@ -285,6 +285,8 @@ module.exports = [
     test: 'tests/unit/report-esito.test.js' },
   { id: 'report-rilancio-senza-tor', rule: 'strumenti', name: 'bootstrap di tor fermo (fase "tor") non rilanciato', file: 'tools/report/esito.js',
     find: '(pubblicazione|rete|tor)(?:-[ab])?', replace: '(pubblicazione|rete)', test: 'tests/unit/report-esito.test.js' },
+  { id: 'report-rilancio-backtick', rule: 'strumenti', name: 'errore di rete tra backtick (con \' e ") non rilanciato', file: 'tools/report/esito.js',
+    find: "(?:\\|-?\\s*\\n\\s+|'|\"|`)fase", replace: "(?:\\|-?\\s*\\n\\s+|'|\")fase", test: 'tests/unit/report-esito.test.js' },
   { id: 'report-rilancio-due-volte', rule: 'strumenti', name: 'rilancio ripetuto finché passa', file: 'tools/report/esito.js',
     find: '  const secondo = eseguiFile(rel, o)\n', replace: '  let secondo = eseguiFile(rel, { ...o, conOutput: true })\n  for (let i = 0; i < 3 && secondo.fail; i++) secondo = eseguiFile(rel, { ...o, conOutput: true })\n',
     test: 'tests/unit/report-esito.test.js' },

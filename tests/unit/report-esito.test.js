@@ -115,6 +115,18 @@ test('fase "tor" (bootstrap fermo) e "tor-a"/"tor-b": un rilancio come la rete (
   }
 })
 
+// CI del 21/10/2026 (ramo f4-i01-dinamica): Node scrive l'errore tra BACKTICK quando contiene sia ' sia ";
+// il rosso di rete "fase "tor"… dell'app…" non si rilanciava. Testo preso dal log vero.
+test('errore di fase "tor" tra backtick (contiene \' e "): si rilancia', () => {
+  const { faseDiRete } = require('../../tools/report/esito')
+  const out = 'TAP version 13\nnot ok 1 - il feed dell\'app legge via Tor\n  ---\n  duration_ms: 235305\n' +
+    '  error: `fase "tor": il tor dell\'app non ha finito il bootstrap: avvio di Tor fallito: bootstrap fermo al 30%`\n' +
+    '  code: \'ERR_ASSERTION\'\n  ...\n1..1\n# fail 1\n'
+  assert.equal(faseDiRete(/** @type {any} */ ({ fail: 1, problema: 'codice di uscita 1' }), out), 'tor')
+  // tra backtick ma fase del nostro codice: nessun rilancio
+  assert.equal(faseDiRete(/** @type {any} */ ({ fail: 1, problema: 'codice di uscita 1' }), out.replace('fase "tor"', 'fase "file"')), null)
+})
+
 test('una fase che INIZIA con "tor" ma non lo è: nessun rilancio', () => {
   const { t, giri } = conRilancio('rete', 1, 60000, 'torre')
   assert.equal(giri, 1)

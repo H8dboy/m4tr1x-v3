@@ -107,7 +107,9 @@ function eseguiFile(rel, o) {
 // un errore che CITA la frase ("manca la fase "pubblicazione"") non è un rosso di rete (20/10/2026).
 // "tor" (fondatore, 20/10/2026): il bootstrap di tor fermo (es. "fermo al 53%") è la rete Tor, non il nostro
 // codice. "tor-a"/"tor-b" della prova dei due nodi contano come "tor".
-const FASE_DI_RETE = /^\s+error: (?:\|-?\s*\n\s+|'|")fase \\?"(pubblicazione|rete|tor)(?:-[ab])?\\?"/m
+// Backtick (21/10/2026): Node scrive l'errore tra ` quando contiene sia ' sia " (`fase "tor": …dell'app…`);
+// senza, ogni rosso di rete con un apostrofo non si rilanciava mai.
+const FASE_DI_RETE = /^\s+error: (?:\|-?\s*\n\s+|'|"|`)fase \\?"(pubblicazione|rete|tor)(?:-[ab])?\\?"/m
 
 /**
  * La fase di rete se TUTTI i test falliti del file sono caduti in una fase di rete; altrimenti null.

@@ -27,8 +27,14 @@ async function wd(metodo, via, corpo) {
   return j.value
 }
 
-/** @param {string} s @param {string} css */
-const elemento = async (s, css) => (await wd('POST', `/session/${s}/element`, { using: 'css selector', value: css }))[ELEMENTO]
+/** Riferimento all'elemento; se la risposta non ce l'ha, errore SUBITO con la risposta vera (CI del 21/10/2026:
+ * "ok" senza riferimento, poi 300 s di attese su "undefined"). @param {string} s @param {string} css */
+async function elemento(s, css) {
+  const v = await wd('POST', `/session/${s}/element`, { using: 'css selector', value: css })
+  const id = v && typeof v === 'object' ? v[ELEMENTO] : undefined
+  if (typeof id !== 'string' || !id) throw new Error(`WebDriver: "${css}" senza riferimento all'elemento, risposta ${JSON.stringify(v).slice(0, 300)}`)
+  return id
+}
 /** @param {string} s @param {string} css */
 const testo = async (s, css) => String(await wd('GET', `/session/${s}/element/${await elemento(s, css)}/text`))
 
@@ -37,7 +43,10 @@ async function aspetta(/** @type {() => Promise<any>} */ cond, /** @type {number
   const t0 = Date.now()
   let ultimo = ''
   while (Date.now() - t0 < ms) {
-    try { const v = await cond(); if (v) return { valore: v, secondi: Math.round((Date.now() - t0) / 1000) } } catch (e) { ultimo = String(/** @type {Error} */ (e).message) }
+    try { const v = await cond(); if (v) return { valore: v, secondi: Math.round((Date.now() - t0) / 1000) } } catch (e) {
+      ultimo = String(/** @type {Error} */ (e).message)
+      if (ultimo.includes('senza riferimento all\'elemento')) throw e   // errore del client: aspettare non serve
+    }
     await pausa(1000)
   }
   throw new Error(`${nome}: niente entro ${ms / 1000} s${ultimo ? ` (ultimo errore: ${ultimo})` : ''}`)
@@ -50,6 +59,9 @@ async function main() {
   await aspetta(async () => (await fetch(`${BASE}/status`)).ok, 60000, 'fase "webdriver": tauri-driver non risponde')
   const sessione = await aspetta(async () => (await wd('POST', '/session', { capabilities: { alwaysMatch: { 'tauri:options': { application: app } } } })).sessionId, 120000, 'fase "webdriver": sessione non aperta')
   const s = sessione.valore
+  // cosa ha caricato la finestra (per capire un "elemento non trovato")
+  const dove = async () => `pagina ${JSON.stringify(await wd('GET', `/session/${s}/url`).catch(e => String(e.message)))} titolo ${JSON.stringify(await wd('GET', `/session/${s}/title`).catch(e => String(e.message)))}`
+  console.log(`sessione aperta in ${sessione.secondi} s: ${await dove()}`)
   try {
     const tor = await aspetta(async () => {
       const t = await testo(s, '#trasporto')
@@ -61,6 +73,7 @@ async function main() {
     const feed = await aspetta(async () => (await testo(s, '#feed-lista')).includes(TESTO), 480000, 'fase "rete": il post del nodo non è arrivato nel feed')
     console.log(`feed letto via Tor in ${feed.secondi} s: post del nodo presente`)
   } catch (e) {
+    console.error(await dove().catch(() => 'pagina non leggibile'))
     try { console.error(`stato del feed: ${await testo(s, '#feed-stato')}`) } catch {}
     throw e
   } finally {
