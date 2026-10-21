@@ -62,4 +62,33 @@ function esitoSabotaggio(base, l, tempo) {
   return { outcome: 'presa', detail: `fail ${l.fail}` }
 }
 
-module.exports = { leggi, problemaBase, esitoSabotaggio }
+/**
+ * Prove di difese che esistono su UNA piattaforma (21/10/2026: 0700 e ambiente pulito su Linux, ACL su
+ * Windows): altrove il codice sabotato non è nemmeno compilato e risulterebbe "sfuggita" senza motivo.
+ * Esito `altra-piattaforma`: visibile nel report, MAI contato come presa, non fa fallire la campagna.
+ * @param {{ piattaforma?: string }} m @param {string} qui process.platform
+ * @returns {{ outcome: 'altra-piattaforma', detail: string } | null}
+ */
+function fuoriPiattaforma(m, qui) {
+  if (!m.piattaforma || m.piattaforma === qui) return null
+  return { outcome: 'altra-piattaforma', detail: `prova solo per ${m.piattaforma}: non eseguita su ${qui}, va eseguita lì` }
+}
+
+/**
+ * Quali prove eseguire. Senza argomenti: tutte (campagna completa, salvata). `<testo>`: quelle il cui id lo
+ * contiene (parziale). `--piattaforma-attuale` (21/10/2026, job CI per le difese di una sola piattaforma):
+ * SOLO quelle segnate per questa piattaforma (parziale). Nessuna prova scelta = errore, mai un verde vuoto.
+ * @template {{ id: string, piattaforma?: string }} M
+ * @param {M[]} tutte @param {string|undefined} arg @param {string} qui
+ * @returns {{ scelte: M[], parziale: boolean }}
+ */
+function scegli(tutte, arg, qui) {
+  const scelte = arg === '--piattaforma-attuale' ? tutte.filter(m => m.piattaforma === qui) : tutte.filter(m => m.id.includes(arg || ''))
+  if (!scelte.length) throw new Error(`nessuna prova di sabotaggio scelta (${arg || 'tutte'} su ${qui}): niente da dimostrare`)
+  return { scelte, parziale: !!arg }
+}
+
+/** Esiti che fanno fallire la campagna: tutto tranne `presa` e `altra-piattaforma`. */
+const nonPassa = (/** @type {string} */ outcome) => outcome !== 'presa' && outcome !== 'altra-piattaforma'
+
+module.exports = { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonPassa, scegli }

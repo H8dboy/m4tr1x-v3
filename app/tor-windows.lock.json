@@ -1,10 +1,19 @@
 {
-  "_nota": "Tor per Windows incluso nell'app (ADR-0016, I-37). Il binario non sta nel repo: si scarica dal Tor Project e si confrontano questi hash prima di usarlo. Cambiare versione = cambiare questo file in review.",
+  "_nota": "Tor per Windows incluso nell'app (ADR-0016, I-37). Il binario non sta nel repo: si scarica dal Tor Project e si confrontano questi hash prima di usarlo. tor.exe del bundle Windows è un file unico (nessuna DLL accanto). L'app avvia tor solo dalla sua copia verificata. Cambiare versione = cambiare questo file in review.",
   "tor_version": "0.4.9.11",
   "bundle": "tor-expert-bundle-windows-x86_64-15.0.21.tar.gz",
   "bundle_url": "https://archive.torproject.org/tor-package-archive/torbrowser/15.0.21/tor-expert-bundle-windows-x86_64-15.0.21.tar.gz",
   "bundle_sha256": "f22b8b17cb18c9fa775dfcf68acf6a2fe788336535fe94645204ca85158aa490",
-  "tor_exe_path_in_bundle": "tor/tor.exe",
-  "tor_exe_sha256": "25760af65f16504e8b5cfe4b9c6a84a003a19d60855abeb90987cc628f05c069",
-  "_verifica": "bundle_sha256 confrontato con sha256sums-signed-build.txt di Tor Browser 15.0.21 il 15/10/2026. La firma GPG di quel file NON è stata ancora verificata: da fare con lo strumento di fetch (F8)."
+  "tor_path_in_bundle": "tor/tor.exe",
+  "tor_sha256": "25760af65f16504e8b5cfe4b9c6a84a003a19d60855abeb90987cc628f05c069",
+  "librerie": {},
+  "firma": {
+    "_verifica": "bundle_sha256 confrontato con sha256sums-signed-build.txt di Tor Browser 15.0.21 il 15/10/2026. Firma GPG di quel file verificata il 21/10/2026: VALIDA (GOODSIG/VALIDSIG). Chiave scaricata da keys.openpgp.org e, a parte, dal WKD di torproject.org (il metodo della pagina ufficiale): le due copie coincidono. Impronta della chiave primaria confrontata con https://support.torproject.org/tbb/how-to-verify-signature/.",
+    "chiave_primaria": "EF6E286DDA85EA2A4BA7DE684E2C6E8793298290",
+    "sottochiave_che_ha_firmato": "CAAE408AEBE2288E96FC5D5E157432CF78A65729",
+    "sottochiave_che_ha_firmato_scade": "2026-10-26",
+    "sottochiave_nuova": "022DA248432D2A0E0F54E65E316C1FACD62D07D9",
+    "sottochiave_nuova_scade": "2028-11-28",
+    "_sottochiave_nuova": "Dalla prossima versione le firme arriveranno dalla sottochiave nuova (creata l'11/08/2026): impronta letta dalla chiave del WKD di torproject.org e da keys.openpgp.org, uguale nelle due, legata alla primaria qui sopra."
+  }
 }

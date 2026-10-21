@@ -6,7 +6,7 @@
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { leggi, problemaBase, esitoSabotaggio } = require('../../tools/sabotage/esito')
+const { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonPassa, scegli } = require('../../tools/sabotage/esito')
 
 const tap = (/** @type {number} */ pass, /** @type {number} */ fail) => `TAP version 13\nok 1 - a\n# tests ${pass + fail}\n# pass ${pass}\n# fail ${fail}\n`
 
@@ -37,6 +37,35 @@ test('con la base verde: caduto = presa, tutto verde = sfuggita, non compila / t
   assert.equal(esitoSabotaggio(null, leggi(tap(2, 1) + 'could not compile `x`\n'), 1000).outcome, 'non-compila')
   assert.equal(esitoSabotaggio(null, leggi(tap(2, 1) + 'timed out after 1000ms\n'), 1000).outcome, 'interrotta')
   assert.equal(esitoSabotaggio(null, leggi(tap(2, 1), new Error('x')), 1000).outcome, 'interrotta')
+})
+
+test('prova di un\'altra piattaforma: non eseguita, mai "presa", non fa fallire la campagna', () => {
+  assert.equal(fuoriPiattaforma({}, 'win32'), null)
+  assert.equal(fuoriPiattaforma({ piattaforma: 'linux' }, 'linux'), null)
+  const e = fuoriPiattaforma({ piattaforma: 'linux' }, 'win32')
+  assert.equal(e?.outcome, 'altra-piattaforma')
+  assert.equal(nonPassa('presa'), false)
+  assert.equal(nonPassa('altra-piattaforma'), false)
+  for (const o of ['sfuggita', 'base-rossa', 'non-compila', 'interrotta', 'non-applicabile']) assert.equal(nonPassa(o), true, o)
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'tools', 'sabotage', 'run.js'), 'utf8')
+  // il testo della prova si controlla PRIMA della piattaforma: una prova Linux che invecchia si vede anche su Windows
+  assert.ok(src.indexOf("outcome: 'non-applicabile'") < src.indexOf('fuoriPiattaforma(m, process.platform)'), 'piattaforma controllata prima del testo')
+  assert.ok(src.indexOf('fuoriPiattaforma(m, process.platform)') < src.indexOf('const problema = base(m.test)'), 'piattaforma controllata dopo la base')
+})
+
+test('scelta delle prove: tutte, per id, solo questa piattaforma; nessuna scelta = errore', () => {
+  const M = [{ id: 'i37-a' }, { id: 'i37-b', piattaforma: 'linux' }, { id: 'i58-c', piattaforma: 'win32' }]
+  assert.deepEqual(scegli(M, undefined, 'linux'), { scelte: M, parziale: false })
+  assert.deepEqual(scegli(M, 'i37', 'linux').scelte.map(m => m.id), ['i37-a', 'i37-b'])
+  const lin = scegli(M, '--piattaforma-attuale', 'linux')
+  assert.deepEqual(lin.scelte.map(m => m.id), ['i37-b'])
+  assert.equal(lin.parziale, true, 'una corsa per piattaforma non deve sovrascrivere la campagna completa')
+  assert.deepEqual(scegli(M, '--piattaforma-attuale', 'win32').scelte.map(m => m.id), ['i58-c'])
+  assert.throws(() => scegli(M, '--piattaforma-attuale', 'darwin'), /nessuna prova/, 'job senza prove = verde vuoto')
+  assert.throws(() => scegli(M, 'inesistente', 'linux'), /nessuna prova/)
+  // le prove vere: su Linux ce ne sono, quindi il job CI ha qualcosa da eseguire
+  const tutte = require('../../tools/sabotage/mutations')
+  assert.ok(scegli(tutte, '--piattaforma-attuale', 'linux').scelte.length >= 2, 'nessuna prova Linux per il job sabotaggio-linux')
 })
 
 test('il runner chiede la base PRIMA di applicare il sabotaggio e salta le prove con base rossa', () => {

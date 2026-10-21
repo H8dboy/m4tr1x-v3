@@ -1,8 +1,12 @@
-//! `TorProcessTransport` — Windows (ADR-0016, I-37).
+//! `TorProcessTransport` — tutto il desktop: Windows, Linux (macOS con il suo lock) (ADR-0016
+//! aggiornata il 21/10/2026, I-37).
 //!
 //! L'app avvia il `tor` classico incluso nel pacchetto e ci parla via SOCKS5 e
 //! porta di controllo. Cosa garantisce (I-37, corretta il 16/10/2026):
-//!   - binario con hash SHA-256 fissato, controllato PRIMA di avviarlo;
+//!   - binario (e su Linux le sue librerie) con hash SHA-256 fissato, controllato PRIMA di avviarlo:
+//!     ogni file si legge UNA volta in memoria, si verifica lì, si scrive in una cartella dell'app
+//!     solo-proprietario e tor parte da quella copia (niente sostituzioni tra verifica e avvio,
+//!     21/10/2026); su Linux con l'ambiente pulito (niente LD_PRELOAD ereditati);
 //!   - SOCKS e controllo solo su 127.0.0.1, porte scelte da tor all'avvio (`auto`);
 //!   - SOCKS con `OnionTrafficOnly`: chiunque lo usi raggiunge solo onion, mai host in chiaro;
 //!   - credenziali SOCKS casuali per sessione + `IsolateSOCKSAuth`: senza le nostre
@@ -21,42 +25,260 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 
-/// Configurazione: da dove viene tor, che hash deve avere, dove tiene i dati.
+/// Configurazione: da dove viene tor, che hash devono avere lui e le sue librerie, dove tiene i dati.
 #[derive(Clone, Debug)]
 pub struct TorProcessConfig {
     pub tor_bin: PathBuf,
-    /// SHA-256 atteso del binario, esadecimale minuscolo (da `app/tor-windows.lock.json`).
+    /// SHA-256 atteso del binario, esadecimale minuscolo (dal lock della piattaforma).
     pub tor_sha256: String,
-    /// Cartella dati dell'app: tor usa `<data_dir>/tor`, mai condivisa con altri Tor.
+    /// Librerie che tor carica, cercate ACCANTO a `tor_bin`: (nome del file, SHA-256 atteso). Linux: libcrypto,
+    /// libssl, libevent del bundle (tor non ha RPATH: le trova solo con LD_LIBRARY_PATH). Windows: nessuna.
+    pub librerie: Vec<(String, String)>,
+    /// Cartella dati dell'app: tor usa `<data_dir>/tor`, mai condivisa con altri Tor; la copia verificata
+    /// dei binari sta in `<data_dir>/tor-bin`.
     pub data_dir: PathBuf,
     /// Tempo massimo per arrivare al 100% del bootstrap.
     pub bootstrap_timeout: Duration,
 }
 
-/// Lock del tor per Windows (`app/tor-windows.lock.json`), incluso nel programma alla COMPILAZIONE:
-/// l'hash atteso non si legge da disco mentre l'app gira, quindi non si può cambiare accanto all'app.
-const LOCK_TOR_WINDOWS: &str = include_str!("../../tor-windows.lock.json");
+/// Lock del tor della piattaforma, incluso nel programma alla COMPILAZIONE: gli hash attesi non si leggono
+/// da disco mentre l'app gira, quindi non si possono cambiare accanto all'app. macOS: lock da aggiungere,
+/// fino ad allora il trasporto resta spento.
+#[cfg(windows)]
+const LOCK_TOR: Option<&str> = Some(include_str!("../../tor-windows.lock.json"));
+#[cfg(target_os = "linux")]
+const LOCK_TOR: Option<&str> = Some(include_str!("../../tor-linux.lock.json"));
+#[cfg(not(any(windows, target_os = "linux")))]
+const LOCK_TOR: Option<&str> = None;
 
-/// SHA-256 fissato del tor.exe che l'app accetta (campo `tor_exe_sha256` del lock).
-pub fn sha256_tor_windows() -> String {
-    let v: serde_json::Value = serde_json::from_str(LOCK_TOR_WINDOWS).expect("app/tor-windows.lock.json non valido");
-    let h = v["tor_exe_sha256"].as_str().expect("tor_exe_sha256 mancante nel lock").to_owned();
-    assert!(h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "tor_exe_sha256 non è un SHA-256");
-    h
+/// Nome del file di lock della piattaforma (per le prove), se c'è.
+pub const FILE_LOCK: Option<&str> = if cfg!(windows) {
+    Some("tor-windows.lock.json")
+} else if cfg!(target_os = "linux") {
+    Some("tor-linux.lock.json")
+} else {
+    None
+};
+
+/// Hash fissati da un lock: (sha256 di tor, librerie). Panico se il lock è malformato: è nel programma,
+/// un lock rotto è un errore di build, non di chi usa l'app.
+pub fn leggi_lock(json: &str) -> (String, Vec<(String, String)>) {
+    let v: serde_json::Value = serde_json::from_str(json).expect("lock di tor non valido");
+    let hash = |h: &str| {
+        assert!(h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "{h} non è un SHA-256");
+        h.to_owned()
+    };
+    let tor = hash(v["tor_sha256"].as_str().expect("tor_sha256 mancante nel lock"));
+    let librerie = v["librerie"]
+        .as_object()
+        .expect("librerie mancanti nel lock")
+        .iter()
+        .map(|(nome, h)| {
+            assert!(!nome.is_empty() && !nome.contains(['/', '\\']) && nome != "." && nome != "..", "nome di libreria non valido: {nome}");
+            (nome.clone(), hash(h.as_str().expect("hash della libreria non è testo")))
+        })
+        .collect();
+    (tor, librerie)
+}
+
+/// Gli hash del lock della piattaforma, se c'è.
+pub fn lock_tor() -> Option<(String, Vec<(String, String)>)> {
+    LOCK_TOR.map(leggi_lock)
 }
 
 impl TorProcessConfig {
     /// Configurazione dell'APP: tor da `tor_bin` (in F4 la variabile `M4TR1X_TOR_BIN`; dall'installer in F8),
-    /// hash SOLO dal lock, cartella dati dell'app, 180 s per il bootstrap (come il nodo).
-    /// `None` se tor non è indicato: il trasporto resta spento e l'app lo mostra.
+    /// hash SOLO dal lock della piattaforma, cartella dati dell'app, 180 s per il bootstrap (come il nodo).
+    /// `None` se tor non è indicato o la piattaforma non ha ancora un lock: il trasporto resta spento.
     pub fn per_l_app(tor_bin: Option<PathBuf>, data_dir: PathBuf) -> Option<Self> {
+        let (tor_sha256, librerie) = lock_tor()?;
         Some(Self {
             tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,
-            tor_sha256: sha256_tor_windows(),
+            tor_sha256,
+            librerie,
             data_dir,
             bootstrap_timeout: Duration::from_secs(180),
         })
     }
+}
+
+/// Cartella con la copia verificata di tor (e librerie) da cui l'app lo avvia.
+pub fn cartella_binari(data_dir: &Path) -> PathBuf {
+    data_dir.join("tor-bin")
+}
+
+/// Un collegamento da NON attraversare: link simbolico, e su Windows qualsiasi punto di analisi
+/// (junction, link, segnaposto del cloud). Se ne cancella solo il collegamento, mai il contenuto.
+fn e_collegamento(m: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        m.file_type().is_symlink() || m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        m.file_type().is_symlink()
+    }
+}
+
+/// Cancella `p` senza mai seguire link o junction: un collegamento si toglie da solo (il suo bersaglio
+/// resta com'è), una cartella vera si svuota voce per voce con la stessa regola.
+pub fn rimuovi_senza_seguire(p: &Path) -> std::io::Result<()> {
+    let m = match std::fs::symlink_metadata(p) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if e_collegamento(&m) {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
+            // junction e link a cartella: remove_dir toglie il collegamento, non entra nel bersaglio
+            return if m.file_attributes() & FILE_ATTRIBUTE_DIRECTORY != 0 { std::fs::remove_dir(p) } else { std::fs::remove_file(p) };
+        }
+        #[cfg(not(windows))]
+        return std::fs::remove_file(p);
+    }
+    if m.is_dir() {
+        for voce in std::fs::read_dir(p)? {
+            rimuovi_senza_seguire(&voce?.path())?;
+        }
+        std::fs::remove_dir(p)
+    } else {
+        std::fs::remove_file(p)
+    }
+}
+
+/// Crea la cartella (che NON deve esistere) leggibile e scrivibile solo dal proprietario. Linux: 0700.
+/// Windows: ACL esplicita e PROTETTA (nessuna ereditarietà dalla cartella sopra), un solo accesso
+/// completo per l'utente che esegue l'app, ereditato da file e sottocartelle.
+fn crea_cartella_solo_proprietario(p: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(p)
+    }
+    #[cfg(windows)]
+    {
+        acl_windows::crea_cartella(p)
+    }
+}
+
+#[cfg(windows)]
+mod acl_windows {
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+    use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE};
+    use windows_sys::Win32::Security::Authorization::{ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1};
+    use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER};
+    use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
+        s.encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    /// SID dell'utente che esegue l'app, come testo (S-1-5-21-…).
+    pub fn sid_utente() -> std::io::Result<String> {
+        // SAFETY: chiamate Win32 con buffer della dimensione chiesta dal sistema; handle chiuso, memoria liberata
+        unsafe {
+            let mut token: HANDLE = std::ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let mut n = 0u32;
+            GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut n);
+            let mut buf = vec![0u8; n as usize];
+            let ok = GetTokenInformation(token, TokenUser, buf.as_mut_ptr().cast(), n, &mut n);
+            CloseHandle(token);
+            if ok == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let utente = &*(buf.as_ptr() as *const TOKEN_USER);
+            let mut s: *mut u16 = std::ptr::null_mut();
+            if ConvertSidToStringSidW(utente.User.Sid, &mut s) == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let len = (0..).take_while(|&i| *s.add(i) != 0).count();
+            let testo = String::from_utf16_lossy(std::slice::from_raw_parts(s, len));
+            LocalFree(s.cast());
+            Ok(testo)
+        }
+    }
+
+    pub fn crea_cartella(p: &Path) -> std::io::Result<()> {
+        // D:P = DACL protetta (niente ereditato da sopra); OICI = vale anche per file e sottocartelle; FA = tutto.
+        // P è una difesa doppia: con una DACL esplicita Windows non eredita comunque, nemmeno se dopo si
+        // aggiunge un permesso ereditabile alla cartella sopra (misurato il 21/10/2026). Ciò che conta è
+        // passare il descrittore: senza, la cartella erediterebbe l'ACL del profilo.
+        let sddl = wide(std::ffi::OsStr::new(&format!("D:P(A;OICI;FA;;;{})", sid_utente()?)));
+        // SAFETY: descrittore creato dal sistema, usato per una sola CreateDirectoryW, poi liberato
+        unsafe {
+            let mut sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+            if ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let sa = SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: sd, bInheritHandle: 0 };
+            let ok = CreateDirectoryW(wide(p.as_os_str()).as_ptr(), &sa);
+            let err = std::io::Error::last_os_error();
+            LocalFree(sd);
+            if ok == 0 {
+                return Err(err);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+pub use acl_windows::sid_utente;
+
+/// Prepara la copia da cui tor parte (I-37, 21/10/2026, contro le sostituzioni tra verifica e avvio):
+///  1. legge tor e ogni libreria UNA volta in memoria e ne verifica l'hash sui byte letti — se uno è
+///     sbagliato o manca, si ferma qui senza aver toccato il disco;
+///  2. cancella la vecchia `tor-bin` senza seguire link o junction;
+///  3. la ricrea solo-proprietario e ci scrive i byte VERIFICATI con "crea nuovo" (fallisce se qualcosa
+///     esiste già: nessun collegamento preparato da altri viene seguito).
+///
+/// Restituisce il percorso del tor copiato. Chi gira con lo STESSO utente può comunque toccare la copia:
+/// fuori dal modello delle minacce (un programma così ha già in mano l'utente, I-37).
+pub fn prepara_binari(cfg: &TorProcessConfig) -> Result<PathBuf> {
+    let sorgente = cfg.tor_bin.parent().ok_or_else(|| err_avvio("percorso di tor senza cartella"))?;
+    let nome_tor = cfg.tor_bin.file_name().ok_or_else(|| err_avvio("percorso di tor senza nome"))?.to_os_string();
+    let mut file = vec![(nome_tor.clone(), cfg.tor_bin.clone(), cfg.tor_sha256.to_ascii_lowercase(), true)];
+    for (nome, h) in &cfg.librerie {
+        file.push((nome.into(), sorgente.join(nome), h.to_ascii_lowercase(), false));
+    }
+    // 1. lettura unica e verifica in memoria
+    let mut verificati = Vec::with_capacity(file.len());
+    for (nome, da, atteso, eseguibile) in file {
+        let byte = std::fs::read(&da).map_err(|e| err_avvio(format!("{} non leggibile: {e}", nome.to_string_lossy())))?;
+        if hex(&Sha256::digest(&byte)) != atteso {
+            return Err(err_avvio(format!("hash di {} diverso da quello fissato", nome.to_string_lossy())));
+        }
+        verificati.push((nome, byte, eseguibile));
+    }
+    // 2–3. cartella nuova solo-proprietario, byte verificati scritti lì
+    let dest = cartella_binari(&cfg.data_dir);
+    std::fs::create_dir_all(&cfg.data_dir).map_err(err_avvio)?;
+    rimuovi_senza_seguire(&dest).map_err(|e| err_avvio(format!("vecchia copia di tor non cancellabile: {e}")))?;
+    crea_cartella_solo_proprietario(&dest).map_err(|e| err_avvio(format!("cartella dei binari di tor: {e}")))?;
+    for (nome, byte, eseguibile) in verificati {
+        let mut o = std::fs::OpenOptions::new();
+        o.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            o.mode(if eseguibile { 0o500 } else { 0o400 });
+        }
+        #[cfg(not(unix))]
+        let _ = eseguibile;
+        use std::io::Write;
+        o.open(dest.join(&nome)).and_then(|mut f| f.write_all(&byte)).map_err(|e| err_avvio(format!("copia di {}: {e}", nome.to_string_lossy())))?;
+    }
+    Ok(dest.join(nome_tor))
 }
 
 struct Running {
@@ -164,18 +386,21 @@ impl TorProcessTransport {
     }
 
     async fn start(&self) -> Result<Running> {
-        // 1. hash del binario PRIMA di eseguirlo
-        let actual = sha256_file(&self.cfg.tor_bin).map_err(err_avvio)?;
-        if actual != self.cfg.tor_sha256.to_ascii_lowercase() {
-            return Err(err_avvio("hash del binario tor diverso da quello fissato"));
-        }
+        // 1. hash di tor e librerie verificati sui byte letti, copia solo-proprietario: si avvia QUELLA
+        let tor = prepara_binari(&self.cfg)?;
         let dir = self.cfg.data_dir.join("tor");
         std::fs::create_dir_all(&dir).map_err(err_avvio)?;
         let port_file = dir.join("control.port");
         let cookie_file = dir.join("control.cookie");
         let _ = std::fs::remove_file(&port_file);
 
-        let mut cmd = Command::new(&self.cfg.tor_bin);
+        let mut cmd = Command::new(&tor);
+        #[cfg(target_os = "linux")]
+        {
+            // ambiente pulito: niente LD_PRELOAD/LD_AUDIT ereditati dentro un tor verificato; le librerie
+            // si cercano SOLO nella copia verificata (poi quelle di base del sistema: libc, libz, libm)
+            cmd.env_clear().env("LD_LIBRARY_PATH", tor.parent().expect("tor è dentro tor-bin"));
+        }
         cmd.arg("--ignore-missing-torrc")
             // nessun torrc di sistema: solo questi argomenti (i due file indicati non esistono)
             .args(["-f", &dir.join("nessun-torrc").to_string_lossy()])

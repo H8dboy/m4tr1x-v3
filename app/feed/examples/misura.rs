@@ -20,6 +20,7 @@ async fn main() {
     let bin = std::path::PathBuf::from(std::env::var("M4TR1X_TOR_BIN").expect("M4TR1X_TOR_BIN"));
     let t = TorProcessTransport::new(TorProcessConfig {
         tor_sha256: sha256_file(&bin).expect("hash di tor"),
+        librerie: vec![],
         tor_bin: bin,
         data_dir: dati,
         bootstrap_timeout: Duration::from_secs(180),

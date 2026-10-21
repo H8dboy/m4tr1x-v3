@@ -11,6 +11,8 @@
  *
  * Uso: npm run sabotage            (usa la versione di Node fissata)
  *      npm run sabotage -- i26     (solo le prove il cui id contiene "i26")
+ *      npm run sabotage -- --piattaforma-attuale   (solo le prove delle difese di QUESTA piattaforma: job CI
+ *                                                   "sabotaggio-linux"; nessuna prova scelta = errore)
  */
 const fs = require('fs')
 const os = require('os')
@@ -18,11 +20,11 @@ const path = require('path')
 const crypto = require('crypto')
 const { spawnSync } = require('child_process')
 const MUTATIONS = require('./mutations')
-const { leggi, problemaBase, esitoSabotaggio } = require('./esito')
+const { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonPassa, scegli } = require('./esito')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const OUT = path.join(ROOT, 'docs', 'generated', 'sabotage.json')
-const filter = process.argv[2] || ''
+const { scelte, parziale } = scegli(MUTATIONS, process.argv[2], process.platform)
 const sha = (/** @type {string} */ s) => crypto.createHash('sha256').update(s).digest('hex')
 
 /** @type {Map<string, string>} percorso → contenuto originale */
@@ -42,7 +44,6 @@ function esegui(test, testTimeout) {
   return leggi((r.stdout || '') + (r.stderr || ''), r.error)
 }
 
-const scelte = MUTATIONS.filter(x => x.id.includes(filter))
 // Prima di sabotare, il test deve essere verde sul codice INTATTO (fondatore, 21/10/2026): una volta per file
 // di test, con il tempo massimo più alto tra le prove che lo usano. Le prove con tor vero durano minuti.
 /** @type {Map<string, string|null>} test → problemaBase (null = verde) */
@@ -68,6 +69,13 @@ for (const m of scelte) {
   if (bad !== undefined) {
     results.push({ ...pick(m), outcome: 'non-applicabile', detail: `testo da sostituire trovato ${bad} volte: aggiornare la prova` })
     console.log(`NON APPLICABILE  ${m.rule} ${m.name}`)
+    continue
+  }
+  // dopo il controllo del testo (una prova di un'altra piattaforma che invecchia si vede anche qui)
+  const altrove = fuoriPiattaforma(m, process.platform)
+  if (altrove) {
+    results.push({ ...pick(m), ...altrove })
+    console.log(`ALTRA PIATTAFORMA  ${m.rule} ${m.name} — ${altrove.detail}`)
     continue
   }
   const problema = base(m.test)
@@ -99,11 +107,13 @@ const data = {
   date: new Date().toISOString(),
   node: process.versions.node,
   platform: `${os.platform()} ${os.release()}`,
-  partial: !!filter,
+  partial: parziale,
   results,
 }
 fs.mkdirSync(path.dirname(OUT), { recursive: true })
-if (!filter) fs.writeFileSync(OUT, JSON.stringify(data, null, 2) + '\n')
-const bad = results.filter(r => r.outcome !== 'presa')
-console.log(`\n${results.length - bad.length}/${results.length} prese${filter ? ' (parziale: non salvato)' : ` — salvato in ${path.relative(ROOT, OUT)}`}`)
+if (!parziale) fs.writeFileSync(OUT, JSON.stringify(data, null, 2) + '\n')
+const bad = results.filter(r => nonPassa(r.outcome))
+const altrove = results.filter(r => r.outcome === 'altra-piattaforma').length
+const prese = results.filter(r => r.outcome === 'presa').length
+console.log(`\n${prese}/${results.length - altrove} prese${altrove ? ` (+${altrove} di un'altra piattaforma, non eseguite qui)` : ''}${parziale ? ' (parziale: non salvato)' : ` — salvato in ${path.relative(ROOT, OUT)}`}`)
 process.exit(bad.length ? 1 : 0)

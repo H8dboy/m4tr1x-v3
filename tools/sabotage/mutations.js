@@ -12,7 +12,7 @@
  */
 const T = (/** @type {string} */ n) => `tests/invariants/${n}.test.js`
 
-/** @type {Array<{ id: string, rule: string, name: string, file: string, test: string, timeoutMs?: number, find?: string, replace?: string, edits?: Array<{ find: string, replace: string }> }>} */
+/** @type {Array<{ id: string, rule: string, name: string, file: string, test: string, timeoutMs?: number, piattaforma?: string, find?: string, replace?: string, edits?: Array<{ find: string, replace: string }> }>} */
 module.exports = [
   // ─── F0 ───────────────────────────────────────────────────────────────────
   { id: 'i23-rete', rule: 'I-23', name: 'rete della firma non controllata', file: 'tools/release/verify-release.js',
@@ -145,7 +145,28 @@ module.exports = [
 
   // ─── F4 (Rust: il test JS lancia cargo; le prove con tor vero servono M4TR1X_TOR_BIN) ──
   { id: 'i37-hash', rule: 'I-37', name: 'hash del binario tor non controllato', file: 'app/transport/src/tor_process.rs',
-    find: '        if actual != self.cfg.tor_sha256.to_ascii_lowercase() {', replace: '        if false && actual != self.cfg.tor_sha256.to_ascii_lowercase() {', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+    find: '        if hex(&Sha256::digest(&byte)) != atteso {', replace: '        if false && hex(&Sha256::digest(&byte)) != atteso {', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  // ─── I-37, copia verificata di tor (21/10/2026, decisioni del fondatore) ──
+  { id: 'i37-librerie-non-verificate', rule: 'I-37', name: 'librerie di tor (Linux) copiate senza verificarne l\'hash', file: 'app/transport/src/tor_process.rs',
+    find: '        file.push((nome.into(), sorgente.join(nome), h.to_ascii_lowercase(), false));\n', replace: '', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-avvio-dalla-sorgente', rule: 'I-37', name: 'tor avviato dal file indicato invece che dalla copia verificata', file: 'app/transport/src/tor_process.rs',
+    find: '        let mut cmd = Command::new(&tor);\n', replace: '        let mut cmd = Command::new(&self.cfg.tor_bin);\n', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-seconda-lettura', rule: 'I-37', name: 'copia fatta rileggendo la sorgente dopo la verifica (sostituzione possibile in mezzo)', file: 'app/transport/src/tor_process.rs',
+    find: '.and_then(|mut f| f.write_all(&byte))', replace: '.and_then(|mut f| f.write_all(&std::fs::read(sorgente.join(&nome)).unwrap_or(byte)))', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  // solo Windows: su Linux symlink_metadata non tratta un link come cartella e remove_file toglie solo il
+  // link, quindi lì la funzione resta sicura anche senza questo controllo (difesa doppia, non sabotabile)
+  { id: 'i37-pulizia-segue-link', rule: 'I-37', name: 'pulizia della vecchia copia che entra in junction e punti di analisi (Windows)', file: 'app/transport/src/tor_process.rs', piattaforma: 'win32',
+    find: '    if e_collegamento(&m) {\n', replace: '    if false && e_collegamento(&m) {\n', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-copia-esistente', rule: 'I-37', name: 'file della copia aperti anche se esistono già (segue un collegamento preparato)', file: 'app/transport/src/tor_process.rs',
+    find: '        o.write(true).create_new(true);\n', replace: '        o.write(true).create(true).truncate(true);\n', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  // 21/10/2026: togliere solo la P di D:P NON indebolisce niente (misurato: Windows non eredita comunque con
+  // una DACL esplicita, difesa doppia). Il rischio vero è non passare il descrittore: ACL ereditata dal profilo.
+  { id: 'i37-acl-ereditata', rule: 'I-37', name: 'cartella della copia senza ACL esplicita: eredita quella del profilo (Windows)', file: 'app/transport/src/tor_process.rs', piattaforma: 'win32',
+    find: 'lpSecurityDescriptor: sd, bInheritHandle: 0', replace: 'lpSecurityDescriptor: std::ptr::null_mut(), bInheritHandle: 0', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-permessi-aperti', rule: 'I-37', name: 'cartella della copia leggibile da tutti (Linux)', file: 'app/transport/src/tor_process.rs', piattaforma: 'linux',
+    find: '        std::fs::DirBuilder::new().mode(0o700).create(p)', replace: '        std::fs::DirBuilder::new().mode(0o755).create(p)', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+  { id: 'i37-ambiente-ereditato', rule: 'I-37', name: 'tor avviato con l\'ambiente ereditato (LD_PRELOAD/LD_AUDIT dentro un tor verificato, Linux)', file: 'app/transport/src/tor_process.rs', piattaforma: 'linux',
+    find: '            cmd.env_clear().env("LD_LIBRARY_PATH"', replace: '            cmd.env("LD_LIBRARY_PATH"', test: T('inv-37-tor-process'), timeoutMs: 900000 },
   { id: 'i37-onlyonion', rule: 'I-37', name: 'SOCKS senza OnionTrafficOnly (host in chiaro raggiungibili)', file: 'app/transport/src/tor_process.rs',
     // 20/10: la riga ora ha anche ExtendedErrors; il sabotaggio toglie SOLO OnionTrafficOnly
     find: '"127.0.0.1:auto OnionTrafficOnly IsolateSOCKSAuth ExtendedErrors"', replace: '"127.0.0.1:auto IsolateSOCKSAuth ExtendedErrors"', test: T('inv-37-tor-process'), timeoutMs: 900000 },
@@ -240,6 +261,10 @@ module.exports = [
     find: '  if (l.fail > 0) return `il test è già rosso', replace: '  if (l.fail > 99) return `il test è già rosso', test: 'tests/unit/sabotage-esito.test.js' },
   { id: 'sabotaggio-base-vuota', rule: 'strumenti', name: 'base senza nessun test eseguito considerata verde', file: 'tools/sabotage/esito.js',
     find: "  if (!l.pass) return 'nessun test eseguito sul codice intatto'\n", replace: '', test: 'tests/unit/sabotage-esito.test.js' },
+  { id: 'sabotaggio-scelta-vuota', rule: 'strumenti', name: 'corsa senza nessuna prova scelta che risulta verde (job per piattaforma vuoto)', file: 'tools/sabotage/esito.js',
+    find: "  if (!scelte.length) throw new Error(", replace: "  if (false) throw new Error(", test: 'tests/unit/sabotage-esito.test.js' },
+  { id: 'sabotaggio-scelta-salva', rule: 'strumenti', name: 'corsa per piattaforma che sovrascrive la campagna completa', file: 'tools/sabotage/esito.js',
+    find: '  return { scelte, parziale: !!arg }', replace: "  return { scelte, parziale: !!arg && arg !== '--piattaforma-attuale' }", test: 'tests/unit/sabotage-esito.test.js' },
   { id: 'sabotaggio-base-dopo', rule: 'strumenti', name: 'base rossa che non ferma il sabotaggio', file: 'tools/sabotage/run.js',
     find: "    console.log(`BASE ROSSA   ${m.rule} ${m.name} — ${e.detail}`)\n    continue\n", replace: "    console.log(`BASE ROSSA   ${m.rule} ${m.name} — ${e.detail}`)\n", test: 'tests/unit/sabotage-esito.test.js' },
 
@@ -289,8 +314,8 @@ module.exports = [
 
   // ─── F4: tor dell'app (passo 3) ──
   { id: 'i37-app-hash-del-binario', rule: 'I-37', name: 'app che si fida dell\'hash del binario stesso invece del lock', file: 'app/transport/src/tor_process.rs',
-    find: '            tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,\n            tor_sha256: sha256_tor_windows(),',
-    replace: '            tor_sha256: tor_bin.as_deref().and_then(|p| sha256_file(p).ok()).unwrap_or_default(),\n            tor_bin: tor_bin.filter(|p| !p.as_os_str().is_empty())?,',
+    find: '        let (tor_sha256, librerie) = lock_tor()?;\n',
+    replace: '        let (_, librerie) = lock_tor()?;\n        let tor_sha256 = tor_bin.as_deref().and_then(|p| sha256_file(p).ok()).unwrap_or_default();\n',
     test: T('inv-37-tor-process'), timeoutMs: 900000 },
 
   // ─── F4: feed (passo 4) ──

@@ -129,6 +129,18 @@ jobs:
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
         run: node tools/report/esegui.js --senza-saltati tests/invariants/inv-59-node-tor-control.test.js
+      # Il tor che l'APP usa su Linux (21/10/2026, ADR-0016 aggiornata): bundle ufficiale indicato dal lock,
+      # hash del bundle controllato prima di estrarlo; tor e librerie poi riverificati dall'app stessa.
+      # Da qui M4TR1X_TOR_DEL_LOCK è impostata: la prova di avvio dalla copia non può risultare saltata.
+      - name: Tor del lock Linux (bundle verificato)
+        run: |
+          url=$(node -p "require('./app/tor-linux.lock.json').bundle_url")
+          sha=$(node -p "require('./app/tor-linux.lock.json').bundle_sha256")
+          curl -fsSLo "$RUNNER_TEMP/tor-bundle.tgz" "$url"
+          echo "$sha  $RUNNER_TEMP/tor-bundle.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/tor-bundle"
+          tar -xzf "$RUNNER_TEMP/tor-bundle.tgz" -C "$RUNNER_TEMP/tor-bundle" tor/tor tor/libcrypto.so.3 tor/libssl.so.3 tor/libevent-2.1.so.7
+          echo "M4TR1X_TOR_DEL_LOCK=$RUNNER_TEMP/tor-bundle/tor/tor" >> "$GITHUB_ENV"
       - name: Trasporto dell'app con tor vero (I-37)
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
@@ -145,6 +157,23 @@ jobs:
         env:
           M4TR1X_TOR_BIN: /usr/bin/tor
         run: node tools/tor/misura.js 1
+
+  # Sabotaggi delle difese che esistono SOLO su Linux (21/10/2026, richiesta del fondatore): cartella della
+  # copia di tor 0700, tor avviato con l'ambiente pulito. Su Windows risultano "altra-piattaforma": senza
+  # questo job non girerebbero mai. Base verde prima di ogni sabotaggio; nessuna prova scelta = errore.
+  sabotaggio-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          package-manager-cache: false
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts
+      - name: Sabotaggi delle difese solo Linux
+        run: node tools/sabotage/run.js --piattaforma-attuale
 
   release-gate:
     if: startsWith(github.ref, 'refs/tags/v')

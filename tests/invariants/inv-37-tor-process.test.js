@@ -1,8 +1,8 @@
 // @ts-check
 'use strict'
 /**
- * I-37 — Il Tor di Windows serve solo onion e non presta i circuiti dell'app
- * (corretta il 16/10/2026, ADR-0016). Le prove sono in Rust, nel crate del trasporto
+ * I-37 — Il Tor del desktop serve solo onion e non presta i circuiti dell'app
+ * (corretta il 16/10/2026, ADR-0016; tutto il desktop dal 21/10/2026). Le prove sono in Rust, nel crate del trasporto
  * (app/transport/tests/inv_37_tor_process.rs); qui si lanciano con cargo, così la
  * regola compare nel report e nelle prove di sabotaggio come le altre.
  *
@@ -79,12 +79,41 @@ test('I-37 con tor vero: solo onion, cookie, solo 127.0.0.1, muore con l\'app, o
   assert.match(r.out, /test result: ok\. 5 passed/, 'attese le 4 prove di I-37 (più l\'aiuto) passate')
 })
 
-// Tor dell'APP (F4, passo 3): l'app accetta solo il tor.exe con l'hash del lock, incluso alla compilazione
-// (app/transport/tests/config_app.rs). Con il tor.exe del lock (Windows) l'avvia davvero nella sua cartella.
-test('I-37 app: hash solo dal lock incluso alla compilazione; tor diverso non parte', { skip: noCargo, timeout: 900000 }, (t) => {
+// Tor dell'APP (F4, passo 3; tutto il desktop dal 21/10/2026): l'app accetta solo il tor (e su Linux le
+// librerie) con gli hash del lock della piattaforma, incluso alla compilazione (app/transport/tests/config_app.rs).
+// Con M4TR1X_TOR_DEL_LOCK (tor estratto dal bundle del lock) lo avvia davvero dalla sua copia verificata;
+// se la variabile c'è, la prova NON può risultare saltata.
+const TOR_DEL_LOCK = process.env.M4TR1X_TOR_DEL_LOCK
+test('I-37 app: hash solo dal lock incluso alla compilazione; tor diverso non parte; avvio dalla copia', { skip: noCargo, timeout: 900000 }, (t) => {
   const r = cargoTest(['--test', 'config_app'])
   assert.equal(r.code, 0, r.out.slice(-4000))
-  for (const p of ['l_hash_incluso_e_quello_del_lock', 'senza_tor_indicato_nessuna_configurazione', 'l_app_usa_solo_l_hash_del_lock', 'tor_con_hash_diverso_non_parte'])
+  for (const p of ['gli_hash_inclusi_sono_quelli_del_lock', 'senza_tor_indicato_nessuna_configurazione', 'l_app_usa_solo_gli_hash_del_lock', 'tor_con_hash_diverso_non_parte', 'con_il_tor_del_lock_l_app_lo_avvia_dalla_sua_copia'])
     assert.match(r.out, new RegExp(`${p} \\.\\.\\. ok`), `manca o fallisce la prova ${p}`)
-  t.diagnostic(r.out.includes('SALTATO') ? 'avvio con il tor.exe del lock: saltato (serve il tor.exe del lock, Windows)' : 'avvio con il tor.exe del lock: provato')
+  if (TOR_DEL_LOCK) assert.ok(!r.out.includes('SALTATO: serve M4TR1X_TOR_DEL_LOCK'), 'M4TR1X_TOR_DEL_LOCK è impostata ma l\'avvio con il tor del lock si è saltato')
+  t.diagnostic(TOR_DEL_LOCK ? 'avvio con il tor del lock: provato' : 'avvio con il tor del lock: non provato (manca M4TR1X_TOR_DEL_LOCK)')
+})
+
+// Copia verificata (21/10/2026): lettura unica e verifica in memoria, cartella solo-proprietario (Linux 0700,
+// Windows ACL protetta con il solo utente), pulizia senza seguire link o junction, avvio dalla copia con
+// l'ambiente pulito su Linux (app/transport/tests/copia_tor.rs). Nessun tor vero.
+test('I-37 copia verificata: hash in memoria, solo-proprietario, niente link seguiti, ambiente pulito', { skip: noCargo, timeout: 900000 }, () => {
+  const r = cargoTest(['--test', 'copia_tor'])
+  assert.equal(r.code, 0, r.out.slice(-4000))
+  const prove = ['copia_verificata_e_indipendente_dalla_sorgente', 'hash_sbagliato_o_libreria_mancante_niente_scritto', 'la_pulizia_non_segue_link_o_junction', 'copia_solo_proprietario']
+  if (process.platform === 'linux') prove.push('su_linux_tor_parte_con_l_ambiente_pulito')
+  for (const p of prove) assert.match(r.out, new RegExp(`${p} \\.\\.\\. ok`), `manca o fallisce la prova ${p}`)
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'transport', 'src', 'tor_process.rs'), 'utf8')
+  // tor si avvia SOLO dalla copia: nessun Command::new sul percorso indicato
+  assert.match(src, /let tor = prepara_binari\(&self\.cfg\)\?;[\s\S]*?Command::new\(&tor\)/, 'tor non parte dalla copia verificata')
+  assert.ok(!/Command::new\(&self\.cfg\.tor_bin\)/.test(src), 'tor avviato dal percorso indicato invece che dalla copia')
+  // lettura UNICA (contro le sostituzioni tra verifica e copia): una sola lettura dal disco in prepara_binari,
+  // e si scrivono i byte verificati, non una seconda lettura della sorgente
+  const prep = /pub fn prepara_binari\([\s\S]*?\n}\n/.exec(src)
+  assert.ok(prep, 'prepara_binari non trovata')
+  assert.equal([...prep[0].matchAll(/std::fs::read(?:_to_string)?\(|File::open\(|\.read_to_end\(|std::fs::copy\(/g)].length, 1, 'prepara_binari legge la sorgente più di una volta')
+  assert.match(prep[0], /\.write_all\(&byte\)/, 'la copia non scrive i byte verificati')
+  // "crea nuovo": se tra la creazione della cartella e la scrittura compare un file o un collegamento, si
+  // fallisce invece di seguirlo (intervallo che una prova a runtime non riesce a colpire: controllo statico)
+  assert.match(prep[0], /\.write\(true\)\.create_new\(true\);/, 'i file della copia non sono aperti con create_new')
+  assert.ok(!/\.create\(true\)|\.truncate\(true\)/.test(prep[0]), 'prepara_binari apre file esistenti')
 })

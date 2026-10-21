@@ -72,6 +72,7 @@ fn transport(bin: &Path, dir: &Path) -> TorProcessTransport {
     TorProcessTransport::new(TorProcessConfig {
         tor_bin: bin.to_path_buf(),
         tor_sha256: sha256_file(bin).unwrap(),
+        librerie: vec![],
         data_dir: dir.to_path_buf(),
         bootstrap_timeout: Duration::from_secs(180),
     })
@@ -140,6 +141,7 @@ async fn binario_con_hash_sbagliato_non_parte() {
     let t = TorProcessTransport::new(TorProcessConfig {
         tor_bin: finto,
         tor_sha256: "00".repeat(32),
+        librerie: vec![],
         data_dir: dir.clone(),
         bootstrap_timeout: Duration::from_secs(5),
     });
@@ -243,6 +245,7 @@ async fn aiuto_fa_l_app() {
     let bin = tor_bin().expect("M4TR1X_TOR_BIN");
     let t = TorProcessTransport::new(TorProcessConfig {
         tor_sha256: sha256_file(&bin).unwrap(),
+        librerie: vec![],
         tor_bin: bin,
         data_dir: dir.into(),
         bootstrap_timeout: Duration::from_secs(1),

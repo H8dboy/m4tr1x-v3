@@ -31,3 +31,7 @@ prova = []
 
 [dev-dependencies]
 tokio = { version = "=1.53.3", default-features = false, features = ["process", "net", "io-util", "time", "sync", "rt-multi-thread", "macros", "test-util"] }
+
+# ACL solo-proprietario della copia verificata di tor (I-37, 21/10/2026). Già nel lockfile via Tauri.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading"] }

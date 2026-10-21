@@ -113,7 +113,9 @@ async fn attendi_tor(tor: &TorProcessTransport, op: &Operazione) -> Result<(), S
 /// Gli errori restano nello stato del trasporto (`Errore`); all'interfaccia arriva solo "errore" (api.rs).
 fn avvia_rete<R: Runtime>(app: &tauri::App<R>) -> Result<Rete, Box<dyn std::error::Error>> {
     let dati = app.path().app_data_dir()?;
-    let cfg = if cfg!(windows) { TorProcessConfig::per_l_app(std::env::var_os("M4TR1X_TOR_BIN").map(PathBuf::from), dati) } else { None };
+    // desktop = tor come processo (ADR-0016 aggiornata il 21/10/2026); mobile = Arti, non ancora fatto
+    let desktop = cfg!(any(windows, target_os = "linux", target_os = "macos"));
+    let cfg = if desktop { TorProcessConfig::per_l_app(std::env::var_os("M4TR1X_TOR_BIN").map(PathBuf::from), dati) } else { None };
     let tor = cfg.map(|c| Arc::new(TorProcessTransport::new(c)));
     if let Some(t) = tor.clone() {
         tauri::async_runtime::spawn(async move {
