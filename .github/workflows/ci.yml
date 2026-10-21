@@ -32,6 +32,10 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Controllo dei tipi (ADR-0012)
         run: npx tsc -p tsconfig.json
+      # Librerie di sistema per compilare il guscio Tauri su Linux (prerequisiti ufficiali di Tauri 2):
+      # servono alla prova dinamica di I-31 (app/shell/tests/i31_ipc.rs), dal 21/10/2026
+      - name: Librerie del guscio (WebKitGTK)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Invarianti
         run: node tools/report/esegui.js tests
 

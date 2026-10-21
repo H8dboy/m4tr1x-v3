@@ -8,7 +8,6 @@
 const { test } = require('node:test')
 
 const PENDING = [
-  ['I-01', 'nessuna richiesta delle app fuori da Tor', 'F4'],
   ['I-09', 'conio senza firma della radice rifiutato', 'F7'],
   ['I-10', 'spesa senza autorizzazione del wallet rifiutata', 'F7'],
   ['I-11', 'conservazione dei saldi', 'F7'],

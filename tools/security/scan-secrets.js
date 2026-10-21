@@ -27,6 +27,19 @@ const FORBIDDEN_NAMES = [
  */
 const DOC_IP_PREFIXES = Object.freeze(['192.0.2.', '198.51.100.', '203.0.113.'])
 
+/**
+ * Eccezione stretta (decisione del fondatore, 21/10/2026): un numero a quattro parti in un file .xml è
+ * ammesso SOLO se è l'intero valore di un attributo `version` (es. version="6.0.0.0" nei manifest di
+ * Windows). Stesse virgolette prima e dopo, `version=` subito prima; qualsiasi altra forma resta vietata.
+ * @param {string} p @param {string} content @param {RegExpMatchArray} m
+ */
+function versioneXml(p, content, m) {
+  if (!p.endsWith('.xml') || m.index === undefined) return false
+  const i = m.index, q = content[i - 1]
+  const a = i - 1 - 'version='.length   // inizio di `version=`: prima solo spazio o inizio del file
+  return (q === '"' || q === "'") && content[i + m[0].length] === q && a >= 0 && content.slice(a, i - 1) === 'version=' && (a === 0 || /\s/.test(content[a - 1]))
+}
+
 /** Contenuti vietati: [nome regola, regex]. */
 const RULES = [
   ['chiave privata Nostr (nsec)', /\bnsec1[02-9ac-hj-np-z]{58}\b/],
@@ -56,7 +69,9 @@ function scanFile(relPath, content) {
   for (const [name, re] of RULES) {
     const rx = /** @type {RegExp} */ (re)
     const hits = rx.global ? [...content.matchAll(rx)].map(m => m[0]) : (content.match(rx) || []).slice(0, 1)
-    const real = name === 'IP pubblico' ? hits.filter(ip => !DOC_IP_PREFIXES.some(d => ip.startsWith(d))) : hits
+    const real = name === 'IP pubblico'
+      ? [...content.matchAll(rx)].filter(m => !DOC_IP_PREFIXES.some(d => m[0].startsWith(d)) && !versioneXml(p, content, m)).map(m => m[0])
+      : hits
     if (real.length) out.push(`${p}: ${name} → "${real[0].slice(0, 24)}…"`)
   }
   return out

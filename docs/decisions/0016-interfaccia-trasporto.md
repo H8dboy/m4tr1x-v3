@@ -1,5 +1,18 @@
 # ADR-0016 — Interfaccia di trasporto unica: Arti dove regge, Tor classico su Windows
 
+> **Aggiornamento del 21/10/2026 (decisione del fondatore) — cambia il punto 2.** Sul **desktop**
+> (Windows, Linux, macOS) l'app usa **`TorProcessTransport`** (il `tor` classico come processo
+> accanto all'app); **`ArtiTransport` solo su mobile** (Android, iOS), dove un processo separato è
+> difficile. Motivo: con `tor` fuori dall'app la regola I-01 diventa netta e si prova in modo severo
+> (l'app parla SOLO con 127.0.0.1, verso le porte del suo tor; qualsiasi altro pacchetto è una
+> violazione), mentre con Arti dentro l'app l'app parla direttamente con i relay e la prova dovrebbe
+> confrontare ogni destinazione con il consenso (più fragile). Non serve più un `ArtiTransport` per
+> Linux in F4. **Costo:** un binario `tor` con hash fissato da mantenere anche per Linux e macOS
+> (Tor Expert Bundle ufficiale), non solo per Windows. **Conseguenze:** le regole di
+> `TorProcessTransport` qui sotto e I-37 valgono per tutto il desktop; il lock del binario diventa
+> uno per piattaforma (oggi c'è solo `app/tor-windows.lock.json`); il punto 4 diventa "il giorno in
+> cui Arti regge sul desktop, nuovo ADR". La storia sotto resta com'era.
+
 **Stato:** accettata il 15/10/2026 (decisione del fondatore). Completa l'ADR-0002.
 
 **Contesto.** Il prototipo F4a (rapporto in `docs/spikes/F4a-REPORT.md`) ha mostrato che Arti 0.47 / arti 2.7.0 su **Windows** si blocca al download del consenso: succede sulla rete dell'officina, su hotspot, con il controllo dei permessi disattivato e con l'eccezione di Defender per processo e cartella. Su **Linux**, dalla stessa rete, parte in 11 s. Il `tor` classico (C) su Windows parte in 9–31 s. L'ispezione di rete di Defender (NIS) non è stata esclusa: si disattiva solo per tutto il PC, e non lo si è fatto. Su Android la misura manca (nessun telefono disponibile).

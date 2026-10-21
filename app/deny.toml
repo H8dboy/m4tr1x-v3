@@ -69,6 +69,9 @@ deny = [
   { crate = "tauri-plugin-websocket" },
   { crate = "tauri-plugin-upload" },
   { crate = "tauri-plugin-shell" },
+  # I-01 (21/10/2026): aggiornamenti scaricati fuori da Tor; link aperti nel browser fuori dall'app
+  { crate = "tauri-plugin-updater" },
+  { crate = "tauri-plugin-opener" },
 ]
 
 [sources]

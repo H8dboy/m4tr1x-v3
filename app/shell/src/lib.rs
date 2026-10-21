@@ -12,15 +12,19 @@ pub mod api_seme;
 use api::{Avanzamento, Feed, Identita, Post, Profilo, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
-use m4tr1x_identity::portachiavi::{firma_come_identita, Sistema};
+use m4tr1x_identity::portachiavi::{firma_come_identita, Portachiavi, Sistema};
 use m4tr1x_transport::{OnionV3, TorProcessConfig, TorProcessTransport, Transport, TransportStatus};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Builder, Manager, RunEvent, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use zeroize::Zeroize;
 
 const FINESTRA_SEME: &str = "seme";
+
+/// Il portachiavi dell'app: quello del sistema in produzione (`run`), uno in memoria nelle prove
+/// dinamiche di I-31 (`costruisci`), così le prove non toccano mai il portachiavi vero di Windows.
+pub struct Chiavi(pub Arc<dyn Portachiavi>);
 
 /// Creazione in corso: le parole vivono solo qui (e nella finestra del seme) finché
 /// l'utente non conferma o chiude la finestra; poi si cancellano (zeroize in Parole).
@@ -28,7 +32,7 @@ const FINESTRA_SEME: &str = "seme";
 struct StatoSeme(Mutex<Option<CreazioneInCorso>>);
 
 /// Seconda difesa oltre alla capability: i comandi del seme rispondono solo alla sua finestra.
-fn solo_finestra_seme(w: &WebviewWindow) -> Result<(), String> {
+fn solo_finestra_seme<R: Runtime>(w: &WebviewWindow<R>) -> Result<(), String> {
     if w.label() == FINESTRA_SEME {
         Ok(())
     } else {
@@ -40,7 +44,7 @@ fn solo_finestra_seme(w: &WebviewWindow) -> Result<(), String> {
 /// Su Windows 10 2004+ la finestra sparisce dalle catture; sui Windows più vecchi resta nera.
 /// Se non si riesce, la finestra del seme NON si apre.
 #[cfg(windows)]
-fn escludi_dalle_catture(w: &WebviewWindow) -> Result<(), String> {
+fn escludi_dalle_catture<R: Runtime>(w: &WebviewWindow<R>) -> Result<(), String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_MONITOR};
     let hwnd = w.hwnd().map_err(|e| e.to_string())?.0;
     // SAFETY: hwnd è la finestra appena creata da Tauri in questo processo
@@ -54,7 +58,7 @@ fn escludi_dalle_catture(w: &WebviewWindow) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-fn escludi_dalle_catture(_w: &WebviewWindow) -> Result<(), String> {
+fn escludi_dalle_catture<R: Runtime>(_w: &WebviewWindow<R>) -> Result<(), String> {
     // Linux/macOS: da fare nelle fasi successive (F9 per Android: FLAG_SECURE)
     Ok(())
 }
@@ -107,7 +111,7 @@ async fn attendi_tor(tor: &TorProcessTransport, op: &Operazione) -> Result<(), S
 
 /// Avvia tor in background: hash dal lock incluso alla compilazione, cartella dati dell'app.
 /// Gli errori restano nello stato del trasporto (`Errore`); all'interfaccia arriva solo "errore" (api.rs).
-fn avvia_rete(app: &tauri::App) -> Result<Rete, Box<dyn std::error::Error>> {
+fn avvia_rete<R: Runtime>(app: &tauri::App<R>) -> Result<Rete, Box<dyn std::error::Error>> {
     let dati = app.path().app_data_dir()?;
     let cfg = if cfg!(windows) { TorProcessConfig::per_l_app(std::env::var_os("M4TR1X_TOR_BIN").map(PathBuf::from), dati) } else { None };
     let tor = cfg.map(|c| Arc::new(TorProcessTransport::new(c)));
@@ -162,11 +166,11 @@ fn feed_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
 /// L'UNICO punto del guscio che fa firmare la tua identità (post e profilo): la chiave si legge dal
 /// portachiavi SOLO dentro `firma_come_identita` e si cancella appena firmato (fondatore, 20/10/2026).
 /// L'evento firmato si riverifica (`firma_evento`) prima di uscire.
-fn firma_con_la_mia_identita(kind: u16, contenuto: &str) -> Result<m4tr1x_protocol::Evento, String> {
-    let identita = creazione::identita_salvata(&Sistema).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
+fn firma_con_la_mia_identita(chiavi: &Chiavi, kind: u16, contenuto: &str) -> Result<m4tr1x_protocol::Evento, String> {
+    let identita = creazione::identita_salvata(&*chiavi.0).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
     let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
     m4tr1x_protocol::firma_evento(kind, contenuto, &[], ora, m4tr1x_protocol::Rete::Prova, &identita.identity, |d| {
-        firma_come_identita(&Sistema, d).ok()
+        firma_come_identita(&*chiavi.0, d).ok()
     })
     .map_err(|e| e.to_string())
 }
@@ -176,7 +180,7 @@ fn firma_con_la_mia_identita(kind: u16, contenuto: &str) -> Result<m4tr1x_protoc
 /// cancella appena firmato: qui non esiste mai una `ChiaveRuolo` (fondatore, 20/10/2026). L'evento
 /// firmato si riverifica (`firma_evento`) prima di partire. All'interfaccia torna solo il post pubblico.
 #[tauri::command]
-async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Post, String> {
+async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Post, String> {
     let testo = testo.trim().to_string();
     if testo.is_empty() {
         return Err("il post è vuoto".into());
@@ -186,7 +190,7 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
     }
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
-    let evento = firma_con_la_mia_identita(1, &testo).map_err(|e| format!("post non firmato: {e}"))?;
+    let evento = firma_con_la_mia_identita(&chiavi, 1, &testo).map_err(|e| format!("post non firmato: {e}"))?;
     let op = &op.post;
     if op.in_corso.swap(true, Ordering::SeqCst) {
         return Err("un post è già in pubblicazione".into());
@@ -207,10 +211,10 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
 
 /// Il TUO profilo com'è sul nodo (per precompilare il modulo). Ok(None): non ne hai ancora uno.
 #[tauri::command]
-async fn profilo_mio(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Option<Profilo>, String> {
+async fn profilo_mio(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Option<Profilo>, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
-    let identita = creazione::identita_salvata(&Sistema).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
+    let identita = creazione::identita_salvata(&*chiavi.0).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
     let op = &op.profilo;
     if op.in_corso.swap(true, Ordering::SeqCst) {
         return Err("il profilo è già in aggiornamento".into());
@@ -229,11 +233,11 @@ async fn profilo_mio(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazio
 
 /// Salva il TUO profilo (solo nome e descrizione), firmato con la tua identità e pubblicato sul nodo.
 #[tauri::command]
-async fn profilo_salva(nome: String, descrizione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Profilo, String> {
+async fn profilo_salva(nome: String, descrizione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Profilo, String> {
     let contenuto = m4tr1x_protocol::contenuto_profilo(&nome, &descrizione).map_err(|e| e.to_string())?;
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
-    let evento = firma_con_la_mia_identita(0, &contenuto).map_err(|e| format!("profilo non firmato: {e}"))?;
+    let evento = firma_con_la_mia_identita(&chiavi, 0, &contenuto).map_err(|e| format!("profilo non firmato: {e}"))?;
     let op = &op.profilo;
     if op.in_corso.swap(true, Ordering::SeqCst) {
         return Err("il profilo è già in aggiornamento".into());
@@ -266,15 +270,15 @@ fn pubblica_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
 
 /// Identità salvata (solo chiavi pubbliche), se c'è.
 #[tauri::command]
-fn identita() -> Result<Option<Identita>, String> {
-    creazione::identita_salvata(&Sistema).map(|o| o.map(Identita::from)).map_err(|e| e.to_string())
+fn identita(chiavi: tauri::State<'_, Chiavi>) -> Result<Option<Identita>, String> {
+    creazione::identita_salvata(&*chiavi.0).map(|o| o.map(Identita::from)).map_err(|e| e.to_string())
 }
 
 /// Apre la finestra del seme: invisibile, protetta dalle catture, poi mostrata.
 /// `modo`: "crea" o "recupera". `async`: su Windows creare una finestra da un comando
 /// sincrono blocca il thread che dovrebbe disegnarla (documentazione di Tauri 2).
 #[tauri::command]
-async fn apri_finestra_seme(app: tauri::AppHandle, modo: String) -> Result<(), String> {
+async fn apri_finestra_seme<R: Runtime>(app: tauri::AppHandle<R>, modo: String) -> Result<(), String> {
     if modo != "crea" && modo != "recupera" {
         return Err("modo sconosciuto".into());
     }
@@ -300,7 +304,7 @@ async fn apri_finestra_seme(app: tauri::AppHandle, modo: String) -> Result<(), S
 /// `rivedi`: rimostra le parole della creazione in corso (chi le ha già scritte non deve
 /// ritrovarsi con parole nuove); altrimenti ne genera di nuove.
 #[tauri::command]
-fn seme_nuovo(window: WebviewWindow, stato: tauri::State<'_, StatoSeme>, rivedi: bool) -> Result<SemeDaMostrare, String> {
+fn seme_nuovo<R: Runtime>(window: WebviewWindow<R>, stato: tauri::State<'_, StatoSeme>, rivedi: bool) -> Result<SemeDaMostrare, String> {
     solo_finestra_seme(&window)?;
     let mut g = stato.0.lock().unwrap();
     if !(rivedi && g.is_some()) {
@@ -315,10 +319,10 @@ fn seme_nuovo(window: WebviewWindow, stato: tauri::State<'_, StatoSeme>, rivedi:
 
 /// Controlla le 3 parole; se giuste salva identity, dm, wallet e chiude la finestra.
 #[tauri::command]
-fn seme_conferma(window: WebviewWindow, stato: tauri::State<'_, StatoSeme>, mut risposte: Vec<String>) -> Result<Identita, String> {
+fn seme_conferma<R: Runtime>(window: WebviewWindow<R>, stato: tauri::State<'_, StatoSeme>, chiavi: tauri::State<'_, Chiavi>, mut risposte: Vec<String>) -> Result<Identita, String> {
     solo_finestra_seme(&window)?;
     let mut g = stato.0.lock().unwrap();
-    let esito = g.as_ref().ok_or("nessuna creazione in corso")?.conferma(&risposte, &Sistema);
+    let esito = g.as_ref().ok_or("nessuna creazione in corso")?.conferma(&risposte, &*chiavi.0);
     risposte.iter_mut().for_each(|r| r.zeroize());
     let id = esito.map_err(|e| e.to_string())?;
     *g = None; // parole cancellate dalla memoria
@@ -329,9 +333,9 @@ fn seme_conferma(window: WebviewWindow, stato: tauri::State<'_, StatoSeme>, mut 
 
 /// Recupero dalle 24 parole. Solo finestra del seme.
 #[tauri::command]
-fn seme_recupera(window: WebviewWindow, mut parole: String) -> Result<Identita, String> {
+fn seme_recupera<R: Runtime>(window: WebviewWindow<R>, chiavi: tauri::State<'_, Chiavi>, mut parole: String) -> Result<Identita, String> {
     solo_finestra_seme(&window)?;
-    let esito = creazione::recupera(&parole, &Sistema);
+    let esito = creazione::recupera(&parole, &*chiavi.0);
     parole.zeroize();
     let id = esito.map_err(|e| e.to_string())?;
     let _ = window.close();
@@ -341,21 +345,20 @@ fn seme_recupera(window: WebviewWindow, mut parole: String) -> Result<Identita, 
 /// Identificatore dell'app (uguale a `identifier` in tauri.conf.json: lo controlla tests/unit/crash-log.test.js).
 const IDENTIFICATORE: &str = "org.m4tr1x.app";
 
-pub fn run() {
-    // PRIMA di tutto: un crash dell'avvio (anche dentro Tauri) deve finire nel registro (m4tr1x-crash)
-    let cartella_crash = m4tr1x_crash::cartella_predefinita(IDENTIFICATORE);
-    if let Some(c) = cartella_crash.clone() {
-        m4tr1x_crash::installa(c, env!("CARGO_PKG_VERSION"));
-    }
-    tauri::Builder::default()
-        .manage(StatoSeme::default())
+/// Stato, comandi e finestre dell'app su un `Builder` qualsiasi: `run` lo usa con il runtime vero e il
+/// portachiavi del sistema, la prova dinamica di I-31 con il runtime finto di Tauri e un portachiavi in memoria.
+/// Il registro dei crash NON sta qui: lo installa `run`, prima di tutto, e `prima` lo riallinea alla
+/// cartella dati. Un solo `setup`: in Tauri un secondo `setup` sostituirebbe il primo (e tor non partirebbe).
+pub fn costruisci<R: Runtime>(
+    b: Builder<R>,
+    chiavi: Arc<dyn Portachiavi>,
+    prima: impl FnOnce(&mut tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
+) -> Builder<R> {
+    b.manage(StatoSeme::default())
         .manage(Operazioni::default())
+        .manage(Chiavi(chiavi))
         .setup(move |app| {
-            // se Tauri usa un'altra cartella dati, il registro la segue
-            let dati = app.path().app_data_dir()?;
-            if cartella_crash.as_deref() != Some(dati.as_path()) {
-                m4tr1x_crash::installa(dati, env!("CARGO_PKG_VERSION"));
-            }
+            prima(app)?;
             let rete = avvia_rete(app)?;
             app.manage(rete);
             Ok(())
@@ -369,7 +372,23 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento])
-        .build(tauri::generate_context!())
+}
+
+pub fn run() {
+    // PRIMA di tutto: un crash dell'avvio (anche dentro Tauri) deve finire nel registro (m4tr1x-crash)
+    let cartella_crash = m4tr1x_crash::cartella_predefinita(IDENTIFICATORE);
+    if let Some(c) = cartella_crash.clone() {
+        m4tr1x_crash::installa(c, env!("CARGO_PKG_VERSION"));
+    }
+    costruisci(tauri::Builder::default(), Arc::new(Sistema), move |app| {
+        // se Tauri usa un'altra cartella dati, il registro la segue
+        let dati = app.path().app_data_dir()?;
+        if cartella_crash.as_deref() != Some(dati.as_path()) {
+            m4tr1x_crash::installa(dati, env!("CARGO_PKG_VERSION"));
+        }
+        Ok(())
+    })
+    .build(tauri::generate_context!())
         .expect("avvio dell'app fallito")
         .run(|app, ev| {
             // l'app si chiude: tor si chiude con lei (oltre a TAKEOWNERSHIP, che lo chiude anche se l'app muore)

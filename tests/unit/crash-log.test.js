@@ -24,7 +24,11 @@ test('il guscio installa il registro come PRIMA cosa, nella cartella dati dell\'
   const run = /pub fn run\(\) \{([\s\S]*?)tauri::Builder::default\(\)/.exec(lib)
   assert.ok(run, 'run() non trovato')
   assert.match(run[1], /m4tr1x_crash::installa\(/, 'il registro dei crash non è installato prima di Tauri')
-  assert.match(lib, /\.setup\(move \|app\| \{\s*\/\/[^\n]*\n\s*let dati = app\.path\(\)\.app_data_dir\(\)\?;\s*if [^{]*\{\s*m4tr1x_crash::installa\(dati/, 'il registro non segue la cartella dati di Tauri')
+  // dal 21/10/2026 il riallineamento è il passo `prima` di costruisci (un solo setup: un secondo lo sostituirebbe)
+  assert.match(lib, /costruisci\(tauri::Builder::default\(\), Arc::new\(Sistema\), move \|app\| \{\s*\/\/[^\n]*\n\s*let dati = app\.path\(\)\.app_data_dir\(\)\?;\s*if [^{]*\{\s*m4tr1x_crash::installa\(dati/, 'il registro non segue la cartella dati di Tauri')
+  // ...e costruisci lo esegue per primo dentro il suo unico setup
+  assert.match(lib, /\.setup\(move \|app\| \{\s*prima\(app\)\?;/, 'costruisci non esegue per primo il passo `prima` (registro dei crash)')
+  assert.equal([...lib.matchAll(/\.setup\(/g)].length, 1, 'più di un .setup(: in Tauri l\'ultimo sostituisce gli altri')
 })
 
 const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' })

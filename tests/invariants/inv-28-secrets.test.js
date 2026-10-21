@@ -37,6 +37,32 @@ test('ammessi: email noreply, i tre blocchi di documentazione (RFC 5737), localh
   assert.deepEqual(scanFile('docs/x.md', ok), [])
 })
 
+// Eccezione stretta (21/10/2026): version="6.0.0.0" nei manifest .xml di Windows. Solo quella forma.
+test('ammesso: numero di versione come valore di version="…" in un file .xml', () => {
+  const manifest = `<assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" />\n<a version='1.2.3.4'/>`
+  assert.deepEqual(scanFile('app/x/manifest.xml', manifest), [])
+})
+
+test('eccezione version="…" solo in .xml, solo per il valore intero, solo per version', () => {
+  const ip = FAKE.pub.split('@')[1]
+  const casi = [
+    ['app/x/manifest.xml', `<a version="1.0.0.0" host="${ip}"/>`],            // un IP vero nello stesso file
+    ['app/x/manifest.xml', `<a server="${ip}"/>`],                             // altro attributo
+    ['app/x/manifest.xml', `<a release="${ip}"/>`],                            // altro attributo lungo quanto version (prova solo il nome)
+    ['app/x/manifest.xml', `<a version="${ip}:443"/>`],                        // non è il valore intero
+    ['app/x/manifest.xml', `<a version=${ip}/>`],                              // senza virgolette
+    ['app/x/manifest.xml', `<a version="${ip}'/>`],                            // virgolette diverse
+    ['app/x/manifest.xml', `<a subversion="${ip}"/>`],                         // nome che finisce per version
+    ['app/x/manifest.xml', `version: ${ip}`],                                  // non è un attributo
+    ['src/x.js', `const a = { version="${ip}" }`],                             // file non .xml
+    ['app/x/manifest.xml.js', `<a version="${ip}"/>`],                         // estensione solo simile
+  ]
+  for (const [f, testo] of casi) assert.ok(scanFile(f, testo).length > 0, `non segnalato: ${f} → ${testo}`)
+  // LIMITE dichiarato: dentro version="…" di un .xml qualsiasi numero a quattro parti passa, anche se
+  // ha la forma di un IP vero (versione e IP non si distinguono). Se cambia, questa riga lo segnala.
+  assert.deepEqual(scanFile('app/x/manifest.xml', `<a version="${ip}"/>`), [])
+})
+
 test('un IP vero accanto a uno di documentazione viene comunque segnalato', () => {
   assert.ok(scanFile('src/x.js', 'a = "203.0.113.5"; b = "' + FAKE.pub.split('@')[1] + '"').length > 0)
 })

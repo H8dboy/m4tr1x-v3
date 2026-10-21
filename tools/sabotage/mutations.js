@@ -27,8 +27,17 @@ module.exports = [
   { id: 'i25-banned', rule: 'I-25', name: 'pacchetto vietato e non approvato tra le dipendenze', file: 'package.json',
     find: '  "dependencies": {\n', replace: '  "dependencies": {\n    "axios": "1.7.9",\n', test: T('inv-25-deps') },
   { id: 'i28-doc', rule: 'I-28', name: 'IP vero ammesso se accanto a uno di documentazione', file: 'tools/security/scan-secrets.js',
-    find: "    const real = name === 'IP pubblico' ? hits.filter(ip => !DOC_IP_PREFIXES.some(d => ip.startsWith(d))) : hits",
-    replace: "    const real = name === 'IP pubblico' && hits.some(ip => DOC_IP_PREFIXES.some(d => ip.startsWith(d))) ? [] : hits", test: T('inv-28-secrets') },
+    find: "    const real = name === 'IP pubblico'\n      ? [...content.matchAll(rx)]",
+    replace: "    const real = name === 'IP pubblico' && hits.some(ip => DOC_IP_PREFIXES.some(d => ip.startsWith(d))) ? [] : name === 'IP pubblico'\n      ? [...content.matchAll(rx)]", test: T('inv-28-secrets') },
+  // eccezione version="…" nei .xml (21/10/2026): ognuno dei tre vincoli ha la sua prova
+  { id: 'i28-xml-ovunque', rule: 'I-28', name: 'eccezione version="…" valida in ogni tipo di file, non solo .xml', file: 'tools/security/scan-secrets.js',
+    find: "  if (!p.endsWith('.xml') || m.index === undefined) return false\n", replace: '  if (m.index === undefined) return false\n', test: T('inv-28-secrets') },
+  { id: 'i28-xml-intero', rule: 'I-28', name: 'eccezione version="…" anche se l\'IP è solo l\'inizio del valore', file: 'tools/security/scan-secrets.js',
+    find: "(q === '\"' || q === \"'\") && content[i + m[0].length] === q && ", replace: "(q === '\"' || q === \"'\") && ", test: T('inv-28-secrets') },
+  { id: 'i28-xml-attributo', rule: 'I-28', name: 'eccezione valida per qualsiasi attributo, non solo version', file: 'tools/security/scan-secrets.js',
+    find: "content.slice(a, i - 1) === 'version='", replace: "content[i - 2] === '='", test: T('inv-28-secrets') },
+  { id: 'i28-xml-prefisso', rule: 'I-28', name: 'eccezione valida anche per attributi che finiscono per version (subversion=…)', file: 'tools/security/scan-secrets.js',
+    find: " && (a === 0 || /\\s/.test(content[a - 1]))", replace: '', test: T('inv-28-secrets') },
   { id: 'i28-nsec', rule: 'I-28', name: 'chiavi Nostr private non cercate', file: 'tools/security/scan-secrets.js',
     find: "  ['chiave privata Nostr (nsec)', /\\bnsec1[02-9ac-hj-np-z]{58}\\b/],\n", replace: '', test: T('inv-28-secrets') },
 
@@ -145,7 +154,13 @@ module.exports = [
   { id: 'i31-manifest', rule: 'I-31', name: 'comando dichiarato senza funzione (elenco e codice divergono)', file: 'app/shell/build.rs',
     find: 'const COMMANDS: &[&str] = &["stato", ', replace: 'const COMMANDS: &[&str] = &["esporta_seme", "stato", ', test: T('inv-31-no-keys-in-js') },
   { id: 'i31-field', rule: 'I-31', name: 'campo segreto nei tipi verso il JavaScript', file: 'app/shell/src/api.rs',
-    find: '    pub percento: u8,\n}', replace: '    pub percento: u8,\n    pub seme: String,\n}', test: T('inv-31-no-keys-in-js') },
+    // il campo va anche riempito: senza, il codice sabotato non compila e la prova non dimostra niente
+    // (visto il 21/10/2026, quando inv-31 ha iniziato a compilare il guscio)
+    edits: [
+      { find: '    pub percento: u8,\n}', replace: '    pub percento: u8,\n    pub seme: String,\n}' },
+      { find: '        Self { versione: versione.to_string(), trasporto: trasporto.to_string(), percento }', replace: '        Self { versione: versione.to_string(), trasporto: trasporto.to_string(), percento, seme: String::new() }' },
+    ],
+    test: T('inv-31-no-keys-in-js') },
   { id: 'i31-innerhtml', rule: 'I-31', name: 'innerHTML con dati nell\'interfaccia', file: 'app/ui/main.js',
     find: '  if (el) el.textContent = testo', replace: '  if (el) el.innerHTML = testo', test: T('inv-31-no-keys-in-js') },
   { id: 'i36-fetch', rule: 'I-36', name: 'richiesta di rete dall\'interfaccia', file: 'app/ui/main.js',
@@ -161,7 +176,7 @@ module.exports = [
   { id: 'i58-perm-extra', rule: 'I-58', name: 'la finestra del seme può chiamare altri comandi', file: 'app/shell/capabilities/seme.json',
     find: '"permissions": ["allow-seme-nuovo",', replace: '"permissions": ["allow-stato", "allow-seme-nuovo",', test: T('inv-58-seed-window') },
   { id: 'i58-main-seed', rule: 'I-58', name: 'la finestra principale può chiamare i comandi del seme', file: 'app/shell/capabilities/main.json',
-    find: '"allow-apri-finestra-seme"]', replace: '"allow-apri-finestra-seme", "allow-seme-nuovo"]', test: T('inv-58-seed-window') },
+    find: '"permissions": ["allow-stato",', replace: '"permissions": ["allow-seme-nuovo", "allow-stato",', test: T('inv-58-seed-window') },
   { id: 'i58-label', rule: 'I-58', name: 'i comandi del seme non controllano la finestra', file: 'app/shell/src/lib.rs',
     find: '    if w.label() == FINESTRA_SEME {', replace: '    if w.label() == FINESTRA_SEME || true {', test: T('inv-58-seed-window') },
   { id: 'i58-paste', rule: 'I-58', name: 'incolla permesso nella finestra del seme', file: 'app/ui/seme.js',
@@ -202,6 +217,24 @@ module.exports = [
     find: '      await Promise.all([owner, pub].map(s => new Promise(r => { s.closeAllConnections?.(); s.close(() => r(undefined)) })))\n      try { db.close() } catch {}\n      throw e\n', replace: '      throw e\n', test: T('inv-59-node-tor-control'), timeoutMs: 1800000 },
   { id: 'i37-loopback', rule: 'I-37', name: 'file della porta di controllo accettato da qualsiasi interfaccia', file: 'app/transport/src/tor_process.rs',
     find: '    if host != "127.0.0.1" {\n        return None; // qualsiasi altra interfaccia è un errore di configurazione\n    }\n', replace: '', test: T('inv-37-tor-process'), timeoutMs: 900000 },
+
+  // ─── I-01 statica (21/10/2026) ──
+  { id: 'i01-csp-host', rule: 'I-01', name: 'host remoto esplicito nella CSP (I-31 vede solo i token generici)', file: 'app/shell/tauri.conf.json',
+    find: '"img-src": "\'self\'",', replace: '"img-src": "\'self\' https://cdn.example.org",', test: T('inv-01-no-clearnet') },
+  { id: 'i01-deny-ureq', rule: 'I-01', name: 'divieto di un client HTTP tolto da deny.toml', file: 'app/deny.toml',
+    find: '  { crate = "ureq" },\n', replace: '', test: T('inv-01-no-clearnet') },
+  { id: 'i01-plugin', rule: 'I-01', name: 'plugin di Tauri (aggiornamenti) aggiunto al guscio', file: 'app/shell/Cargo.toml',
+    find: 'zeroize = "=1.8.2"\n', replace: 'zeroize = "=1.8.2"\ntauri-plugin-updater = "=2.9.0"\n', test: T('inv-01-no-clearnet') },
+
+  // ─── Strumenti: un sabotaggio è "preso" solo se il test era verde prima (fondatore, 21/10/2026) ──
+  { id: 'sabotaggio-base-ignorata', rule: 'strumenti', name: 'base rossa ignorata: sabotaggio contato come preso', file: 'tools/sabotage/esito.js',
+    find: "  if (base) return { outcome: 'base-rossa',", replace: "  if (base && false) return { outcome: 'base-rossa',", test: 'tests/unit/sabotage-esito.test.js' },
+  { id: 'sabotaggio-base-falliti', rule: 'strumenti', name: 'test già rosso sul codice intatto considerato verde', file: 'tools/sabotage/esito.js',
+    find: '  if (l.fail > 0) return `il test è già rosso', replace: '  if (l.fail > 99) return `il test è già rosso', test: 'tests/unit/sabotage-esito.test.js' },
+  { id: 'sabotaggio-base-vuota', rule: 'strumenti', name: 'base senza nessun test eseguito considerata verde', file: 'tools/sabotage/esito.js',
+    find: "  if (!l.pass) return 'nessun test eseguito sul codice intatto'\n", replace: '', test: 'tests/unit/sabotage-esito.test.js' },
+  { id: 'sabotaggio-base-dopo', rule: 'strumenti', name: 'base rossa che non ferma il sabotaggio', file: 'tools/sabotage/run.js',
+    find: "    console.log(`BASE ROSSA   ${m.rule} ${m.name} — ${e.detail}`)\n    continue\n", replace: "    console.log(`BASE ROSSA   ${m.rule} ${m.name} — ${e.detail}`)\n", test: 'tests/unit/sabotage-esito.test.js' },
 
   // ─── Strumenti: il report non dice mai "verde" se un test non ha girato (20/10/2026) ──
   { id: 'report-riepilogo', rule: 'strumenti', name: 'file senza riepilogo dei test contato come verde', file: 'tools/report/esito.js',
@@ -274,9 +307,18 @@ module.exports = [
 
   // ─── F4: chiave d'identità letta solo per firmare (fondatore, 20/10/2026) ──
   { id: 'i31-chiave-nel-guscio', rule: 'I-31', name: 'il guscio legge la chiave d\'identità dal portachiavi e la tiene', file: 'app/shell/src/lib.rs',
-    find: '        firma_come_identita(&Sistema, d).ok()\n',
-    replace: '        m4tr1x_identity::portachiavi::carica(&Sistema, m4tr1x_identity::Ruolo::Identity, 1).ok().flatten().and_then(|k: m4tr1x_identity::ChiaveRuolo| k.firma_schnorr(d))\n',
+    find: '        firma_come_identita(&*chiavi.0, d).ok()\n',
+    replace: '        m4tr1x_identity::portachiavi::carica(&*chiavi.0, m4tr1x_identity::Ruolo::Identity, 1).ok().flatten().and_then(|k: m4tr1x_identity::ChiaveRuolo| k.firma_schnorr(d))\n',
     test: T('inv-31-no-keys-in-js') },
+  // ─── F4: prova dinamica dalla IPC vera (21/10/2026) ──
+  { id: 'i31-identita-segreta', rule: 'I-31', name: 'il comando identita restituisce la chiave segreta al JavaScript', file: 'app/shell/src/lib.rs',
+    find: '    creazione::identita_salvata(&*chiavi.0).map(|o| o.map(Identita::from)).map_err(|e| e.to_string())\n',
+    replace: '    Ok(m4tr1x_identity::portachiavi::carica(&*chiavi.0, m4tr1x_identity::Ruolo::Identity, 1).map_err(|e| e.to_string())?.map(|k| Identita { identity: k.segreto_per_portachiavi().iter().map(|b| format!("{b:02x}")).collect(), dm: String::new(), wallet_impronta: String::new() }))\n',
+    test: T('inv-31-no-keys-in-js'), timeoutMs: 1800000 },
+  { id: 'i31-recupera-parole', rule: 'I-31', name: 'il recupero rimanda le 24 parole al JavaScript dentro un campo', file: 'app/shell/src/lib.rs',
+    find: '    let esito = creazione::recupera(&parole, &*chiavi.0);\n    parole.zeroize();\n    let id = esito.map_err(|e| e.to_string())?;\n    let _ = window.close();\n    Ok(id.into())\n',
+    replace: '    let esito = creazione::recupera(&parole, &*chiavi.0);\n    let copia = parole.clone();\n    parole.zeroize();\n    let id = esito.map_err(|e| e.to_string())?;\n    let _ = window.close();\n    let mut i: Identita = id.into();\n    i.dm = copia;\n    Ok(i)\n',
+    test: T('inv-31-no-keys-in-js'), timeoutMs: 1800000 },
   { id: 'i31-buffer-non-cancellato', rule: 'I-31', name: 'buffer del portachiavi liberato senza cancellarlo', file: 'app/identity/src/portachiavi.rs',
     find: '                let v = Zeroizing::new(v);\n', replace: '', test: T('inv-31-no-keys-in-js'), timeoutMs: 900000 },
   { id: 'i31-chiave-tenuta', rule: 'I-31', name: 'chiave d\'identità tenuta da parte tra una firma e l\'altra', file: 'app/identity/src/portachiavi.rs',
@@ -307,6 +349,8 @@ module.exports = [
   { id: 'crash-installato-tardi', rule: 'diagnostica', name: 'registro installato solo dopo l\'avvio di Tauri', file: 'app/shell/src/lib.rs',
     find: '    if let Some(c) = cartella_crash.clone() {\n        m4tr1x_crash::installa(c, env!("CARGO_PKG_VERSION"));\n    }\n',
     replace: '', test: 'tests/unit/crash-log.test.js' },
+  { id: 'crash-prima-saltato', rule: 'diagnostica', name: 'costruisci non esegue il passo `prima` (registro fuori dalla cartella dati di Tauri)', file: 'app/shell/src/lib.rs',
+    find: '            prima(app)?;\n', replace: '', test: 'tests/unit/crash-log.test.js' },
 
   // ─── F4: cargo deny e cargo audit (I-25) ──
   { id: 'i25-audit-eccezione', rule: 'I-25', name: 'eccezione aggiunta solo a cargo audit (senza motivo in deny.toml)', file: 'app/.cargo/audit.toml',
@@ -322,7 +366,9 @@ module.exports = [
   { id: 'i36-relay-eventi', rule: 'I-36', name: 'client del relay senza tetto agli eventi', file: 'app/transport/src/relay.rs',
     find: '                    if eventi.len() == MASSIMO_EVENTI {', replace: '                    if false && eventi.len() == MASSIMO_EVENTI {', test: T('inv-36-transport-only'), timeoutMs: 900000 },
   { id: 'i36-relay-tempo', rule: 'I-36', name: 'client del relay che aspetta per sempre un nodo muto', file: 'app/transport/src/relay.rs',
-    find: '        let scadenza = Instant::now() + TEMPO_MASSIMO;\n        self.manda(', replace: '        let scadenza = Instant::now() + TEMPO_MASSIMO * 1000;\n        self.manda(', test: T('inv-36-transport-only'), timeoutMs: 900000 },
+    find: '        let scadenza = Instant::now() + TEMPO_MASSIMO;\n        self.manda(&json!(["REQ"', replace: '        let scadenza = Instant::now() + TEMPO_MASSIMO * 1000;\n        self.manda(&json!(["REQ"', test: T('inv-36-transport-only'), timeoutMs: 900000 },
+  { id: 'i36-relay-tempo-pubblica', rule: 'I-36', name: 'pubblicazione che aspetta per sempre la conferma di un nodo muto', file: 'app/transport/src/relay.rs',
+    find: '        let scadenza = Instant::now() + TEMPO_MASSIMO;\n        self.manda(&json!(["EVENT"', replace: '        let scadenza = Instant::now() + TEMPO_MASSIMO * 1000;\n        self.manda(&json!(["EVENT"', test: T('inv-36-transport-only'), timeoutMs: 900000 },
 
   // ─── Scaricamento dei file dai peer (decisioni del fondatore, 20/10/2026) ──
   { id: 'blob-tempo', rule: 'blob', name: 'nessun tempo massimo totale per tentativo (solo inattività)', file: 'node/src/blobs.js',

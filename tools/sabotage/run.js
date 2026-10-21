@@ -18,6 +18,7 @@ const path = require('path')
 const crypto = require('crypto')
 const { spawnSync } = require('child_process')
 const MUTATIONS = require('./mutations')
+const { leggi, problemaBase, esitoSabotaggio } = require('./esito')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const OUT = path.join(ROOT, 'docs', 'generated', 'sabotage.json')
@@ -34,8 +35,32 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { resto
 process.on('exit', restoreAll)
 process.on('uncaughtException', e => { restoreAll(); console.error(e); process.exit(1) })
 
+/** @param {string} test @param {number} testTimeout */
+function esegui(test, testTimeout) {
+  const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-force-exit', `--test-timeout=${testTimeout}`, test],
+    { cwd: ROOT, encoding: 'utf8', timeout: Math.max(400000, testTimeout * 2), maxBuffer: 64 * 1024 * 1024 })
+  return leggi((r.stdout || '') + (r.stderr || ''), r.error)
+}
+
+const scelte = MUTATIONS.filter(x => x.id.includes(filter))
+// Prima di sabotare, il test deve essere verde sul codice INTATTO (fondatore, 21/10/2026): una volta per file
+// di test, con il tempo massimo più alto tra le prove che lo usano. Le prove con tor vero durano minuti.
+/** @type {Map<string, string|null>} test → problemaBase (null = verde) */
+const basi = new Map()
+const tempoDi = (/** @type {any} */ m) => m.timeoutMs || 90000
+function base(/** @type {string} */ test) {
+  if (!basi.has(test)) {
+    if (pending.size) throw new Error('test sul codice intatto con un sabotaggio ancora applicato')
+    const tempo = Math.max(...scelte.filter(x => x.test === test).map(tempoDi))
+    const p = problemaBase(esegui(test, tempo))
+    basi.set(test, p)
+    console.log(`${p ? 'BASE ROSSA ' : 'base verde '}  ${test}${p ? ` — ${p}` : ''}`)
+  }
+  return /** @type {string|null} */ (basi.get(test))
+}
+
 const results = []
-for (const m of MUTATIONS.filter(x => x.id.includes(filter))) {
+for (const m of scelte) {
   const file = path.join(ROOT, m.file)
   const orig = fs.readFileSync(file, 'utf8')
   const edits = m.edits || [{ find: /** @type {string} */ (m.find), replace: /** @type {string} */ (m.replace) }]
@@ -45,28 +70,19 @@ for (const m of MUTATIONS.filter(x => x.id.includes(filter))) {
     console.log(`NON APPLICABILE  ${m.rule} ${m.name}`)
     continue
   }
+  const problema = base(m.test)
+  if (problema) {
+    const e = esitoSabotaggio(problema, leggi(''), tempoDi(m))
+    results.push({ ...pick(m), ...e })
+    console.log(`BASE ROSSA   ${m.rule} ${m.name} — ${e.detail}`)
+    continue
+  }
   pending.set(file, orig)
   fs.writeFileSync(file, edits.reduce((s, e) => s.replace(e.find, e.replace), orig))
   let outcome, detail
   try {
     // Le prove con tor vero (I-37) durano minuti: ognuna può dichiarare il suo tempo massimo.
-    const testTimeout = m.timeoutMs || 90000
-    const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-force-exit', `--test-timeout=${testTimeout}`, m.test],
-      { cwd: ROOT, encoding: 'utf8', timeout: Math.max(400000, testTimeout * 2), maxBuffer: 64 * 1024 * 1024 })
-    const out = (r.stdout || '') + (r.stderr || '')
-    const fails = out.split('\n').filter(l => l.startsWith('# fail '))
-    const last = fails.at(-1)
-    // Un test fermato dal tempo massimo NON ha preso il sabotaggio: non si sa cosa avrebbe detto.
-    const timedOut = /testTimeoutFailure|timed out after/.test(out)
-    // Un sabotaggio che NON COMPILA non è "preso": il test cade per l'errore di compilazione, non perché
-    // si accorge della regola rotta. Va riscritto perché compili (20/10/2026: feed-senza-verifica lo era).
-    const nonCompila = /error\[E\d{4}\]|could not compile/.test(out)
-    if (r.error) { outcome = 'interrotta'; detail = `test interrotto (${r.error.message}): alzare timeoutMs della prova` }
-    else if (nonCompila) { outcome = 'non-compila'; detail = 'il codice sabotato non compila: la prova non dimostra niente, va riscritta' }
-    else if (timedOut) { outcome = 'interrotta'; detail = `tempo massimo (${testTimeout} ms) superato: alzare timeoutMs della prova` }
-    else if (!last) { outcome = 'presa'; detail = 'il test è caduto' }
-    else if (last.trim() === '# fail 0') { outcome = 'sfuggita'; detail = 'tutti i test verdi con la regola rotta' }
-    else { outcome = 'presa'; detail = last.replace('# ', '') }
+    ;({ outcome, detail } = esitoSabotaggio(null, esegui(m.test, tempoDi(m)), tempoDi(m)))
   } finally {
     fs.writeFileSync(file, orig)
     pending.delete(file)

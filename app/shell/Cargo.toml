@@ -33,3 +33,8 @@ zeroize = "=1.8.2"
 # Blocco delle catture dello schermo sulla finestra del seme (I-58). Già nel lockfile via Tauri.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+# Runtime finto di Tauri, solo per le prove: i comandi passano dalla vera IPC senza finestra (I-31 dinamica,
+# tests/i31_ipc.rs). Stessa versione esatta; nessuna libreria nuova nel lockfile (verificato il 21/10/2026).
+[dev-dependencies]
+tauri = { version = "=2.12.4", features = ["test"] }

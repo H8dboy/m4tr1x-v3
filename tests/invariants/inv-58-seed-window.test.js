@@ -49,9 +49,9 @@ test('i comandi del seme esistono e li può chiamare SOLO la finestra del seme',
   }
   // seconda difesa nel lato Rust: ogni comando seme_* controlla l'etichetta della finestra
   const lib = read(path.join(SHELL, 'src', 'lib.rs'))
-  assert.match(lib, /fn solo_finestra_seme\(w: &WebviewWindow\) -> Result<\(\), String> \{\s*if w\.label\(\) == FINESTRA_SEME \{/, 'solo_finestra_seme non confronta l\'etichetta')
+  assert.match(lib, /fn solo_finestra_seme<R: Runtime>\(w: &WebviewWindow<R>\) -> Result<\(\), String> \{\s*if w\.label\(\) == FINESTRA_SEME \{/, 'solo_finestra_seme non confronta l\'etichetta')
   for (const c of SEED_CMDS) {
-    const body = new RegExp(`fn ${c}\\([^)]*\\)[^{]*\\{([\\s\\S]*?)\\n\\}`).exec(lib)
+    const body = new RegExp(`fn ${c}(?:<R: Runtime>)?\\([^)]*\\)[^{]*\\{([\\s\\S]*?)\\n\\}`).exec(lib)
     assert.ok(body, `manca la funzione ${c}`)
     assert.match(body[1].trim().split('\n')[0], /^solo_finestra_seme\(&window\)\?;$/, `${c} non controlla per prima cosa la finestra`)
   }

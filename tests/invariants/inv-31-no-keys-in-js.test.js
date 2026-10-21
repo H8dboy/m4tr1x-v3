@@ -39,7 +39,7 @@ function commandFns() {
   /** @type {{ name: string, ret: string, file: string }[]} */ const out = []
   for (const f of walk(path.join(SHELL, 'src')).filter(f => f.endsWith('.rs'))) {
     const src = read(f)
-    for (const m of src.matchAll(/#\[tauri::command[^\]]*\]\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\([^)]*\)\s*(?:->\s*([^{]+))?\{/g)) {
+    for (const m of src.matchAll(/#\[tauri::command[^\]]*\]\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*(?:<R: Runtime>)?\([^)]*\)\s*(?:->\s*([^{]+))?\{/g)) {
       out.push({ name: m[1], ret: (m[2] || '()').trim(), file: path.relative(ROOT, f) })
     }
   }
@@ -159,4 +159,19 @@ test('chiave d\'identità (Rust): ogni firma legge il portachiavi, segreti Zeroi
   assert.equal(r.status, 0, out.slice(-4000))
   for (const p of ['ogni_firma_legge_il_portachiavi_nessuna_chiave_tenuta', 'senza_identita_salvata_non_si_firma', 'segreti_cancellati_per_costruzione'])
     assert.match(out, new RegExp(`${p} \\.\\.\\. ok`), `manca o fallisce la prova ${p}`)
+})
+
+// Prova DINAMICA (21/10/2026): ogni comando chiamato dalla vera IPC di Tauri (runtime finto, capability
+// vere), con un seme creato dall'app; nessuna risposta contiene byte delle chiavi o parole del seme.
+// Tor e nodo di prova tolti dall'ambiente: la prova non apre niente e non tocca il portachiavi vero.
+test('nessuna chiave nelle risposte dei comandi (Rust, IPC vera con un seme di prova)', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 1800000 }, () => {
+  const app = path.join(ROOT, 'app')
+  const env = { ...process.env }
+  delete env.M4TR1X_TOR_BIN
+  delete env.M4TR1X_NODO_PROVA
+  const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(app, 'Cargo.toml'), '-p', 'm4tr1x-shell', '--test', 'i31_ipc'],
+    { cwd: app, env, encoding: 'utf8', timeout: 1800000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
+  const out = (r.stdout || '') + (r.stderr || '')
+  assert.equal(r.status, 0, out.slice(-4000))
+  assert.match(out, /nessuna_chiave_raggiunge_il_javascript \.\.\. ok/, 'manca o fallisce la prova nessuna_chiave_raggiunge_il_javascript')
 })
