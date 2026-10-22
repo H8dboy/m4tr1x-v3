@@ -55,13 +55,17 @@ case "${1:-}" in
 
   controllo)
     # controllo POSITIVO: senza, contatori a 0 potrebbero voler dire "regole che non vedono niente"
-    prima=$(iptables -nvxL M4VIOLA | awk 'NR==3 {print $1}')
+    # ogni prova si conta DA SOLA: sommate, la risoluzione (sempre contata) nasconderebbe un host esterno ammesso
+    viola() { iptables -nvxL M4VIOLA | awk 'NR==3 {print $1}'; }
+    prima=$(viola)
     if sudo -u "$UTENTE" getent ahosts torproject.org >/dev/null 2>&1; then echo "controllo: $UTENTE risolve ancora i nomi" >&2; exit 1; fi
+    dns=$(viola)
+    if [ "$dns" -le "$prima" ]; then echo "controllo: la risoluzione non è stata contata ($prima → $dns)" >&2; exit 1; fi
     # indirizzo di documentazione (RFC 5737): il pacchetto esce dalle regole e si conta prima di andare ovunque
     if sudo -u "$UTENTE" timeout 10 bash -c 'exec 3<>/dev/tcp/192.0.2.1/443' 2>/dev/null; then echo "controllo: $UTENTE raggiunge un host fuori dai relay" >&2; exit 1; fi
-    dopo=$(iptables -nvxL M4VIOLA | awk 'NR==3 {print $1}')
-    if [ "$dopo" -le "$prima" ]; then echo "controllo: le violazioni non sono state contate ($prima → $dopo)" >&2; exit 1; fi
-    echo "controllo positivo: risoluzione e host esterno bloccati e contati ($prima → $dopo); contatori azzerati"
+    dopo=$(viola)
+    if [ "$dopo" -le "$dns" ]; then echo "controllo: l'host fuori dai relay non è stato contato ($dns → $dopo)" >&2; exit 1; fi
+    echo "controllo positivo: risoluzione ($prima → $dns) e host esterno ($dns → $dopo) bloccati e contati; contatori azzerati"
     iptables -Z M4VIOLA; ip6tables -Z M4VIOLA; iptables -Z M4APP; ip6tables -Z M4APP
     ;;
 

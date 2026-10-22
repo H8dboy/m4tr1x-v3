@@ -254,6 +254,16 @@ module.exports = [
   { id: 'i01-plugin', rule: 'I-01', name: 'plugin di Tauri (aggiornamenti) aggiunto al guscio', file: 'app/shell/Cargo.toml',
     find: 'zeroize = "=1.8.2"\n', replace: 'zeroize = "=1.8.2"\ntauri-plugin-updater = "=2.9.0"\n', test: T('inv-01-no-clearnet') },
 
+  // ─── I-01 dinamica (22/10/2026): gli strumenti della prova; le regole vere solo su Linux con sudo ──
+  { id: 'i01-ammette-fuori', rule: 'I-01', name: 'regole che lasciano uscire tutto fuori dal loopback (controllo positivo deve cadere)', file: 'tools/i01/rete.sh', piattaforma: 'linux',
+    find: '    iptables -A M4APP -j M4VIOLA\n', replace: '    iptables -A M4APP -j ACCEPT\n', test: T('inv-01-rete'), timeoutMs: 300000 },
+  { id: 'i01-resolver-ammesso', rule: 'I-01', name: 'resolver locale sul loopback ammesso (DNS fuori da Tor)', file: 'tools/i01/rete.sh', piattaforma: 'linux',
+    find: '        $T -A M4APP -o lo -p udp --dport "$p" -j M4VIOLA\n        $T -A M4APP -o lo -p tcp --dport "$p" -j M4VIOLA\n', replace: '', test: T('inv-01-rete'), timeoutMs: 300000 },
+  { id: 'i01-verifica-senza-relay', rule: 'I-01', name: 'verde anche senza traffico verso i relay (contatori a 0 = "non è successo niente")', file: 'tools/i01/verifica.js',
+    find: "  if (valori.pacchetti_verso_relay === 0) motivi.push(", replace: "  if (false) motivi.push(", test: T('inv-01-rete') },
+  { id: 'i01-verifica-non-letto', rule: 'I-01', name: 'contatore non letto trattato come zero', file: 'tools/i01/verifica.js',
+    find: '    valori[k] = m ? Number(m[1]) : NaN\n', replace: '    valori[k] = m ? Number(m[1]) : 0\n', test: T('inv-01-rete') },
+
   // ─── Strumenti: un sabotaggio è "preso" solo se il test era verde prima (fondatore, 21/10/2026) ──
   { id: 'sabotaggio-base-ignorata', rule: 'strumenti', name: 'base rossa ignorata: sabotaggio contato come preso', file: 'tools/sabotage/esito.js',
     find: "  if (base) return { outcome: 'base-rossa',", replace: "  if (base && false) return { outcome: 'base-rossa',", test: 'tests/unit/sabotage-esito.test.js' },

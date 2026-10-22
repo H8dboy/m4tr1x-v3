@@ -9,8 +9,8 @@
  *  - CSP con elenco CHIUSO di sorgenti: I-31 vieta i token generici (https:, *), non un host esplicito;
  *  - i divieti di deny.toml non si tolgono: cargo deny passa anche senza il divieto se il crate oggi non c'è;
  *  - nessun plugin di Tauri (configurazione e dipendenze del guscio).
- * Parte DINAMICA (da fare, F4): app vera guidata con WebDriver, utente di sistema dedicato, iptables che
- * conta e scarta tutto tranne loopback verso il tor dell'app; contatore a 0. Su Windows: Wireshark a mano.
+ * Parte DINAMICA (attiva dal 22/10/2026): job CI `i01-rete` (app vera, utente dedicato, solo relay Tor);
+ * gli strumenti della prova in inv-01-rete.test.js. Su Windows: Wireshark a mano.
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')

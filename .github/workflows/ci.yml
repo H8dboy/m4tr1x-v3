@@ -33,9 +33,9 @@ jobs:
       - name: Controllo dei tipi (ADR-0012)
         run: npx tsc -p tsconfig.json
       # Librerie di sistema per compilare il guscio Tauri su Linux (prerequisiti ufficiali di Tauri 2):
-      # servono alla prova dinamica di I-31 (app/shell/tests/i31_ipc.rs), dal 21/10/2026
+      # servono alla prova dinamica di I-31 (app/shell/tests/i31_ipc.rs), dal 21/10/2026; ipset e acl a inv-01-rete
       - name: Librerie del guscio (WebKitGTK)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev ipset acl
       - name: Invarianti
         run: node tools/report/esegui.js tests
 
@@ -258,6 +258,9 @@ jobs:
           package-manager-cache: false
           node-version-file: .node-version
       - run: npm ci --ignore-scripts
+      # le regole vere di I-01 (tools/i01/rete.sh) servono a inv-01-rete
+      - name: Strumenti di rete di I-01
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ipset acl
       - name: Sabotaggi delle difese solo Linux
         run: node tools/sabotage/run.js --piattaforma-attuale
 
