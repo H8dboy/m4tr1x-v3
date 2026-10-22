@@ -1,0 +1,13 @@
+{
+  "_nota": "Strumenti della prova dinamica di I-01 (solo CI Linux; decisione del fondatore del 21/10/2026). tauri-driver: versione E hash fissati qui; il .crate si scarica da static.crates.io, si confronta lo sha256 PRIMA di estrarlo e si compila con il suo Cargo.lock (--locked). WebKitWebDriver: dal pacchetto Ubuntu webkit2gtk-driver, verificato dalle firme apt di Ubuntu (deve essere della stessa versione della libreria WebKitGTK con cui si compila l'app); la versione usata si stampa nel log del job. Cambiare versione = cambiare questo file in review.",
+  "tauri_driver": {
+    "versione": "2.1.0",
+    "crate_url": "https://static.crates.io/crates/tauri-driver/tauri-driver-2.1.0.crate",
+    "crate_sha256": "2f2e29bd6900fb718dfdc06f2e7a371d6087c085daaf83709847ef3e6b0c1953",
+    "_verifica": "21/10/2026: sha256 calcolato sul .crate scaricato = cksum di index.crates.io = checksum dell'API di crates.io (tre fonti uguali). Pubblicata il 26/09/2026. Il .crate contiene Cargo.lock. Ascolta solo su 127.0.0.1 (porta 4444, WebKitWebDriver sulla 4445)."
+  },
+  "webkitwebdriver": {
+    "pacchetto_ubuntu": "webkit2gtk-driver",
+    "_verifica": "firme apt di Ubuntu; versione stampata nel log del job i01-rete (dpkg-query)."
+  }
+}
