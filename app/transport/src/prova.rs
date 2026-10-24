@@ -25,6 +25,18 @@ pub async fn relay_finto<S: AsyncRead + AsyncWrite + Unpin>(flusso: S, eventi: V
 /// Come [`relay_finto`], con gli eventi condivisi tra più connessioni: un `EVENT` accettato (`OK` true)
 /// si aggiunge e le `REQ` successive lo restituiscono. `CONTENUTO_RIFIUTATO` → `OK` false.
 pub async fn relay_finto_condiviso<S: AsyncRead + AsyncWrite + Unpin>(flusso: S, eventi: Arc<Mutex<Vec<Value>>>) {
+    relay_finto_core(flusso, eventi, true).await
+}
+
+/// Come [`relay_finto_condiviso`] ma IGNORA i filtri della `REQ`: manda OGNI evento, anche di kind o autori
+/// non chiesti, come un relay malevolo o bacato. Serve a provare le difese in profondità del client:
+/// il feed deve scartare i kind != 1, i profili i kind != 0 e gli autori diversi da quello chiesto.
+pub async fn relay_finto_che_ignora_il_filtro<S: AsyncRead + AsyncWrite + Unpin>(flusso: S, eventi: Arc<Mutex<Vec<Value>>>) {
+    relay_finto_core(flusso, eventi, false).await
+}
+
+/// Cuore dei relay finti: `filtra` = applica il filtro NIP-01 della `REQ` (come il nodo vero) oppure manda tutto.
+async fn relay_finto_core<S: AsyncRead + AsyncWrite + Unpin>(flusso: S, eventi: Arc<Mutex<Vec<Value>>>, filtra: bool) {
     let Ok(mut ws) = tokio_tungstenite::accept_async(flusso).await else { return };
     while let Some(Ok(m)) = ws.next().await {
         let Message::Text(t) = m else { continue };
@@ -32,10 +44,9 @@ pub async fn relay_finto_condiviso<S: AsyncRead + AsyncWrite + Unpin>(flusso: S,
         match a.first().and_then(Value::as_str) {
             Some("REQ") => {
                 let id = a.get(1).cloned().unwrap_or(Value::Null);
-                // filtri come il nodo vero (kinds, authors, ids): un relay finto che manda tutto farebbe passare
-                // prove che col nodo fallirebbero (20/10/2026, profili)
+                // col nodo vero il filtro (kinds, authors, ids) vale; `filtra=false` simula un relay che manda tutto
                 let filtro = a.get(2).cloned().unwrap_or(Value::Null);
-                let copia: Vec<Value> = eventi.lock().unwrap().iter().filter(|e| passa(&filtro, e)).cloned().collect();
+                let copia: Vec<Value> = eventi.lock().unwrap().iter().filter(|e| !filtra || passa(&filtro, e)).cloned().collect();
                 for e in &copia {
                     if ws.send(Message::text(json!(["EVENT", id, e]).to_string())).await.is_err() {
                         return;

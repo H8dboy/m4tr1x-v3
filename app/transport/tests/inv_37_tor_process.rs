@@ -21,11 +21,38 @@ fn tor_bin() -> Option<PathBuf> {
     }
 }
 
-fn tmpdir(nome: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("m4tr1x-i37-{nome}-{}", std::process::id()));
+/// Cartella temporanea che si CANCELLA DA SOLA a fine test (Drop): chiude il leak delle copie di tor
+/// (~72 MB l'una) che riempiva il tmpfs /tmp durante una campagna di sabotaggio intera (24/10/2026).
+/// Deref a PathBuf: `dir.join(..)` e `dir.clone()` (PathBuf, perché TmpDir non è Clone) restano uguali.
+struct TmpDir(PathBuf);
+impl std::ops::Deref for TmpDir {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+impl Drop for TmpDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+impl AsRef<std::path::Path> for TmpDir {
+    fn as_ref(&self) -> &std::path::Path {
+        self.0.as_ref()
+    }
+}
+impl AsRef<std::ffi::OsStr> for TmpDir {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.0.as_ref()
+    }
+}
+
+fn tmpdir(nome: &str) -> TmpDir {
+    let unico = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let d = std::env::temp_dir().join(format!("m4tr1x-i37-{nome}-{}-{unico}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
-    d
+    TmpDir(d)
 }
 
 /// Cache del consenso di Tor tra i test (stessa cartella e stesse regole di

@@ -22,6 +22,8 @@ test('feed e pubblicazione (Rust): post verificati, tentativi, budget, ripresa, 
   for (const p of ['solo_post_verificati_dal_piu_recente', 'nessun_testo_di_eventi_non_validi_arriva_al_feed', 'riprova_finche_il_nodo_risponde',
     'oltre_il_budget_non_raggiungibile', 'dopo_il_budget_attende_un_minuto_e_riprova_da_sola', 'la_ripresa_e_una_sola',
     // pubblicazione (F4, post)
-    'il_post_pubblicato_si_rilegge_dal_feed', 'il_no_del_nodo_non_si_ritenta', 'pubblica_riprova_e_riprende_come_il_feed'])
+    'il_post_pubblicato_si_rilegge_dal_feed', 'il_no_del_nodo_non_si_ritenta', 'pubblica_riprova_e_riprende_come_il_feed',
+    // difesa in profondità sui kind anche con un relay che ignora i filtri (lacuna feed-ogni-kind chiusa, 24/10/2026)
+    'eventi_non_post_scartati_anche_se_il_relay_li_manda', 'il_nome_solo_da_un_profilo_kind0_dell_autore'])
     assert.match(out, new RegExp(`${p} \\.\\.\\. ok`), `manca o fallisce la prova ${p}`)
 })

@@ -20,12 +20,17 @@ const path = require('path')
 const crypto = require('crypto')
 const { spawnSync } = require('child_process')
 const MUTATIONS = require('./mutations')
-const { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonPassa, scegli } = require('./esito')
+const { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonApplicabileQui, nonPassa, scegli } = require('./esito')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const OUT = path.join(ROOT, 'docs', 'generated', 'sabotage.json')
 const { scelte, parziale } = scegli(MUTATIONS, process.argv[2], process.platform)
 const sha = (/** @type {string} */ s) => crypto.createHash('sha256').update(s).digest('hex')
+// Capacità dell'ambiente richieste da certe prove (I-01: sandbox di rete con iptables/ipset/ACL e sudo).
+const capacita = {
+  i01: process.platform === 'linux' && spawnSync('sudo', ['-n', 'true']).status === 0 &&
+    ['iptables', 'ip6tables', 'ipset', 'setfacl', 'useradd'].every(c => spawnSync('sudo', ['-n', 'sh', '-c', `command -v ${c}`]).status === 0),
+}
 
 /** @type {Map<string, string>} percorso → contenuto originale */
 const pending = new Map()
@@ -55,7 +60,7 @@ function base(/** @type {string} */ test) {
     const tempo = Math.max(...scelte.filter(x => x.test === test).map(tempoDi))
     const p = problemaBase(esegui(test, tempo))
     basi.set(test, p)
-    console.log(`${p ? 'BASE ROSSA ' : 'base verde '}  ${test}${p ? ` — ${p}` : ''}`)
+    console.log(`${!p ? 'base verde ' : p.startsWith('AMBIENTE') ? 'AMBIENTE   ' : 'BASE ROSSA '}  ${test}${p ? ` — ${p}` : ''}`)
   }
   return /** @type {string|null} */ (basi.get(test))
 }
@@ -76,6 +81,12 @@ for (const m of scelte) {
   if (altrove) {
     results.push({ ...pick(m), ...altrove })
     console.log(`ALTRA PIATTAFORMA  ${m.rule} ${m.name} — ${altrove.detail}`)
+    continue
+  }
+  const senzaCapacita = nonApplicabileQui(m, capacita)
+  if (senzaCapacita) {
+    results.push({ ...pick(m), ...senzaCapacita })
+    console.log(`NON APPLICABILE QUI  ${m.rule} ${m.name} — ${senzaCapacita.detail}`)
     continue
   }
   const problema = base(m.test)
@@ -114,6 +125,7 @@ fs.mkdirSync(path.dirname(OUT), { recursive: true })
 if (!parziale) fs.writeFileSync(OUT, JSON.stringify(data, null, 2) + '\n')
 const bad = results.filter(r => nonPassa(r.outcome))
 const altrove = results.filter(r => r.outcome === 'altra-piattaforma').length
+const nonApplic = results.filter(r => r.outcome === 'non-applicabile-qui').length
 const prese = results.filter(r => r.outcome === 'presa').length
-console.log(`\n${prese}/${results.length - altrove} prese${altrove ? ` (+${altrove} di un'altra piattaforma, non eseguite qui)` : ''}${parziale ? ' (parziale: non salvato)' : ` — salvato in ${path.relative(ROOT, OUT)}`}`)
+console.log(`\n${prese}/${results.length - altrove - nonApplic} prese${altrove ? ` (+${altrove} di un'altra piattaforma)` : ''}${nonApplic ? ` (+${nonApplic} non applicabili qui: servono la CI)` : ''}${parziale ? ' (parziale: non salvato)' : ` — salvato in ${path.relative(ROOT, OUT)}`}`)
 process.exit(bad.length ? 1 : 0)

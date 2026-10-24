@@ -97,6 +97,16 @@ test('client del relay: tokio-tungstenite senza connect né TLS', () => {
 })
 
 const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' })
+
+// I-36 (runtime): OnionV3 rifiuta gli host in chiaro. Aggancia i test unitari di onion.rs al report (24/10/2026).
+test('OnionV3 (Rust): rifiuta a runtime gli host in chiaro', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 900000 }, () => {
+  const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(APP, 'Cargo.toml'), '-p', 'm4tr1x-transport', '--lib', '--', 'onion::'],
+    { cwd: APP, encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
+  const out = (r.stdout || '') + (r.stderr || '')
+  assert.equal(r.status, 0, out.slice(-4000))
+  for (const t of ['rifiuta_host_in_chiaro', 'rifiuta_onion_v2_e_lunghezze_sbagliate', 'rifiuta_checksum_sbagliato', 'rifiuta_versione_diversa_da_3', 'rifiuta_sottodomini_e_caratteri_non_base32'])
+    assert.match(out, new RegExp(`${t} \\.\\.\\. ok`), `manca o fallisce la prova ${t}`)
+})
 test('client del relay (Rust): limiti di tempo, eventi e dimensione contro un relay finto', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 900000 }, () => {
   const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(APP, 'Cargo.toml'), '-p', 'm4tr1x-transport', '--test', 'relay'],
     { cwd: APP, encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })

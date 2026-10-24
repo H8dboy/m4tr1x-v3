@@ -30,6 +30,18 @@ test('con la base rossa il sabotaggio non è MAI "presa", anche se il test cade'
   }
 })
 
+test('spazio su disco esaurito (ENOSPC) sul codice intatto = AMBIENTE, non base-rossa (falso rosso)', () => {
+  const l = leggi(tap(2, 1) + 'Error: ENOSPC: no space left on device, write\n')
+  assert.equal(l.ambiente, true)
+  const base = problemaBase(l)
+  assert.match(String(base), /^AMBIENTE/)
+  assert.equal(esitoSabotaggio(base, leggi(tap(0, 5)), 1000).outcome, 'ambiente')
+  // anche il messaggio del kernel "No space left on device" vale come ambiente
+  assert.equal(leggi(tap(1, 0) + 'No space left on device\n').ambiente, true)
+  // non è un verde: fa comunque notare che bisogna rilanciare (come ogni esito diverso da presa)
+  assert.equal(nonPassa('ambiente'), true)
+})
+
 test('con la base verde: caduto = presa, tutto verde = sfuggita, non compila / tempo = non vale', () => {
   assert.equal(esitoSabotaggio(null, leggi(tap(2, 1)), 1000).outcome, 'presa')
   assert.equal(esitoSabotaggio(null, leggi('TAP version 13\n'), 1000).outcome, 'presa')
