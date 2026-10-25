@@ -20,7 +20,7 @@ const path = require('path')
 const crypto = require('crypto')
 const { spawnSync } = require('child_process')
 const MUTATIONS = require('./mutations')
-const { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonApplicabileQui, nonPassa, scegli } = require('./esito')
+const { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonApplicabileQui, nonPassa, nuoviResidui, scegli } = require('./esito')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const OUT = path.join(ROOT, 'docs', 'generated', 'sabotage.json')
@@ -30,6 +30,19 @@ const sha = (/** @type {string} */ s) => crypto.createHash('sha256').update(s).d
 const capacita = {
   i01: process.platform === 'linux' && spawnSync('sudo', ['-n', 'true']).status === 0 &&
     ['iptables', 'ip6tables', 'ipset', 'setfacl', 'useradd'].every(c => spawnSync('sudo', ['-n', 'sh', '-c', `command -v ${c}`]).status === 0),
+}
+
+// Residui: dopo ogni prova non deve restare nessun file nuovo non tracciato (es. permessi generati da un build
+// sabotato, 25/10/2026). Quelli comparsi vengono tolti (non c'erano prima) e la prova conta come fallita.
+const nonTracciati = () => spawnSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], { cwd: ROOT, encoding: 'utf8' }).stdout.split('\0').filter(Boolean)
+const prima = nonTracciati()
+const residuiTotali = /** @type {string[]} */ ([])
+/** @param {string} dove @returns {string[]} */
+function ripulisciResidui(dove) {
+  const nuovi = nuoviResidui(prima, nonTracciati())
+  for (const f of nuovi) { try { fs.rmSync(path.join(ROOT, f), { force: true }) } catch {} }
+  if (nuovi.length) { residuiTotali.push(...nuovi); console.log(`RESIDUO     ${dove}: ${nuovi.join(', ')} (rimosso)`) }
+  return nuovi
 }
 
 /** @type {Map<string, string>} percorso → contenuto originale */
@@ -59,6 +72,7 @@ function base(/** @type {string} */ test) {
     if (pending.size) throw new Error('test sul codice intatto con un sabotaggio ancora applicato')
     const tempo = Math.max(...scelte.filter(x => x.test === test).map(tempoDi))
     const p = problemaBase(esegui(test, tempo))
+    ripulisciResidui(`base ${test}`)
     basi.set(test, p)
     console.log(`${!p ? 'base verde ' : p.startsWith('AMBIENTE') ? 'AMBIENTE   ' : 'BASE ROSSA '}  ${test}${p ? ` — ${p}` : ''}`)
   }
@@ -107,7 +121,8 @@ for (const m of scelte) {
     pending.delete(file)
   }
   if (sha(fs.readFileSync(file, 'utf8')) !== sha(orig)) throw new Error(`ripristino fallito: ${m.file}`)
-  results.push({ ...pick(m), outcome, detail })
+  const residui = ripulisciResidui(m.id)
+  results.push({ ...pick(m), outcome, detail, ...(residui.length ? { residui } : {}) })
   console.log(`${outcome === 'presa' ? 'PRESA     ' : outcome === 'interrotta' ? 'INTERROTTA' : outcome === 'non-compila' ? 'NON COMPILA' : 'SFUGGITA  '}  ${m.rule} ${m.name} — ${detail}`)
 }
 
@@ -123,9 +138,10 @@ const data = {
 }
 fs.mkdirSync(path.dirname(OUT), { recursive: true })
 if (!parziale) fs.writeFileSync(OUT, JSON.stringify(data, null, 2) + '\n')
-const bad = results.filter(r => nonPassa(r.outcome))
+const bad = results.filter(r => nonPassa(r.outcome) || ('residui' in r && r.residui))
 const altrove = results.filter(r => r.outcome === 'altra-piattaforma').length
 const nonApplic = results.filter(r => r.outcome === 'non-applicabile-qui').length
 const prese = results.filter(r => r.outcome === 'presa').length
 console.log(`\n${prese}/${results.length - altrove - nonApplic} prese${altrove ? ` (+${altrove} di un'altra piattaforma)` : ''}${nonApplic ? ` (+${nonApplic} non applicabili qui: servono la CI)` : ''}${parziale ? ' (parziale: non salvato)' : ` — salvato in ${path.relative(ROOT, OUT)}`}`)
-process.exit(bad.length ? 1 : 0)
+if (residuiTotali.length) console.log(`RESIDUI: ${residuiTotali.length} file nuovi non tracciati lasciati dalle prove (rimossi): la campagna NON è verde`)
+process.exit(bad.length || residuiTotali.length ? 1 : 0)

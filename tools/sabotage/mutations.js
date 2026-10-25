@@ -12,7 +12,7 @@
  */
 const T = (/** @type {string} */ n) => `tests/invariants/${n}.test.js`
 
-/** @type {Array<{ id: string, rule: string, name: string, file: string, test: string, timeoutMs?: number, piattaforma?: string, find?: string, replace?: string, edits?: Array<{ find: string, replace: string }> }>} */
+/** @type {Array<{ id: string, rule: string, name: string, file: string, test: string, timeoutMs?: number, piattaforma?: string, richiede?: string, find?: string, replace?: string, edits?: Array<{ find: string, replace: string }> }>} */
 module.exports = [
   // ─── F0 ───────────────────────────────────────────────────────────────────
   { id: 'i23-rete', rule: 'I-23', name: 'rete della firma non controllata', file: 'tools/release/verify-release.js',

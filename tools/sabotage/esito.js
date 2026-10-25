@@ -107,4 +107,7 @@ function scegli(tutte, arg, qui) {
 /** Esiti che fanno fallire la campagna: tutto tranne `presa` e `altra-piattaforma`. */
 const nonPassa = (/** @type {string} */ outcome) => outcome !== 'presa' && outcome !== 'altra-piattaforma' && outcome !== 'non-applicabile-qui'
 
-module.exports = { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonApplicabileQui, nonPassa, scegli }
+/** File non tracciati comparsi dopo una prova (residui di un build sabotato): dopo meno prima. */
+const nuoviResidui = (/** @type {string[]} */ prima, /** @type {string[]} */ dopo) => { const p = new Set(prima); return dopo.filter(f => !p.has(f)) }
+
+module.exports = { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonApplicabileQui, nonPassa, nuoviResidui, scegli }

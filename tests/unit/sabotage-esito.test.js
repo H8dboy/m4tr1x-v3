@@ -6,7 +6,7 @@
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonPassa, scegli } = require('../../tools/sabotage/esito')
+const { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonPassa, nuoviResidui, scegli } = require('../../tools/sabotage/esito')
 
 const tap = (/** @type {number} */ pass, /** @type {number} */ fail) => `TAP version 13\nok 1 - a\n# tests ${pass + fail}\n# pass ${pass}\n# fail ${fail}\n`
 
@@ -87,4 +87,13 @@ test('il runner chiede la base PRIMA di applicare il sabotaggio e salta le prove
   assert.ok(iBase > 0 && iScrivi > iBase, 'la base non è chiesta prima di applicare il sabotaggio')
   assert.match(src.slice(iBase, iScrivi), /if \(problema\) \{[\s\S]*?continue\n  \}/, 'con la base rossa il sabotaggio viene applicato comunque')
   assert.match(src, /esitoSabotaggio\(null, esegui\(m\.test/, 'il sabotaggio non usa esitoSabotaggio')
+})
+
+test('residui: contano solo i file non tracciati comparsi DOPO la prova; il runner li controlla dopo prove e basi', () => {
+  assert.deepEqual(nuoviResidui(['a.txt'], ['a.txt', 'app/x/esporta_seme.toml']), ['app/x/esporta_seme.toml'])
+  assert.deepEqual(nuoviResidui(['a.txt'], ['a.txt']), [])
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'tools', 'sabotage', 'run.js'), 'utf8')
+  assert.match(src, /ripulisciResidui\(m\.id\)/, 'dopo la prova non si cercano i residui')
+  assert.match(src, /ripulisciResidui\(`base /, 'dopo la base non si cercano i residui')
+  assert.match(src, /residuiTotali\.length \? 1 : 0/, 'un residuo non fa fallire la campagna')
 })
