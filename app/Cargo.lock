@@ -2054,6 +2054,19 @@ name = "m4tr1x-crash"
 version = "0.1.0"
 
 [[package]]
+name = "m4tr1x-dm"
+version = "0.1.0"
+dependencies = [
+ "m4tr1x-dm",
+ "m4tr1x-identity",
+ "m4tr1x-protocol",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "m4tr1x-feed"
 version = "0.1.0"
 dependencies = [

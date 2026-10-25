@@ -1,0 +1,23 @@
+[package]
+name = "m4tr1x-dm"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Messaggi privati M4TR1X (F5): NIP-17 (gift wrap NIP-59 + cifratura NIP-44) con chiave DM separata annunciata dall'identità"
+
+# Versioni esatte (I-25). Nessuna libreria di rete (I-36): qui si costruiscono e aprono buste, non si apre niente.
+[dependencies]
+m4tr1x-protocol = { path = "../protocol" }
+m4tr1x-identity = { path = "../identity" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"
+
+[features]
+# SOLO PER LE PROVE: buste volutamente difettose (forgiate) per provare gli scarti (I-61)
+prova = []
+
+[dev-dependencies]
+m4tr1x-dm = { path = ".", features = ["prova"] }
+sha2 = "=0.10.9"
