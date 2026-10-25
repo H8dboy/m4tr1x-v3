@@ -2,7 +2,7 @@
 'use strict'
 /**
  * I-60 — Un messaggio privato è "di Anna" solo se la chiave DM che l'ha sigillato è annunciata da Anna:
- * annuncio (kind 10050) firmato dall'identità, con la prova di possesso della chiave DM (firma della chiave DM
+ * annuncio (kind 10477) firmato dall'identità, con la prova di possesso della chiave DM (firma della chiave DM
  * sull'annuncio), il più recente vale, della rete giusta. Senza annuncio il mittente resta SCONOSCIUTO (mai
  * indovinato, mai preso dal contenuto del messaggio).
  */

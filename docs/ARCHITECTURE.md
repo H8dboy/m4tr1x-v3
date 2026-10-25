@@ -262,7 +262,7 @@ Il creator registra **in privato presso l'emittente** "la mia chiave Nostr → i
 | Dimensione | il relay (approssimata) | — |
 | IP | nessuno (Tor) | — |
 
-**Non promesso: forward secrecy, in v3.** Se una chiave DM viene rubata, chi ha conservato le buste cifrate per quella chiave può leggere anche i messaggi vecchi. Rimedio parziale: la chiave DM è separata dall'identità (`m4tr1x/dm/v<n>`, ruolo `Dm`), si ruota, ed è annunciata dall'identità con un evento kind 10050 e una prova di possesso (ADR-0018, I-60). Rubare l'identità non basta a leggere i DM. Una cifratura con ratchet (MLS, o tipo Signal) è un progetto a sé, **dopo la v3.0**.
+**Non promesso: forward secrecy, in v3.** Se una chiave DM viene rubata, chi ha conservato le buste cifrate per quella chiave può leggere anche i messaggi vecchi. Rimedio parziale: la chiave DM è separata dall'identità (`m4tr1x/dm/v<n>`, ruolo `Dm`), si ruota, ed è annunciata dall'identità con un evento kind 10477 e una prova di possesso (ADR-0018, I-60). Rubare l'identità non basta a leggere i DM. Una cifratura con ratchet (MLS, o tipo Signal) è un progetto a sé, **dopo la v3.0**.
 
 Tutti i kind di messaggio privato nudi (4, 13, 14) sono vietati sul filo (I-19); le buste forgiate si scartano (I-61).
 

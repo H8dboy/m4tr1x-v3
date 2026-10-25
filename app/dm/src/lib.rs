@@ -11,7 +11,7 @@ pub mod nip44;
 pub mod prova;
 
 /// Kind dell'annuncio della chiave DM (NIP-17: "relay preferiti per i DM"), sostituibile, firmato dall'identità.
-pub const KIND_ANNUNCIO_DM: u16 = 10050;
+pub const KIND_ANNUNCIO_DM: u16 = 10477;
 /// Kind della busta (NIP-59): l'UNICO kind con cui un DM esce dall'app (I-19).
 pub const KIND_BUSTA: u16 = 1059;
 /// La data della busta è sfalsata indietro fino a 2 giorni (I-20).
