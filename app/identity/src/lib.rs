@@ -193,7 +193,7 @@ impl ChiaveRuolo {
     pub fn pubblica_hex(&self) -> String {
         match self.ruolo.famiglia() {
             Famiglia::Schnorr => {
-                let sk = k256::schnorr::SigningKey::from_bytes(&self.segreto).expect("controllata in deriva()");
+                let sk = k256::schnorr::SigningKey::from_slice(&self.segreto).expect("controllata in deriva()");
                 hex(&sk.verifying_key().to_bytes())
             }
             Famiglia::MlDsa65 => {
@@ -211,7 +211,7 @@ impl ChiaveRuolo {
         if self.ruolo.famiglia() != Famiglia::Schnorr {
             return None;
         }
-        let sk = k256::schnorr::SigningKey::from_bytes(&self.segreto).ok()?;
+        let sk = k256::schnorr::SigningKey::from_slice(&self.segreto).ok()?;
         let mut aux = [0u8; 32];
         getrandom::fill(&mut aux).ok()?;
         let sig = sk.sign_raw(digest, &aux).ok()?;
@@ -326,7 +326,7 @@ mod tests {
         let k = deriva(&s, Ruolo::Identity, 1).unwrap();
         let d: [u8; 32] = Sha256::digest(b"m4tr1x prova").into();
         let sig = k.firma_schnorr(&d).unwrap();
-        let pk = k256::schnorr::VerifyingKey::from_bytes(&hex_dec(&k.pubblica_hex())).unwrap();
+        let pk = k256::schnorr::VerifyingKey::from_slice(&hex_dec(&k.pubblica_hex())).unwrap();
         let sig = k256::schnorr::Signature::try_from(&sig[..]).unwrap();
         assert!(pk.verify_raw(&d, &sig).is_ok());
         assert!(deriva(&s, Ruolo::Wallet, 1).unwrap().firma_schnorr(&d).is_none());

@@ -3,7 +3,7 @@
 
 use m4tr1x_feed::{leggi, leggi_con_ripresa, Fase, ATTESA_TRA_TENTATIVI, BUDGET, RIPRESA};
 use m4tr1x_protocol::Rete;
-use m4tr1x_transport::prova::{relay_finto_condiviso, CONTENUTO_RIFIUTATO};
+use m4tr1x_transport::prova::{relay_finto_che_ignora_il_filtro, relay_finto_condiviso, CONTENUTO_RIFIUTATO};
 use m4tr1x_transport::{BootstrapInfo, Isolation, OnionV3, Stream, Transport, TransportError, TransportStatus, TEMPO_MASSIMO_CONNESSIONE};
 use serde_json::Value;
 use std::future::Future;
@@ -36,11 +36,17 @@ struct Finto {
     falliscono: u32,
     sempre_appeso: bool,
     chiamate: AtomicU32,
+    /// relay malevolo: ignora i filtri della REQ e manda ogni evento (kind/autori non chiesti compresi)
+    ignora_filtro: bool,
 }
 
 impl Finto {
     fn new(eventi: Vec<Value>, falliscono: u32, sempre_appeso: bool) -> Self {
-        Self { eventi: Arc::new(Mutex::new(eventi)), falliscono, sempre_appeso, chiamate: AtomicU32::new(0) }
+        Self { eventi: Arc::new(Mutex::new(eventi)), falliscono, sempre_appeso, chiamate: AtomicU32::new(0), ignora_filtro: false }
+    }
+    /// Nodo con un relay MALEVOLO: risponde subito ma ignora i filtri (manda tutto).
+    fn malevolo(eventi: Vec<Value>) -> Self {
+        Self { eventi: Arc::new(Mutex::new(eventi)), falliscono: 0, sempre_appeso: false, chiamate: AtomicU32::new(0), ignora_filtro: true }
     }
 }
 
@@ -50,14 +56,18 @@ impl Transport for Finto {
     }
     fn connect_onion(&self, _h: &OnionV3, _p: u16, _i: Isolation) -> impl Future<Output = m4tr1x_transport::Result<Stream>> + Send {
         let n = self.chiamate.fetch_add(1, Ordering::SeqCst) + 1;
-        let (eventi, falliscono, appeso) = (self.eventi.clone(), self.falliscono, self.sempre_appeso);
+        let (eventi, falliscono, appeso, ignora) = (self.eventi.clone(), self.falliscono, self.sempre_appeso, self.ignora_filtro);
         async move {
             if appeso || n <= falliscono {
                 tokio::time::sleep(TEMPO_MASSIMO_CONNESSIONE).await;
                 return Err(TransportError::Connessione("tempo massimo del tentativo superato (30 s)".into()));
             }
             let (client, server) = tokio::io::duplex(1 << 20);
-            tokio::spawn(relay_finto_condiviso(server, eventi));
+            if ignora {
+                tokio::spawn(relay_finto_che_ignora_il_filtro(server, eventi));
+            } else {
+                tokio::spawn(relay_finto_condiviso(server, eventi));
+            }
             Ok(Box::pin(client) as Stream)
         }
     }
@@ -100,6 +110,25 @@ async fn nessun_testo_di_eventi_non_validi_arriva_al_feed() {
     let f = leggi(&Finto::new(falsi.clone(), 0, false), &nodo(), Rete::Prova, BUDGET, |_| {}).await.unwrap();
     assert!(f.post.is_empty(), "{:?}", f.post);
     assert_eq!(f.scartati, falsi.iter().filter(|e| e["kind"] == 1).count(), "tutti i kind 1 falsi scartati");
+}
+
+/// Difesa in profondità: anche se il relay IGNORA il filtro kinds:[1] e manda eventi VALIDI di altri
+/// kind (30480 addressable, 20002 effimero, 1059 busta DM), nel feed finiscono SOLO i kind 1 — un DM
+/// che comparisse come post sarebbe grave. Prende il sabotaggio `feed-ogni-kind` (toglie `if e.kind == 1`).
+#[tokio::test]
+async fn eventi_non_post_scartati_anche_se_il_relay_li_manda() {
+    let a = chiave(1);
+    let eventi = vec![
+        firmato(&a, 1, "vero post", 100),
+        firmato(&a, 30480, "scheda addressable", 101),
+        firmato(&a, 20002, "effimero", 102),
+        firmato(&a, 1059, "busta DM", 103),
+    ];
+    let f = leggi(&Finto::malevolo(eventi), &nodo(), Rete::Prova, BUDGET, |_| {}).await.unwrap();
+    assert_eq!(f.post.len(), 1, "solo il kind 1 e un post: {:?}", f.post);
+    assert_eq!(f.post[0].testo, "vero post");
+    assert!(f.post.iter().all(|p| p.testo != "busta DM"), "un DM (kind 1059) non deve mai comparire nel feed");
+    assert_eq!(f.scartati, 3, "i 3 kind != 1 contati come scartati");
 }
 
 /// Come nella misura del 20/10: i primi tentativi scadono, poi il descrittore arriva e si riesce.
@@ -247,6 +276,10 @@ async fn leggi_profilo_per_precompilare() {
     assert_eq!(p, Some(m4tr1x_protocol::Profilo { name: "Arta".into(), about: "ciao".into() }));
     let nessuno = m4tr1x_feed::leggi_profilo(&finto, &nodo(), Rete::Prova, &chiave(2).pubblica_hex(), BUDGET, |_| {}).await.unwrap();
     assert_eq!(nessuno, None);
+    // anche se il relay IGNORA authors:[B] e manda il profilo di A, leggi_profilo(B) non lo restituisce
+    let mal = Finto::malevolo(vec![firmato(&a, 0, r#"{"name":"Arta"}"#, 10)]);
+    let per_b = m4tr1x_feed::leggi_profilo(&mal, &nodo(), Rete::Prova, &chiave(2).pubblica_hex(), BUDGET, |_| {}).await.unwrap();
+    assert_eq!(per_b, None, "il profilo di un altro autore non torna per B anche se il relay lo manda");
 }
 
 #[tokio::test]
@@ -258,4 +291,22 @@ async fn profilo_salvato_si_rilegge_e_da_il_nome() {
     m4tr1x_feed::pubblica(&finto, &nodo(), &ev, BUDGET, |_| {}).await.unwrap();
     let f = leggi(&finto, &nodo(), Rete::Prova, BUDGET, |_| {}).await.unwrap();
     assert_eq!(f.post[0].nome.as_deref(), Some("Arta"));
+}
+
+/// Difesa in profondità sul giro dei profili (kinds:[0]) con un relay che manda tutto: il nome di un post
+/// arriva SOLO da un profilo kind 0 dell'autore. Caso POSITIVO incluso (il profilo vero di A, in mezzo alla
+/// spazzatura, va ACCETTATO: così un codice che rifiuta tutto non passerebbe). L'impostore è un kind 1
+/// "travestito" da profilo e più recente: a codice intatto viene scartato, con la mutazione del kind no.
+#[tokio::test]
+async fn il_nome_solo_da_un_profilo_kind0_dell_autore() {
+    let (a, b) = (chiave(1), chiave(2));
+    let eventi = vec![
+        firmato(&a, 1, "post di A", 100),                  // il post
+        firmato(&a, 0, r#"{"name":"Arta"}"#, 202),          // profilo VERO di A: va ACCETTATO (caso positivo)
+        firmato(&a, 1, r#"{"name":"Impostore"}"#, 203),     // kind 1 travestito da profilo, più recente
+        firmato(&b, 0, r#"{"name":"Altro"}"#, 204),         // profilo di B (altro autore): non si attacca ad A
+    ];
+    let f = leggi(&Finto::malevolo(eventi), &nodo(), Rete::Prova, BUDGET, |_| {}).await.unwrap();
+    let pa = f.post.iter().find(|p| p.testo == "post di A").expect("manca il post di A");
+    assert_eq!(pa.nome.as_deref(), Some("Arta"), "il profilo VERO (kind 0) dell'autore va accettato, l'impostore kind 1 no");
 }

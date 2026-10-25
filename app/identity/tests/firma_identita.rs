@@ -44,7 +44,7 @@ fn ogni_firma_legge_il_portachiavi_nessuna_chiave_tenuta() {
     let s2 = firma_come_identita(&p, &d).unwrap();
     assert_eq!(p.letture.load(Ordering::SeqCst) - prima, 2, "due firme = due letture: la chiave non resta tra una firma e l'altra");
     // firme valide della chiave d'identità salvata
-    let pk = k256::schnorr::VerifyingKey::from_bytes(&hex(&id.identity)).unwrap();
+    let pk = k256::schnorr::VerifyingKey::from_slice(&hex(&id.identity)).unwrap();
     for s in [s1, s2] {
         pk.verify_raw(&d, &k256::schnorr::Signature::try_from(s.as_slice()).unwrap()).unwrap();
     }

@@ -1,12 +1,12 @@
 {
-  "date": "2026-10-21T08:51:21.301Z",
-  "env": "Node 22.23.3 · win32 10.0.26200 · 2026-10-21",
+  "date": "2026-10-25T07:04:22.842Z",
+  "env": "Node 22.23.3 · linux 6.12.107+deb13-amd64 · 2026-10-25",
   "pinnedOk": true,
   "totals": {
-    "pass": 220,
+    "pass": 232,
     "fail": 0,
     "todo": 26,
-    "skipped": 0
+    "skipped": 1
   },
   "tests": [
     {
@@ -18,7 +18,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 22668
+      "ms": 20436
     },
     {
       "file": "tests/integration/directory.test.js",
@@ -29,7 +29,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 2152
+      "ms": 1096
     },
     {
       "file": "tests/integration/feed-via-tor.test.js",
@@ -39,11 +39,11 @@
       "skipped": 0,
       "skipReasons": [],
       "diagnostiche": [
-        "feed (annuncio del nodo: confermata): primo collegamento=8s/1 tent. · secondo nella stessa sessione=4s/1 tent. · dopo un riavvio (stessa cartella)=191s/6 tent. · secondo dopo il riavvio=3s/1 tent.",
-        "post: pubblicato in 0s/1 tent., riletto dal feed: true, nome: Prova M4TR1X"
+        "feed (annuncio del nodo: confermata): primo collegamento=4s/1 tent. · secondo nella stessa sessione=1s/1 tent. · dopo un riavvio (stessa cartella)=6s/1 tent. · secondo dopo il riavvio=1s/1 tent.",
+        "post: pubblicato in 1s/1 tent., riletto dal feed: true, nome: Prova M4TR1X"
       ],
       "problema": null,
-      "ms": 248610
+      "ms": 36612
     },
     {
       "file": "tests/integration/two-nodes.test.js",
@@ -53,12 +53,12 @@
       "skipped": 0,
       "skipReasons": [],
       "diagnostiche": [
-        "fasi (cache calda, annuncio di A: scadenza): tor-a=5.5s pubblicazione=300.0s tor-b=5.0s rete=7.1s evento=0.5s file=2.1s",
-        "HS_DESC A: CREATED×2 UPLOAD×16 UPLOADED×12 · B: CREATED×2 REQUESTED×1 UPLOAD×16 RECEIVED×1 UPLOADED×16",
-        "file su B: peer: file richiesto (tentativo 1/3) | peer: file, connessione pronta (1359 ms) | peer: file, risposta HTTP 200 (1941 ms) | peer: file, ricevuti 20000 byte (2141 ms) | peer: file replicato e verificato · su A: peer: file servito (20000 byte)"
+        "fasi (cache calda, annuncio di A: confermata): tor-a=2.3s pubblicazione=3.3s tor-b=2.3s rete=3.0s evento=0.3s file=0.8s",
+        "HS_DESC A: CREATED×2 UPLOAD×16 UPLOADED×16 · B: CREATED×2 REQUESTED×1 RECEIVED×1",
+        "file su B: peer: file richiesto (tentativo 1/3) | peer: file, connessione pronta (233 ms) | peer: file, risposta HTTP 200 (445 ms) | peer: file, ricevuti 20000 byte (536 ms) | peer: file replicato e verificato · su A: peer: file servito (20000 byte)"
       ],
       "problema": null,
-      "ms": 322053
+      "ms": 12753
     },
     {
       "file": "tests/invariants/inv-01-no-clearnet.test.js",
@@ -69,7 +69,20 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 94
+      "ms": 50
+    },
+    {
+      "file": "tests/invariants/inv-01-rete.test.js",
+      "pass": 1,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 1,
+      "skipReasons": [
+        "mancano iptables/ipset/acl"
+      ],
+      "diagnostiche": [],
+      "problema": null,
+      "ms": 79
     },
     {
       "file": "tests/invariants/inv-02-bind.test.js",
@@ -80,7 +93,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 6861
+      "ms": 377
     },
     {
       "file": "tests/invariants/inv-03-host.test.js",
@@ -91,7 +104,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 836
+      "ms": 433
     },
     {
       "file": "tests/invariants/inv-04-cors.test.js",
@@ -102,7 +115,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 812
+      "ms": 375
     },
     {
       "file": "tests/invariants/inv-05-onion-only.test.js",
@@ -113,7 +126,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 3332
+      "ms": 2882
     },
     {
       "file": "tests/invariants/inv-06-keys-at-rest.test.js",
@@ -124,7 +137,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 4985
+      "ms": 2282
     },
     {
       "file": "tests/invariants/inv-06b-node-secrets.test.js",
@@ -135,7 +148,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 2423
+      "ms": 1130
     },
     {
       "file": "tests/invariants/inv-07-role-separation.test.js",
@@ -146,7 +159,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 301
+      "ms": 176
     },
     {
       "file": "tests/invariants/inv-08-domain-sep.test.js",
@@ -157,7 +170,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 365
+      "ms": 282
     },
     {
       "file": "tests/invariants/inv-15-no-h8-in-events.test.js",
@@ -168,7 +181,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 1550
+      "ms": 928
     },
     {
       "file": "tests/invariants/inv-17-blob-hash.test.js",
@@ -179,7 +192,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 931
+      "ms": 426
     },
     {
       "file": "tests/invariants/inv-18-no-ip-logs.test.js",
@@ -190,7 +203,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 1149
+      "ms": 648
     },
     {
       "file": "tests/invariants/inv-23-release-gate.test.js",
@@ -201,7 +214,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 595
+      "ms": 254
     },
     {
       "file": "tests/invariants/inv-25-deps.test.js",
@@ -212,7 +225,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 181
+      "ms": 51
     },
     {
       "file": "tests/invariants/inv-26-fuzz.test.js",
@@ -223,7 +236,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 6813
+      "ms": 6413
     },
     {
       "file": "tests/invariants/inv-28-secrets.test.js",
@@ -234,7 +247,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 374
+      "ms": 185
     },
     {
       "file": "tests/invariants/inv-29-descriptor.test.js",
@@ -245,7 +258,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 320
+      "ms": 150
     },
     {
       "file": "tests/invariants/inv-30-33-admin-onion.test.js",
@@ -256,7 +269,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 1177
+      "ms": 386
     },
     {
       "file": "tests/invariants/inv-31-no-keys-in-js.test.js",
@@ -267,18 +280,18 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 84812
+      "ms": 15072
     },
     {
       "file": "tests/invariants/inv-36-transport-only.test.js",
-      "pass": 6,
+      "pass": 7,
       "fail": 0,
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 6454
+      "ms": 1304
     },
     {
       "file": "tests/invariants/inv-37-tor-process.test.js",
@@ -288,13 +301,13 @@
       "skipped": 0,
       "skipReasons": [],
       "diagnostiche": [
-        "onion: pubblicazione dell'onion di prova: 12/16 UPLOADED in 112 s · onion raggiunto in 185 s",
-        "tentativi di connessione: t+0s connessione fallita: tempo massimo del tentativo superato (30 s) dopo 30005 ms | t+33s connessione fallita: tempo massimo del tentativo superato (30 s) dopo 30009 ms | t+66s connessione fallita: tempo massimo del tentativo superato (30 s) dopo 30013 ms | t+99s connessione fallita: tempo massimo del tentativo superato (30 s) dopo 30009 ms | t+132s connessione fallita: tempo massimo del tentativo superato (30 s) dopo 30010 ms | t+165s ok in 19571 ms",
-        "hsdir del client: +112.7s REQUESTED 38730B9E [caricato qui: sì] · +113.9s RECEIVED 38730B9E [caricato qui: sì]",
+        "onion: pubblicazione dell'onion di prova: 13/16 UPLOADED in 6 s · onion raggiunto in 5 s",
+        "tentativi di connessione: t+0s ok in 4801 ms",
+        "hsdir del client: +6.2s REQUESTED A79F3788 [caricato qui: sì] · +6.8s RECEIVED A79F3788 [caricato qui: sì]",
         "avvio con il tor del lock: provato"
       ],
       "problema": null,
-      "ms": 309698
+      "ms": 14821
     },
     {
       "file": "tests/invariants/inv-38-expiry.test.js",
@@ -305,7 +318,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 7962
+      "ms": 6549
     },
     {
       "file": "tests/invariants/inv-39-anchor-limits.test.js",
@@ -316,7 +329,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 8784
+      "ms": 5822
     },
     {
       "file": "tests/invariants/inv-40-signature-families.test.js",
@@ -327,7 +340,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 344
+      "ms": 179
     },
     {
       "file": "tests/invariants/inv-41-relay-space.test.js",
@@ -338,7 +351,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 5943
+      "ms": 4188
     },
     {
       "file": "tests/invariants/inv-58-seed-window.test.js",
@@ -349,7 +362,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 862
+      "ms": 642
     },
     {
       "file": "tests/invariants/inv-59-node-tor-control.test.js",
@@ -359,10 +372,10 @@
       "skipped": 0,
       "skipReasons": [],
       "diagnostiche": [
-        "annuncio: confermata dopo 0 s · periodo attuale 7/8 UPLOADED · gruppi 7/8 6/8"
+        "annuncio: confermata dopo 1 s · periodo attuale 6/8 UPLOADED · gruppi 7/8 6/8"
       ],
       "problema": null,
-      "ms": 35781
+      "ms": 22236
     },
     {
       "file": "tests/invariants/pending.test.js",
@@ -373,7 +386,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 104
+      "ms": 46
     },
     {
       "file": "tests/unit/crash-log.test.js",
@@ -384,7 +397,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 703
+      "ms": 180
     },
     {
       "file": "tests/unit/fasi-tor.test.js",
@@ -395,7 +408,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 127
+      "ms": 45
     },
     {
       "file": "tests/unit/feed.test.js",
@@ -406,7 +419,18 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 5035
+      "ms": 973
+    },
+    {
+      "file": "tests/unit/i01-dinamica.test.js",
+      "pass": 5,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "diagnostiche": [],
+      "problema": null,
+      "ms": 56
     },
     {
       "file": "tests/unit/keys-vectors.test.js",
@@ -417,7 +441,18 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 304
+      "ms": 172
+    },
+    {
+      "file": "tests/unit/merge.test.js",
+      "pass": 3,
+      "fail": 0,
+      "todo": 0,
+      "skipped": 0,
+      "skipReasons": [],
+      "diagnostiche": [],
+      "problema": null,
+      "ms": 52
     },
     {
       "file": "tests/unit/profilo.test.js",
@@ -428,7 +463,7 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 1464
+      "ms": 519
     },
     {
       "file": "tests/unit/protocol-vectors.test.js",
@@ -439,18 +474,18 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 1713
+      "ms": 235
     },
     {
       "file": "tests/unit/report-esito.test.js",
-      "pass": 18,
+      "pass": 19,
       "fail": 0,
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 9262
+      "ms": 7474
     },
     {
       "file": "tests/unit/runtime-sqlite.test.js",
@@ -461,18 +496,18 @@
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 118
+      "ms": 55
     },
     {
       "file": "tests/unit/sabotage-esito.test.js",
-      "pass": 7,
+      "pass": 8,
       "fail": 0,
       "todo": 0,
       "skipped": 0,
       "skipReasons": [],
       "diagnostiche": [],
       "problema": null,
-      "ms": 102
+      "ms": 53
     }
   ],
   "rules": [
@@ -481,8 +516,8 @@
       "Nessuna richiesta di rete delle app esce fuori da Tor.",
       "attiva",
       "F4",
-      "`inv-01-no-clearnet.test.js` ✅ 3 verdi",
-      "**nessuna prova di sabotaggio**"
+      "`inv-01-rete.test.js` ✅ 1 verdi",
+      "5/7 prese ⚠ regole che lasciano uscire tutto fuori dal loopback (controllo positivo deve cadere): non-applicabile-qui; resolver locale sul loopback ammesso (DNS fuori da Tor): non-applicabile-qui"
     ],
     [
       "I-02",
@@ -594,7 +629,7 @@
       "attiva",
       "F1",
       "`inv-15-no-h8-in-events.test.js` ✅ 10 verdi",
-      "1/1 prese"
+      "3/3 prese"
     ],
     [
       "I-16",
@@ -674,7 +709,7 @@
       "attiva",
       "F0",
       "`inv-25-deps.test.js` ✅ 5 verdi",
-      "2/2 prese"
+      "5/5 prese"
     ],
     [
       "I-26",
@@ -698,7 +733,7 @@
       "attiva",
       "F0",
       "`inv-28-secrets.test.js` ✅ 24 verdi",
-      "2/2 prese"
+      "9/9 prese"
     ],
     [
       "I-29",
@@ -722,7 +757,7 @@
       "attiva",
       "F4",
       "`inv-31-no-keys-in-js.test.js` ✅ 7 verdi",
-      "3/5 prese ⚠ permessi core di Tauri al JavaScript: non-applicabile; comando dichiarato senza funzione (elenco e codice divergono): non-applicabile"
+      "10/10 prese"
     ],
     [
       "I-32",
@@ -761,8 +796,8 @@
       "Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016)",
       "attiva",
       "F4",
-      "`inv-36-transport-only.test.js` ✅ 6 verdi",
-      "4/4 prese"
+      "`inv-36-transport-only.test.js` ✅ 7 verdi",
+      "10/10 prese"
     ],
     [
       "I-37",
@@ -770,7 +805,7 @@
       "attiva",
       "F4",
       "`inv-37-tor-process.test.js` ✅ 4 verdi",
-      "5/5 prese"
+      "14/16 prese ⚠ pulizia della vecchia copia che entra in junction e punti di analisi (Windows): altra-piattaforma; cartella della copia senza ACL esplicita: eredita quella del profilo (Windows): altra-piattaforma"
     ],
     [
       "I-38",
@@ -898,7 +933,7 @@
       "attiva",
       "F2",
       "`inv-59-node-tor-control.test.js` ✅ 11 verdi",
-      "**nessuna prova di sabotaggio**"
+      "13/13 prese"
     ]
   ],
   "divergences": [],

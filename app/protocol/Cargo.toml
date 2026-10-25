@@ -8,7 +8,7 @@ description = "Eventi M4TR1X nel lato Rust dell'app: id, verifica della firma, r
 
 # Versioni esatte (I-25). Nessuna libreria di rete (I-36): qui si leggono e controllano eventi, non si apre niente.
 [dependencies]
-k256 = { version = "=0.13.4", default-features = false, features = ["std", "schnorr"] }
+k256 = { version = "=0.14.0", default-features = false, features = ["std", "schnorr"] }
 sha2 = "=0.10.9"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"

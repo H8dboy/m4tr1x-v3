@@ -12,7 +12,7 @@
  */
 const T = (/** @type {string} */ n) => `tests/invariants/${n}.test.js`
 
-/** @type {Array<{ id: string, rule: string, name: string, file: string, test: string, timeoutMs?: number, piattaforma?: string, find?: string, replace?: string, edits?: Array<{ find: string, replace: string }> }>} */
+/** @type {Array<{ id: string, rule: string, name: string, file: string, test: string, timeoutMs?: number, piattaforma?: string, richiede?: string, find?: string, replace?: string, edits?: Array<{ find: string, replace: string }> }>} */
 module.exports = [
   // ─── F0 ───────────────────────────────────────────────────────────────────
   { id: 'i23-rete', rule: 'I-23', name: 'rete della firma non controllata', file: 'tools/release/verify-release.js',
@@ -197,8 +197,15 @@ module.exports = [
     find: 'serde_json = "=1.0.154"\n', replace: 'serde_json = "=1.0.154"\nreqwest = "=0.12.24"\n', test: T('inv-36-transport-only') },
   { id: 'i36-socket', rule: 'I-36', name: 'socket nel codice del guscio', file: 'app/shell/src/lib.rs',
     find: 'pub mod api;\n', replace: 'pub mod api;\n#[allow(unused_imports)]\nuse std::net::TcpStream;\n', test: T('inv-36-transport-only') },
-  { id: 'i36-trait', rule: 'I-36', name: 'il trasporto accetta un host in chiaro', file: 'app/transport/src/lib.rs',
-    find: '        host: &OnionV3,\n', replace: '        host: &str,\n', test: T('inv-36-transport-only') },
+  // B (runtime): OnionV3::parse non deve accettare host in chiaro; lo prende il test unitario onion.rs via inv-36
+  { id: 'i36-trait', rule: 'I-36', name: 'OnionV3 accetta un host in chiaro (parse non rifiuta clearnet)', file: 'app/transport/src/onion.rs',
+    find: '        let label = lower.strip_suffix(".onion").ok_or(OnionError::NoSuffix)?;\n',
+    replace: '        let label = match lower.strip_suffix(".onion") { Some(l) => l, None => return Ok(Self::from_pubkey([0u8; 32])) };\n',
+    test: T('inv-36-transport-only'), timeoutMs: 900000 },
+  // A (statico): il trait Transport non deve esporre metodi verso un host in chiaro (&str); lo prende il test statico
+  { id: 'i36-trait-firma', rule: 'I-36', name: 'il trait Transport espone un metodo verso un host in chiaro (&str)', file: 'app/transport/src/lib.rs',
+    find: '    fn connect_onion(\n', replace: '    fn connetti_in_chiaro(&self, _host: &str) {}\n    fn connect_onion(\n',
+    test: T('inv-36-transport-only'), timeoutMs: 900000 },
   { id: 'i37-nowait', rule: 'I-37', name: 'bootstrap non aspetta la rete Tor (la prova dell\'onion non dimostrerebbe più niente)', file: 'app/transport/src/tor_process.rs',
     find: '            if p >= 100 {\n                break;\n            }\n', replace: '            break;\n', test: T('inv-37-tor-process'), timeoutMs: 900000 },
   { id: 'i58-perm-extra', rule: 'I-58', name: 'la finestra del seme può chiamare altri comandi', file: 'app/shell/capabilities/seme.json',
@@ -255,9 +262,9 @@ module.exports = [
     find: 'zeroize = "=1.8.2"\n', replace: 'zeroize = "=1.8.2"\ntauri-plugin-updater = "=2.9.0"\n', test: T('inv-01-no-clearnet') },
 
   // ─── I-01 dinamica (22/10/2026): gli strumenti della prova; le regole vere solo su Linux con sudo ──
-  { id: 'i01-ammette-fuori', rule: 'I-01', name: 'regole che lasciano uscire tutto fuori dal loopback (controllo positivo deve cadere)', file: 'tools/i01/rete.sh', piattaforma: 'linux',
+  { id: 'i01-ammette-fuori', rule: 'I-01', name: 'regole che lasciano uscire tutto fuori dal loopback (controllo positivo deve cadere)', file: 'tools/i01/rete.sh', piattaforma: 'linux', richiede: 'i01',
     find: '    iptables -A M4APP -j M4VIOLA\n', replace: '    iptables -A M4APP -j ACCEPT\n', test: T('inv-01-rete'), timeoutMs: 300000 },
-  { id: 'i01-resolver-ammesso', rule: 'I-01', name: 'resolver locale sul loopback ammesso (DNS fuori da Tor)', file: 'tools/i01/rete.sh', piattaforma: 'linux',
+  { id: 'i01-resolver-ammesso', rule: 'I-01', name: 'resolver locale sul loopback ammesso (DNS fuori da Tor)', file: 'tools/i01/rete.sh', piattaforma: 'linux', richiede: 'i01',
     find: '        $T -A M4APP -o lo -p udp --dport "$p" -j M4VIOLA\n        $T -A M4APP -o lo -p tcp --dport "$p" -j M4VIOLA\n', replace: '', test: T('inv-01-rete'), timeoutMs: 300000 },
   { id: 'i01-verifica-senza-relay', rule: 'I-01', name: 'verde anche senza traffico verso i relay (contatori a 0 = "non è successo niente")', file: 'tools/i01/verifica.js',
     find: "  if (valori.pacchetti_verso_relay === 0) motivi.push(", replace: "  if (false) motivi.push(", test: T('inv-01-rete') },
@@ -265,6 +272,8 @@ module.exports = [
     find: '    valori[k] = m ? Number(m[1]) : NaN\n', replace: '    valori[k] = m ? Number(m[1]) : 0\n', test: T('inv-01-rete') },
 
   // ─── Strumenti: un sabotaggio è "preso" solo se il test era verde prima (fondatore, 21/10/2026) ──
+  { id: 'sabotaggio-enospc-base-rossa', rule: 'strumenti', name: 'spazio esaurito (ENOSPC) contato come base-rossa invece che ambiente', file: 'tools/sabotage/esito.js',
+    find: "  if (base && base.startsWith('AMBIENTE')) return { outcome: 'ambiente', detail: base }\n", replace: '', test: 'tests/unit/sabotage-esito.test.js' },
   { id: 'sabotaggio-base-ignorata', rule: 'strumenti', name: 'base rossa ignorata: sabotaggio contato come preso', file: 'tools/sabotage/esito.js',
     find: "  if (base) return { outcome: 'base-rossa',", replace: "  if (base && false) return { outcome: 'base-rossa',", test: 'tests/unit/sabotage-esito.test.js' },
   { id: 'sabotaggio-base-falliti', rule: 'strumenti', name: 'test già rosso sul codice intatto considerato verde', file: 'tools/sabotage/esito.js',
@@ -385,6 +394,11 @@ module.exports = [
   { id: 'profilo-campi-in-piu', rule: 'profilo', name: 'profilo che scrive anche campi non ammessi (lud16)', file: 'app/protocol/src/lib.rs',
     find: '    Ok(serde_json::to_string(&p).expect("due stringhe"))',
     replace: '    Ok(serde_json::json!({ "name": p.name, "about": p.about, "lud16": "paga@esempio" }).to_string())', test: 'tests/unit/profilo.test.js', timeoutMs: 900000 },
+  // difese del profilo con un relay che ignora i filtri (giro kinds:[0]); le prende tests/unit/feed.test.js (24/10/2026)
+  { id: 'profilo-kind-ignorato', rule: 'profilo', name: 'un evento di kind != 0 letto come profilo (impostore travestito)', file: 'app/protocol/src/lib.rs',
+    find: '    if e.kind != 0 {\n        return None;\n    }\n', replace: '', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
+  { id: 'profilo-autore-ignorato', rule: 'profilo', name: 'profilo di un altro autore restituito per l\'autore chiesto', file: 'app/feed/src/lib.rs',
+    find: '        .filter(|e| e.pubkey == autore)\n', replace: '', test: 'tests/unit/feed.test.js', timeoutMs: 900000 },
 
   // ─── F4: registro dei crash senza dati dell'utente ──
   { id: 'crash-messaggio-runtime', rule: 'diagnostica', name: 'registro dei crash che scrive i messaggi costruiti a runtime', file: 'app/crash/src/lib.rs',

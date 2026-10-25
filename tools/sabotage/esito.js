@@ -25,6 +25,8 @@ function leggi(out, error) {
     nonCompila: /error\[E\d{4}\]|could not compile/.test(out),
     fail: num('fail'),
     pass: num('pass'),
+    // spazio su disco esaurito durante il test: non è un rosso reale, è l'ambiente (24/10/2026)
+    ambiente: /No space left on device/i.test(out),
   }
 }
 
@@ -36,6 +38,7 @@ function leggi(out, error) {
  * @param {Lettura} l
  */
 function problemaBase(l) {
+  if (l.ambiente) return 'AMBIENTE: spazio su disco esaurito (ENOSPC) sul codice intatto — non è un rosso reale (libera /tmp o imposta TMPDIR su un disco capiente)'
   if (l.errore) return `il test non finisce sul codice intatto (${l.errore})`
   if (l.tempoScaduto) return 'il test supera il tempo massimo sul codice intatto'
   if (l.nonCompila) return 'il codice intatto non compila'
@@ -50,9 +53,10 @@ function problemaBase(l) {
  * @param {string|null} base problemaBase(...) del codice intatto
  * @param {Lettura} l lettura con il sabotaggio
  * @param {number} tempo tempo massimo usato (per il messaggio)
- * @returns {{ outcome: 'presa'|'sfuggita'|'interrotta'|'non-compila'|'base-rossa', detail: string }}
+ * @returns {{ outcome: 'presa'|'sfuggita'|'interrotta'|'non-compila'|'base-rossa'|'ambiente', detail: string }}
  */
 function esitoSabotaggio(base, l, tempo) {
+  if (base && base.startsWith('AMBIENTE')) return { outcome: 'ambiente', detail: base }
   if (base) return { outcome: 'base-rossa', detail: `${base}: la prova non dimostra niente, prima va reso verde il test` }
   if (l.errore) return { outcome: 'interrotta', detail: `test interrotto (${l.errore}): alzare timeoutMs della prova` }
   if (l.nonCompila) return { outcome: 'non-compila', detail: 'il codice sabotato non compila: la prova non dimostra niente, va riscritta' }
@@ -60,6 +64,18 @@ function esitoSabotaggio(base, l, tempo) {
   if (l.fail === null) return { outcome: 'presa', detail: 'il test è caduto' }
   if (l.fail === 0) return { outcome: 'sfuggita', detail: 'tutti i test verdi con la regola rotta' }
   return { outcome: 'presa', detail: `fail ${l.fail}` }
+}
+
+/**
+ * Prove che richiedono una CAPACITÀ dell'ambiente (es. il sandbox di rete di I-01: iptables/ipset/ACL con
+ * sudo, presente solo nella CI): senza, il test si salta e il sabotaggio "sfuggirebbe" senza essere un buco.
+ * Esito `non-applicabile-qui`: visibile nel report, MAI contato come presa, non fa fallire la campagna.
+ * @param {{ richiede?: string }} m @param {Record<string, boolean>} capacita cosa c'è su questa macchina
+ * @returns {{ outcome: 'non-applicabile-qui', detail: string } | null}
+ */
+function nonApplicabileQui(m, capacita) {
+  if (!m.richiede || capacita[m.richiede]) return null
+  return { outcome: 'non-applicabile-qui', detail: `serve la capacità "${m.richiede}", assente qui: la prova gira nella CI` }
 }
 
 /**
@@ -89,6 +105,9 @@ function scegli(tutte, arg, qui) {
 }
 
 /** Esiti che fanno fallire la campagna: tutto tranne `presa` e `altra-piattaforma`. */
-const nonPassa = (/** @type {string} */ outcome) => outcome !== 'presa' && outcome !== 'altra-piattaforma'
+const nonPassa = (/** @type {string} */ outcome) => outcome !== 'presa' && outcome !== 'altra-piattaforma' && outcome !== 'non-applicabile-qui'
 
-module.exports = { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonPassa, scegli }
+/** File non tracciati comparsi dopo una prova (residui di un build sabotato): dopo meno prima. */
+const nuoviResidui = (/** @type {string[]} */ prima, /** @type {string[]} */ dopo) => { const p = new Set(prima); return dopo.filter(f => !p.has(f)) }
+
+module.exports = { leggi, problemaBase, esitoSabotaggio, fuoriPiattaforma, nonApplicabileQui, nonPassa, nuoviResidui, scegli }

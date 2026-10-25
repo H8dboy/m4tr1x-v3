@@ -18,8 +18,9 @@ description = "Indirizzo onion v3 (non deve stare nel repo)"
 regex = '''\b[a-z2-7]{56}\.onion\b'''
 
 [allowlist]
-description = "Esempi finti dei test dello scanner"
+description = "Esempi finti dei test dello scanner e vettori di prova PUBBLICI di NIP-44 (chiavi di prova, sha256 fissato nel test)"
 paths = [
   '''tests/invariants/inv-28-secrets\.test\.js''',
   '''tools/security/scan-secrets\.js''',
+  '''app/dm/tests/vettori/nip44\.vectors\.json''',
 ]
