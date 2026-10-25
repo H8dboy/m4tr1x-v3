@@ -503,4 +503,8 @@ module.exports = [
     find: "    mac(&k.hmac_key, &nonce, cifrato).verify_slice(tag).map_err(|_| no(\"MAC non valido\"))?;\n", replace: "    let _ = (tag, mac);\n", test: T("inv-61-dm-forged"), timeoutMs: 900000 },
   { id: "dm-versione", rule: "I-61", name: "versione NIP-44 sconosciuta accettata", file: "app/dm/src/nip44.rs",
     find: "    if dati[0] != VERSIONE {", replace: "    if false {", test: T("inv-61-dm-forged"), timeoutMs: 900000 },
+  { id: "dm-rs-firma", rule: "I-19", name: "firma_evento firma i kind vietati prima di rifiutarli (Rust)", file: "app/protocol/src/lib.rs",
+    find: "    if KIND_VIETATI.contains(&kind) {\n        return Err(Rifiuto::KindVietato(kind));\n    }\n    if tags.iter().any(|t| t.is_empty())", replace: "    if tags.iter().any(|t| t.is_empty())", test: T("inv-19-dm-wrap"), timeoutMs: 900000 },
+  { id: "dm-ruolo-incarta", rule: "I-19", name: "si incarta anche con una chiave che non è di ruolo DM", file: "app/dm/src/lib.rs",
+    find: "    if mittente.ruolo() != Ruolo::Dm {\n        return Err(ErroreDm::Ruolo);\n    }\n    let dest", replace: "    let dest", test: T("inv-19-dm-wrap"), timeoutMs: 900000 },
 ]

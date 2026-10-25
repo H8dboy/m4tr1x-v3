@@ -114,7 +114,7 @@ fn si_incarta_solo_con_una_chiave_dm_e_verso_una_chiave_valida() {
     let (a, b) = (anna(), bruno());
     assert!(incarta(R, &a.dm, &b.dm.pubblica_hex(), "ciao", ORA, &mut EntropiaSistema).is_ok(), "controllo positivo");
     // l'identità non spedisce DM: il ruolo giusto è Dm (K1d separata, KEYS.md)
-    assert!(incarta(R, &a.identita, &b.dm.pubblica_hex(), "ciao", ORA, &mut EntropiaSistema).is_err());
+    assert_eq!(incarta(R, &a.identita, &b.dm.pubblica_hex(), "ciao", ORA, &mut EntropiaSistema).unwrap_err(), m4tr1x_dm::ErroreDm::Ruolo, "rifiutata per il ruolo, prima di ogni calcolo");
     assert!(incarta(R, &a.dm, "zz", "ciao", ORA, &mut EntropiaSistema).is_err());
     assert!(incarta(R, &a.dm, &"0".repeat(64), "ciao", ORA, &mut EntropiaSistema).is_err(), "pubblica non sulla curva");
 }

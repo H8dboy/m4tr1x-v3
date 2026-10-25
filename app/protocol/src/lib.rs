@@ -145,6 +145,9 @@ pub fn firma_evento(
     pubkey: &str,
     firma: impl FnOnce(&[u8; 32]) -> Option<[u8; 64]>,
 ) -> Result<Evento, Rifiuto> {
+    if KIND_VIETATI.contains(&kind) {
+        return Err(Rifiuto::KindVietato(kind));
+    }
     if tags.iter().any(|t| t.is_empty()) {
         return Err(Rifiuto::Forma("tag vuoto"));
     }

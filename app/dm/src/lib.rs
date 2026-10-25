@@ -27,6 +27,8 @@ pub const SFASAMENTO_MASSIMO: u64 = 2 * 24 * 3600;
 pub enum ErroreDm {
     #[error("chiave non valida")]
     Chiave,
+    #[error("serve una chiave di ruolo DM")]
+    Ruolo,
     #[error("messaggio non valido: {0}")]
     Messaggio(&'static str),
     #[error("cifratura: {0}")]
@@ -176,6 +178,9 @@ pub(crate) fn costruisci(
     ora: u64,
     e: &mut dyn Entropia,
 ) -> Result<(Evento, Evento), ErroreDm> {
+    if mittente.ruolo() != Ruolo::Dm {
+        return Err(ErroreDm::Ruolo);
+    }
     let dest = da_hex32(dm_destinatario).ok_or(ErroreDm::Chiave)?;
     let mia = mittente.pubblica_hex();
     let mia_bytes = da_hex32(&mia).ok_or(ErroreDm::Chiave)?;

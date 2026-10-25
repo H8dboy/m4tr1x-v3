@@ -13,6 +13,22 @@ fn i_kind_4_13_14_non_si_firmano_ne_si_accettano_e_il_1059_si() {
         let r = firma_evento(kind, "ciao", &[], 1_760_000_000, Rete::Prova, &k.pubblica_hex(), |d| k.firma_schnorr(d));
         assert_eq!(r.unwrap_err(), Rifiuto::KindVietato(kind), "kind {kind}");
     }
+    // il rifiuto arriva PRIMA di firmare: la chiave non vede mai il digest di un kind vietato
+    for kind in [4u16, 13, 14] {
+        let mut firmato = false;
+        let _ = firma_evento(kind, "ciao", &[], 1_760_000_000, Rete::Prova, &k.pubblica_hex(), |d| {
+            firmato = true;
+            k.firma_schnorr(d)
+        });
+        assert!(!firmato, "kind {kind}: la chiave ha firmato");
+    }
+    let mut firmato = false;
+    firma_evento(1, "ciao", &[], 1_760_000_000, Rete::Prova, &k.pubblica_hex(), |d| {
+        firmato = true;
+        k.firma_schnorr(d)
+    })
+    .unwrap();
+    assert!(firmato, "controllo positivo: un kind permesso si firma");
     for kind in [1u16, 1059] {
         let e = firma_evento(kind, "ciao", &[], 1_760_000_000, Rete::Prova, &k.pubblica_hex(), |d| k.firma_schnorr(d)).expect("controllo positivo");
         let json = serde_json::to_value(&e).unwrap();
