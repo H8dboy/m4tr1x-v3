@@ -99,6 +99,9 @@ function signRaw(t, key) {
 }
 
 /** @param {any} t */
+/** I-19: i messaggi privati "nudi" (4 = NIP-04, 13 = sigillo, 14 = messaggio) non viaggiano mai: solo buste 1059. */
+const FORBIDDEN_KINDS = Object.freeze([4, 13, 14])
+
 function checkTemplate(t) {
   if (!t || typeof t !== 'object') throw new Error('evento non valido')
   if (!Number.isInteger(t.kind) || t.kind < 0 || t.kind > 65535) throw new Error('kind non valido')
@@ -117,6 +120,7 @@ function checkTemplate(t) {
 function buildEvent(template, identityKey, network) {
   if (!NETWORKS.includes(network)) throw new Error(`rete sconosciuta: ${network}`)
   checkTemplate(template)
+  if (FORBIDDEN_KINDS.includes(template.kind)) throw new Error(`kind ${template.kind} vietato: i messaggi privati escono solo come buste 1059`)
   if (identityKey.family !== 'schnorr') throw new Error(`il ruolo "${identityKey.role}" non firma eventi Nostr`)
   if (identityKey.role === keys.NODE_ROLE && template.kind !== DESCRIPTOR_KIND)
     throw new Error('la chiave del nodo firma solo schede di directory')
@@ -143,6 +147,7 @@ function verifyEvent(ev, network) {
     if (!/^[0-9a-f]{64}$/.test(ev.id) || !/^[0-9a-f]{64}$/.test(ev.pubkey) || !/^[0-9a-f]{128}$/.test(ev.sig)) return false
     if (!Number.isInteger(ev.created_at) || ev.created_at < 0) return false
     checkTemplate(ev)
+    if (FORBIDDEN_KINDS.includes(ev.kind)) return false
     const nets = ev.tags.filter(/** @param {string[]} t */ t => t[0] === 'net')
     if (nets.length !== 1 || nets[0][1] !== network) return false
     if (h8Violation(ev)) return false
@@ -235,7 +240,7 @@ function _signRawEventForTest(/** @type {any} */ t, /** @type {import('../keys')
 }
 
 module.exports = {
-  NETWORKS, DOMAINS, DOMAIN_FAMILY, ACCOUNT_ID_RE,
+  FORBIDDEN_KINDS, NETWORKS, DOMAINS, DOMAIN_FAMILY, ACCOUNT_ID_RE,
   DESCRIPTOR_KIND, DESCRIPTOR_D, MAX_DESCRIPTOR_TTL, NODE_ROLES, leadingZeroBits, buildDescriptor, verifyDescriptor,
   newAccountId, domainDigest, signDomain, verifyDomain,
   eventId, buildEvent, verifyEvent, _signRawEventForTest,

@@ -15,8 +15,6 @@ const PENDING = [
   ['I-13', 'equivocazione dell\'emittente scoperta', 'F7'],
   ['I-14', 'conti H8 non collegabili alle chiavi Nostr', 'F7'],
   ['I-16', 'metadati tolti sul dispositivo', 'F6'],
-  ['I-19', 'DM solo come gift wrap 1059', 'F5'],
-  ['I-20', 'busta con chiave usa e getta e data sfalsata', 'F5'],
   ['I-21', 'aggiornamento con firma non valida rifiutato', 'F8'],
   ['I-22', 'niente rollback di versione o seq', 'F8'],
   ['I-24', 'build riproducibile dove possibile', 'F8'],

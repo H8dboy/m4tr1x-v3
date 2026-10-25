@@ -69,7 +69,13 @@ pub enum Rifiuto {
     Id,
     #[error("firma non valida")]
     Firma,
+    #[error("kind {0} vietato sul filo (messaggi privati nudi: solo buste 1059, I-19)")]
+    KindVietato(u16),
 }
+
+/// Kind dei messaggi privati "nudi": DM vecchio (NIP-04), sigillo (NIP-59) e messaggio (NIP-17). Non
+/// viaggiano mai su un relay: i DM escono solo dentro la busta kind 1059 (I-19).
+pub const KIND_VIETATI: [u16; 3] = [4, 13, 14];
 
 /// Verifica completa di un evento ricevuto (forma, rete, dati H8, id, firma), come `verifyEvent`.
 pub fn verifica(v: &Value, rete: Rete) -> Result<Evento, Rifiuto> {
@@ -83,6 +89,9 @@ pub fn verifica(v: &Value, rete: Rete) -> Result<Evento, Rifiuto> {
     }
     let created_at = intero(o.get("created_at")).filter(|&n| n <= MAX_INTERO_JS).ok_or(Rifiuto::Forma("created_at"))?;
     let kind = intero(o.get("kind")).and_then(|n| u16::try_from(n).ok()).ok_or(Rifiuto::Forma("kind"))?;
+    if KIND_VIETATI.contains(&kind) {
+        return Err(Rifiuto::KindVietato(kind));
+    }
     let content = testo("content")?;
     let tags = o
         .get("tags")
@@ -136,6 +145,9 @@ pub fn firma_evento(
     pubkey: &str,
     firma: impl FnOnce(&[u8; 32]) -> Option<[u8; 64]>,
 ) -> Result<Evento, Rifiuto> {
+    if KIND_VIETATI.contains(&kind) {
+        return Err(Rifiuto::KindVietato(kind));
+    }
     if tags.iter().any(|t| t.is_empty()) {
         return Err(Rifiuto::Forma("tag vuoto"));
     }
@@ -228,7 +240,9 @@ pub fn id_evento(pubkey: &str, created_at: u64, kind: u16, tags: &[Vec<String>],
     esadecimale(&Sha256::digest(testo.as_bytes()))
 }
 
-fn verifica_firma(pubkey: &str, id: &str, sig: &str) -> Result<(), Rifiuto> {
+/// Firma BIP-340 di un id (esadecimale) già calcolato: per chi costruisce eventi fuori da `verifica`
+/// (il sigillo dei DM, che non porta il tag `net`).
+pub fn verifica_firma(pubkey: &str, id: &str, sig: &str) -> Result<(), Rifiuto> {
     use k256::schnorr::{Signature, VerifyingKey};
     let chiave = VerifyingKey::from_slice(&da_esadecimale(pubkey).ok_or(Rifiuto::Firma)?).map_err(|_| Rifiuto::Firma)?;
     let firma = Signature::try_from(da_esadecimale(sig).ok_or(Rifiuto::Firma)?.as_slice()).map_err(|_| Rifiuto::Firma)?;
