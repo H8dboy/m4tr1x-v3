@@ -13,6 +13,14 @@ m4tr1x-identity = { path = "../identity" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 thiserror = "=2.0.21"
+chacha20 = "=0.10.2"
+hmac = "=0.12.1"
+hkdf = "=0.12.4"
+sha2 = "=0.10.9"
+base64 = "=0.23.1"
+k256 = { version = "=0.14.0", default-features = false, features = ["std", "schnorr", "ecdh"] }
+zeroize = { version = "=1.8.2", features = ["zeroize_derive"] }
+getrandom = "=0.3.4"
 
 [features]
 # SOLO PER LE PROVE: buste volutamente difettose (forgiate) per provare gli scarti (I-61)
@@ -20,4 +28,3 @@ prova = []
 
 [dev-dependencies]
 m4tr1x-dm = { path = ".", features = ["prova"] }
-sha2 = "=0.10.9"

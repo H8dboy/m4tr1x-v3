@@ -32,6 +32,10 @@ fn ogni_difetto_e_scartato_e_la_busta_buona_passa() {
         Difetto::MacAlterato,
         Difetto::DestinatarioSbagliato,
         Difetto::OraNelFuturo,
+        Difetto::IdDelMessaggioSbagliato,
+        Difetto::IdDelSigilloSbagliato,
+        Difetto::SigilloNelFuturo,
+        Difetto::TagPDellaBustaSbagliato,
     ] {
         let forgiata = incarta_difettosa(d, R, &a.dm, &b.dm.pubblica_hex(), "messaggio forgiato", ORA, &mut EntropiaSistema).unwrap();
         let r = apri(R, &b.dm, &forgiata);

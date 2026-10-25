@@ -21,6 +21,7 @@ test('attribuzione del mittente solo con annuncio valido e prova di possesso', {
   assert.equal(r.status, 0, out.slice(-4000))
   for (const t of ['l_annuncio_si_costruisce_solo_con_il_ruolo_giusto', 'l_annuncio_e_un_evento_firmato_dall_identita_con_la_prova_di_possesso', 'senza_annuncio_il_mittente_resta_sconosciuto',
     'vale_l_annuncio_piu_recente_della_stessa_identita', 'annuncio_di_un_altra_rete_o_non_valido_ignorato', 'con_l_annuncio_giusto_il_messaggio_e_di_anna',
-    'prova_di_possesso_alterata_o_mancante_non_vale', 'un_impostore_non_si_prende_la_chiave_dm_di_un_altro'])
+    'prova_di_possesso_alterata_o_mancante_non_vale', 'un_impostore_non_si_prende_la_chiave_dm_di_un_altro',
+    'se_due_identita_rivendicano_la_stessa_chiave_dm_nessuno_la_ottiene', 'un_evento_di_un_altro_kind_con_gli_stessi_tag_non_e_un_annuncio'])
     assert.match(out, new RegExp(`${t} \\.\\.\\. ok`), `manca o fallisce la prova ${t}`)
 })

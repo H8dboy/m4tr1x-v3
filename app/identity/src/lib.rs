@@ -218,6 +218,24 @@ impl ChiaveRuolo {
         Some(sig.to_bytes())
     }
 
+    /// Segreto condiviso ECDH (coordinata x, 32 byte) tra la chiave DM e una pubblica x-only (BIP-340, y pari):
+    /// l'ingresso della cifratura NIP-44 dei messaggi privati. SOLO per il ruolo Dm: il segreto della chiave DM
+    /// resta qui dentro, chi cifra riceve soltanto il risultato. `None` se il ruolo è un altro o la pubblica non
+    /// è un punto valido della curva.
+    pub fn ecdh_dm(&self, pubblica_x: &[u8; 32]) -> Option<[u8; 32]> {
+        if self.ruolo != Ruolo::Dm {
+            return None;
+        }
+        let sk = k256::SecretKey::from_slice(&self.segreto).ok()?;
+        let mut sec1 = [0x02u8; 33];
+        sec1[1..].copy_from_slice(pubblica_x);
+        let pk = k256::PublicKey::from_sec1_bytes(&sec1).ok()?;
+        let condiviso = k256::ecdh::diffie_hellman(sk.to_nonzero_scalar(), pk.as_affine());
+        let mut x = [0u8; 32];
+        x.copy_from_slice(condiviso.raw_secret_bytes());
+        Some(x)
+    }
+
     /// Il segreto, SOLO per sigillarlo nel portachiavi del sistema. Mai verso il JavaScript.
     pub fn segreto_per_portachiavi(&self) -> &[u8; 32] {
         &self.segreto

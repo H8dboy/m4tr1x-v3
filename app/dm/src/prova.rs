@@ -1,7 +1,7 @@
 //! SOLO PER LE PROVE (feature `prova`, mai nell'app): buste volutamente difettose per provare che
-//! `apri` le scarta (I-61). SCHELETRO.
+//! `apri` le scarta (I-61). Usa lo stesso codice di `incarta`, con UN difetto in più.
 
-use crate::{ErroreDm, Entropia};
+use crate::{costruisci, Entropia, ErroreDm, Guasto};
 use m4tr1x_identity::ChiaveRuolo;
 use m4tr1x_protocol::Rete;
 use serde_json::Value;
@@ -27,17 +27,46 @@ pub enum Difetto {
     DestinatarioSbagliato,
     /// l'ora del messaggio nel futuro lontano
     OraNelFuturo,
+    /// l'id del messaggio interno non è quello che il contenuto produce
+    IdDelMessaggioSbagliato,
+    /// l'id del sigillo non è quello che il contenuto produce (firmato lo stesso: la firma è valida)
+    IdDelSigilloSbagliato,
+    /// l'ora del sigillo nel futuro lontano
+    SigilloNelFuturo,
+    /// il tag p della busta indica un altro (la busta è cifrata per chi la apre)
+    TagPDellaBustaSbagliato,
+}
+
+impl From<Difetto> for Guasto {
+    fn from(d: Difetto) -> Self {
+        match d {
+            Difetto::SigilloDiUnAltro => Guasto::SigilloDiUnAltro,
+            Difetto::FirmaDelSigilloFalsa => Guasto::FirmaDelSigilloFalsa,
+            Difetto::MessaggioFirmato => Guasto::MessaggioFirmato,
+            Difetto::KindDelMessaggioSbagliato => Guasto::KindDelMessaggioSbagliato,
+            Difetto::KindDelSigilloSbagliato => Guasto::KindDelSigilloSbagliato,
+            Difetto::VersioneSconosciuta => Guasto::VersioneSconosciuta,
+            Difetto::MacAlterato => Guasto::MacAlterato,
+            Difetto::DestinatarioSbagliato => Guasto::DestinatarioSbagliato,
+            Difetto::OraNelFuturo => Guasto::OraNelFuturo,
+            Difetto::IdDelMessaggioSbagliato => Guasto::IdDelMessaggioSbagliato,
+            Difetto::IdDelSigilloSbagliato => Guasto::IdDelSigilloSbagliato,
+            Difetto::SigilloNelFuturo => Guasto::SigilloNelFuturo,
+            Difetto::TagPDellaBustaSbagliato => Guasto::TagPDellaBustaSbagliato,
+        }
+    }
 }
 
 /// Una busta kind 1059 per `destinatario_dm` con il difetto richiesto.
 pub fn incarta_difettosa(
-    _difetto: Difetto,
-    _rete: Rete,
-    _mittente: &ChiaveRuolo,
-    _destinatario_dm: &str,
-    _testo: &str,
-    _ora: u64,
-    _entropia: &mut dyn Entropia,
+    difetto: Difetto,
+    rete: Rete,
+    mittente: &ChiaveRuolo,
+    destinatario_dm: &str,
+    testo: &str,
+    ora: u64,
+    entropia: &mut dyn Entropia,
 ) -> Result<Value, ErroreDm> {
-    Err(ErroreDm::NonImplementato)
+    let (per_destinatario, _) = costruisci(Some(difetto.into()), rete, mittente, destinatario_dm, testo, ora, entropia)?;
+    serde_json::to_value(&per_destinatario).map_err(|_| ErroreDm::Messaggio("serializzazione"))
 }

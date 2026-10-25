@@ -125,3 +125,26 @@ fn l_annuncio_si_costruisce_solo_con_il_ruolo_giusto() {
     assert!(annuncio_dm(R, &a.identita, &[&a.identita], &[], ORA).is_err(), "nell'elenco ci vanno chiavi DM");
     assert!(annuncio_dm(R, &a.identita, &[], &[], ORA).is_err(), "almeno una chiave DM");
 }
+
+#[test]
+fn se_due_identita_rivendicano_la_stessa_chiave_dm_nessuno_la_ottiene() {
+    // le due prove di possesso sono vere (le firma la stessa chiave DM): resta l'ambiguità, quindi nessun nome
+    let (a, b) = (anna(), bruno());
+    let dm = dm_di_anna_come_mittente();
+    let di_anna = annuncio(&a, &[&a.dm], ORA);
+    assert_eq!(identita_del_mittente(R, &[di_anna.clone()], &dm), Some(a.identita.pubblica_hex()), "controllo positivo");
+    let di_bruno_con_la_chiave_di_anna = annuncio(&b, &[&a.dm], ORA);
+    assert_eq!(identita_del_mittente(R, &[di_anna, di_bruno_con_la_chiave_di_anna], &dm), None);
+}
+
+#[test]
+fn un_evento_di_un_altro_kind_con_gli_stessi_tag_non_e_un_annuncio() {
+    let a = anna();
+    let buono = annuncio(&a, &[&a.dm], ORA);
+    assert!(dm_dichiarate(R, &buono).is_ok(), "controllo positivo");
+    let tags: Vec<Vec<String>> = buono["tags"].as_array().unwrap().iter().filter(|t| t[0] != "net").map(|t| t.as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()).collect();
+    let ev = firma_evento(1, "", &tags, ORA, R, &a.identita.pubblica_hex(), |d| a.identita.firma_schnorr(d)).unwrap();
+    let finto = serde_json::to_value(&ev).unwrap();
+    assert!(dm_dichiarate(R, &finto).is_err(), "un kind 1 non dichiara chiavi DM");
+    assert_eq!(identita_del_mittente(R, &[finto], &dm_di_anna_come_mittente()), None);
+}

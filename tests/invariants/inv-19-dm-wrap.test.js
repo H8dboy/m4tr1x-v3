@@ -42,6 +42,12 @@ test('verifyEvent rifiuta i kind 4, 13, 14 e accetta 1 e 1059', () => {
   for (const kind of [1, 1059]) assert.equal(protocol.verifyEvent(mk(kind), NET), true, `kind ${kind}`)
 })
 
+test('buildEvent non firma i kind 4, 13, 14 (e firma il 1059)', () => {
+  const who = testIdentity()
+  for (const kind of [4, 13, 14]) assert.throws(() => protocol.buildEvent({ kind, content: 'x', tags: [] }, who, NET), /vietato/, `kind ${kind}`)
+  assert.equal(protocol.verifyEvent(protocol.buildEvent({ kind: 1059, content: 'x', tags: [] }, who, NET), NET), true)
+})
+
 const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' })
 function prova(/** @type {string[]} */ args) {
   const r = spawnSync('cargo', ['test', '--manifest-path', path.join(ROOT, 'app', 'Cargo.toml'), ...args],
@@ -55,6 +61,6 @@ test('parte dinamica (Rust): fuori escono solo buste 1059', { skip: cargo.status
   assert.match(a.out, /i_kind_4_13_14_non_si_firmano_ne_si_accettano_e_il_1059_si \.\.\. ok/)
   const b = prova(['-p', 'm4tr1x-dm', '--test', 'inv_19_20_buste'])
   assert.equal(b.status, 0, b.out.slice(-4000))
-  for (const n of ['i19_escono_solo_buste_1059_e_non_mostrano_niente', 'bruno_legge_cio_che_anna_scrive_e_anna_ha_la_sua_copia', 'testo_vuoto_o_troppo_lungo_rifiutato_prima_di_cifrare', 'si_incarta_solo_con_una_chiave_dm_e_verso_una_chiave_valida'])
+  for (const n of ['i19_escono_solo_buste_1059_e_non_mostrano_niente', 'bruno_legge_cio_che_anna_scrive_e_anna_ha_la_sua_copia', 'testo_vuoto_o_troppo_lungo_rifiutato_prima_di_cifrare', 'si_incarta_solo_con_una_chiave_dm_e_verso_una_chiave_valida', 'il_segreto_condiviso_lo_calcola_solo_la_chiave_dm'])
     assert.match(b.out, new RegExp(`${n} \\.\\.\\. ok`), `manca o fallisce la prova ${n}`)
 })

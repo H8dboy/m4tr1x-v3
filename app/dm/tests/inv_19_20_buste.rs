@@ -37,11 +37,14 @@ fn i19_escono_solo_buste_1059_e_non_mostrano_niente() {
             let nomi: Vec<&str> = e.tags.iter().map(|t| t[0].as_str()).collect();
             assert_eq!(nomi.iter().filter(|n| **n == "p").count(), 1);
             assert!(nomi.iter().all(|n| *n == "p" || *n == "net"), "tag inattesi: {nomi:?}");
-            // nulla di leggibile: né il testo, né le chiavi, né le parole del messaggio
+            // nulla di leggibile: né il testo, né le parole del messaggio, né le identità; la chiave DM dell'ALTRO
+            // (o del mittente) non compare nella busta del destinatario, né quella del destinatario in quella del mittente
             let tutto = serde_json::to_string(e).unwrap();
-            for non_deve in [testo.as_str(), "pacco", "segreto", &a.dm.pubblica_hex(), &a.identita.pubblica_hex(), &b.identita.pubblica_hex()] {
+            let (altra_dm, sua_dm) = if std::ptr::eq(e, &buste.per_destinatario) { (a.dm.pubblica_hex(), b.dm.pubblica_hex()) } else { (b.dm.pubblica_hex(), a.dm.pubblica_hex()) };
+            for non_deve in [testo.as_str(), "pacco", "segreto", &altra_dm, &a.identita.pubblica_hex(), &b.identita.pubblica_hex()] {
                 assert!(!tutto.contains(non_deve), "la busta mostra «{non_deve}»");
             }
+            assert!(tutto.contains(&sua_dm), "controllo positivo: la busta porta il suo destinatario (tag p)");
         }
         // il destinatario che il relay vede è la chiave DM del destinatario (non la sua identità)
         let p = |e: &m4tr1x_protocol::Evento| e.tags.iter().find(|t| t[0] == "p").unwrap()[1].clone();
@@ -89,10 +92,13 @@ fn i20_la_data_e_sfalsata_indietro_fino_a_due_giorni() {
 #[test]
 fn il_messaggio_e_riempito_e_la_dimensione_non_rivela_la_lunghezza_esatta() {
     let (a, b) = (anna(), bruno());
-    let len = |t: &str| serde_json::to_string(&incarta(R, &a.dm, &b.dm.pubblica_hex(), t, ORA, &mut EntropiaSistema).unwrap().per_destinatario).unwrap().len();
-    // 33 e 60 caratteri cadono nello stesso scaglione di padding NIP-44 (64): stessa dimensione ±(cifre della data)
-    let (l1, l2) = (len(&"a".repeat(33)), len(&"a".repeat(60)));
-    assert!(l1.abs_diff(l2) <= 4, "{l1} contro {l2}");
+    let len = |n: usize| serde_json::to_string(&incarta(R, &a.dm, &b.dm.pubblica_hex(), &"a".repeat(n), ORA, &mut EntropiaSistema).unwrap().per_destinatario).unwrap().len();
+    // 100 lunghezze consecutive: il riempimento NIP-44 le raggruppa a scaglioni di 32 byte (e il messaggio è
+    // dentro due involucri), quindi le dimensioni diverse sono poche e ognuna serve più lunghezze
+    let dimensioni: Vec<usize> = (40..140).map(len).collect();
+    let diverse: HashSet<usize> = dimensioni.iter().copied().collect();
+    assert!(diverse.len() <= 8, "{} dimensioni diverse su 100 lunghezze: la lunghezza esatta si vede", diverse.len());
+    assert!(diverse.len() >= 2, "controllo positivo: la dimensione cresce con il testo");
 }
 
 #[test]
@@ -111,4 +117,12 @@ fn si_incarta_solo_con_una_chiave_dm_e_verso_una_chiave_valida() {
     assert!(incarta(R, &a.identita, &b.dm.pubblica_hex(), "ciao", ORA, &mut EntropiaSistema).is_err());
     assert!(incarta(R, &a.dm, "zz", "ciao", ORA, &mut EntropiaSistema).is_err());
     assert!(incarta(R, &a.dm, &"0".repeat(64), "ciao", ORA, &mut EntropiaSistema).is_err(), "pubblica non sulla curva");
+}
+
+#[test]
+fn il_segreto_condiviso_lo_calcola_solo_la_chiave_dm() {
+    let (a, b) = (anna(), bruno());
+    let x: [u8; 32] = (0..32).map(|i| u8::from_str_radix(&b.dm.pubblica_hex()[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<_>>().try_into().unwrap();
+    assert!(a.dm.ecdh_dm(&x).is_some(), "controllo positivo");
+    assert!(a.identita.ecdh_dm(&x).is_none(), "l'identità non fa Diffie-Hellman");
 }
