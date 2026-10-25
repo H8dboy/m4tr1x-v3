@@ -11,7 +11,7 @@ description = "Chiavi dell'utente dal seme (BIP-39 + HKDF, ruoli identity/dm/rev
 bip39 = { version = "=2.2.2", default-features = false, features = ["std"] }
 hkdf = "=0.12.4"
 sha2 = "=0.10.9"
-k256 = { version = "=0.13.4", default-features = false, features = ["std", "schnorr"] }
+k256 = { version = "=0.14.0", default-features = false, features = ["std", "schnorr"] }
 ml-dsa = "=0.1.1"
 zeroize = { version = "=1.8.2", features = ["zeroize_derive"] }
 getrandom = "=0.3.4"

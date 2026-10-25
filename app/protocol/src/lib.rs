@@ -230,7 +230,7 @@ pub fn id_evento(pubkey: &str, created_at: u64, kind: u16, tags: &[Vec<String>],
 
 fn verifica_firma(pubkey: &str, id: &str, sig: &str) -> Result<(), Rifiuto> {
     use k256::schnorr::{Signature, VerifyingKey};
-    let chiave = VerifyingKey::from_bytes(&da_esadecimale(pubkey).ok_or(Rifiuto::Firma)?).map_err(|_| Rifiuto::Firma)?;
+    let chiave = VerifyingKey::from_slice(&da_esadecimale(pubkey).ok_or(Rifiuto::Firma)?).map_err(|_| Rifiuto::Firma)?;
     let firma = Signature::try_from(da_esadecimale(sig).ok_or(Rifiuto::Firma)?.as_slice()).map_err(|_| Rifiuto::Firma)?;
     chiave.verify_raw(&da_esadecimale(id).ok_or(Rifiuto::Firma)?, &firma).map_err(|_| Rifiuto::Firma)
 }
