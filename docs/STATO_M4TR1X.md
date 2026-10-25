@@ -118,13 +118,13 @@ flowchart TB
 ## 5. Difese (regole I-xx)
 
 <!-- AUTO:REGOLE:INIZIO -->
-_Generato da `npm run report` il 2026-10-21. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
+_Generato da `npm run report` il 2026-10-25. Fonte: il codice dei test (`tests/invariants/`), confrontato con `docs/SECURITY_INVARIANTS.md`._
 
-**27 regole attive, 26 in attesa, 0 assenti.** Prove di sabotaggio: 64/66 prese, eseguite il 2026-10-16 (Node 22.23.3, win32 10.0.26200).
+**27 regole attive, 26 in attesa, 0 assenti.** Prove di sabotaggio: 156/160 prese, eseguite il 2026-10-25 (Node 22.23.3, linux 6.12.107+deb13-amd64).
 
 | Regola | Cosa garantisce | Stato | Fase | Test | Sabotaggio |
 |---|---|---|---|---|---|
-| I-01 | Nessuna richiesta di rete delle app esce fuori da Tor. | attiva | F4 | `inv-01-no-clearnet.test.js` ✅ 3 verdi | **nessuna prova di sabotaggio** |
+| I-01 | Nessuna richiesta di rete delle app esce fuori da Tor. | attiva | F4 | `inv-01-rete.test.js` ✅ 1 verdi | 5/7 prese ⚠ regole che lasciano uscire tutto fuori dal loopback (controllo positivo deve cadere): non-applicabile-qui; resolver locale sul loopback ammesso (DNS fuori da Tor): non-applicabile-qui |
 | I-02 | Il nodo è in ascolto solo su loopback | attiva | F2 | `inv-02-bind.test.js` ✅ 3 verdi | 1/1 prese |
 | I-03 | Il nodo rifiuta richieste con Host non ammesso | attiva | F2 | `inv-03-host.test.js` ✅ 7 verdi | 1/1 prese |
 | I-04 | Nessun Access-Control-Allow-Origin: * | attiva | F2 | `inv-04-cors.test.js` ✅ 10 verdi | 1/1 prese |
@@ -138,7 +138,7 @@ _Generato da `npm run report` il 2026-10-21. Fonte: il codice dei test (`tests/i
 | I-12 | Doppia spesa impossibile: due spese con lo stesso seq_conto → la seconda è rifiutata | in attesa | F7 | — | — |
 | I-13 | Equivocazione scoperta: se l'emittente firma due righe diverse con lo stesso indice, la replica si ferma e dà l'allarme | in attesa | F7 | — | — |
 | I-14 | I conti H8 non sono collegabili alle chiavi Nostr | in attesa | F7 | — | — |
-| I-15 | Nessun indirizzo o conto H8 in un evento Nostr pubblicato. | attiva | F1 | `inv-15-no-h8-in-events.test.js` ✅ 10 verdi | 1/1 prese |
+| I-15 | Nessun indirizzo o conto H8 in un evento Nostr pubblicato. | attiva | F1 | `inv-15-no-h8-in-events.test.js` ✅ 10 verdi | 3/3 prese |
 | I-16 | Nessun metadato identificativo lascia il dispositivo | in attesa | F6 | — | — |
 | I-17 | Un blob si accetta solo se il suo SHA-256 corrisponde. | attiva | F2 | `inv-17-blob-hash.test.js` ✅ 4 verdi | 2/2 prese |
 | I-18 | Hub, edge e nodi non scrivono indirizzi IP nei log. | attiva | F2 | `inv-18-no-ip-logs.test.js` ✅ 1 verdi | 1/1 prese |
@@ -148,19 +148,19 @@ _Generato da `npm run report` il 2026-10-21. Fonte: il codice dei test (`tests/i
 | I-22 | Niente rollback: versione più bassa o seq del manifest più basso dell'ultimo visto → rifiutato | in attesa | F8 | — | — |
 | I-23 | La CI non pubblica release senza manifest firmato valido | attiva | F0 | `inv-23-release-gate.test.js` ✅ 10 verdi | 2/2 prese |
 | I-24 | Build riproducibile (dove possibile): due build dello stesso tag danno gli stessi hash per frontend, binari Rust e contenuto dell'APK | in attesa | F8 | — | — |
-| I-25 | Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti; GitHub Actions fissate per hash del c… | attiva | F0 | `inv-25-deps.test.js` ✅ 5 verdi | 2/2 prese |
+| I-25 | Nessuna dipendenza con vulnerabilità alte o critiche; lockfile bloccati; pacchetti vietati assenti; GitHub Actions fissate per hash del c… | attiva | F0 | `inv-25-deps.test.js` ✅ 5 verdi | 5/5 prese |
 | I-26 | Un input malformato non fa cadere il nodo | attiva | F2 | `inv-26-fuzz.test.js` ✅ 1 verdi | 1/1 prese |
 | I-27 | Ogni processo esterno (ffmpeg, exiftool) ha un timeout | in attesa | F6 | — | — |
-| I-28 | Nessun segreto nel repo (chiavi, .env, .db, chiavi onion, IP, email personali) | attiva | F0 | `inv-28-secrets.test.js` ✅ 24 verdi | 2/2 prese |
+| I-28 | Nessun segreto nel repo (chiavi, .env, .db, chiavi onion, IP, email personali) | attiva | F0 | `inv-28-secrets.test.js` ✅ 24 verdi | 9/9 prese |
 | I-29 | I descrittori della directory contengono solo onion v3 | attiva | F3 | `inv-29-descriptor.test.js` ✅ 7 verdi | 3/3 prese |
 | I-30 | L'indirizzo onion di un nodo utente è visibile solo al suo proprietario | attiva | F2 | `inv-30-33-admin-onion.test.js` ✅ 7 verdi | 1/1 prese |
-| I-31 | Nessuna chiave privata utente raggiunge il codice JavaScript dell'app; | attiva | F4 | `inv-31-no-keys-in-js.test.js` ✅ 7 verdi | 3/5 prese ⚠ permessi core di Tauri al JavaScript: non-applicabile; comando dichiarato senza funzione (elenco e codice divergono): non-applicabile |
+| I-31 | Nessuna chiave privata utente raggiunge il codice JavaScript dell'app; | attiva | F4 | `inv-31-no-keys-in-js.test.js` ✅ 7 verdi | 10/10 prese |
 | I-32 | Buoni offline entro il tetto: un edge non accetta più del tetto giornaliero per conto, anche offline | in attesa | F10 | — | — |
 | I-33 | L'admin del nodo è raggiungibile solo da loopback con la chiave admin (K13) | attiva | F2 | `inv-30-33-admin-onion.test.js` ✅ 7 verdi | 1/1 prese |
 | I-34 | Nessun trasferimento tra utenti: | in attesa | F7 | — | — |
 | I-35 | Buono cieco: l'emittente non può collegare un buono riscattato al bonifico che l'ha pagato | in attesa | F7b | — | — |
-| I-36 | Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016) | attiva | F4 | `inv-36-transport-only.test.js` ✅ 6 verdi | 4/4 prese |
-| I-37 | Il Tor del desktop serve solo onion e non presta i circuiti dell'app | attiva | F4 | `inv-37-tor-process.test.js` ✅ 4 verdi | 5/5 prese |
+| I-36 | Trasporto unico: solo il modulo transport dell'app apre connessioni di rete, e accetta solo onion v3 validati (ADR-0016) | attiva | F4 | `inv-36-transport-only.test.js` ✅ 7 verdi | 10/10 prese |
+| I-37 | Il Tor del desktop serve solo onion e non presta i circuiti dell'app | attiva | F4 | `inv-37-tor-process.test.js` ✅ 4 verdi | 14/16 prese ⚠ pulizia della vecchia copia che entra in junction e punti di analisi (Windows): altra-piattaforma; cartella della copia senza ACL esplicita: eredita quella del profilo (Windows): altra-piattaforma |
 | I-38 | Le schede della directory scadono e si rinnovano: | attiva | F3 | `inv-38-expiry.test.js` ✅ 5 verdi | 4/4 prese |
 | I-39 | Limiti sulle ancore senza porte chiudibili: | attiva | F3 | `inv-39-anchor-limits.test.js` ✅ 8 verdi | 6/6 prese |
 | I-40 | Due famiglie di firme (ADR-0017): | attiva | F1 | `inv-40-signature-families.test.js` ✅ 6 verdi | 3/3 prese |
@@ -176,7 +176,7 @@ _Generato da `npm run report` il 2026-10-21. Fonte: il codice dei test (`tests/i
 | I-50 | La mappa creator contiene solo HMAC(K17, pubkey) e il conto cifrato; | in attesa | F7 | — | — |
 | I-57 | Un ordine di ritiro al distributore non contiene dati personali; | in attesa | F10 | — | — |
 | I-58 | Finestra del seme: le 24 parole compaiono solo nella finestra del seme (pagina, script e capability propri; il lato Rust controlla anche … | attiva | F4 | `inv-58-seed-window.test.js` ✅ 5 verdi | 8/8 prese |
-| I-59 | Porta di controllo del tor del nodo | attiva | F2 | `inv-59-node-tor-control.test.js` ✅ 11 verdi | **nessuna prova di sabotaggio** |
+| I-59 | Porta di controllo del tor del nodo | attiva | F2 | `inv-59-node-tor-control.test.js` ✅ 11 verdi | 13/13 prese |
 
 **Divergenze tra documento e codice:** nessuna trovata.
 <!-- AUTO:REGOLE:FINE -->
@@ -290,53 +290,56 @@ Decise il 15/10/2026: Q1 (mance solo ai creator con split), Q2 (SEPA manuale a 1
 ### 11.1 Test automatici
 
 <!-- AUTO:TEST:INIZIO -->
-_Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · win32 10.0.26200 · 2026-10-21._
+_Generato da `npm run report`: ogni file di test eseguito da solo. Ambiente: Node 22.23.3 · linux 6.12.107+deb13-amd64 · 2026-10-25._
 
-**Totale: 220 verdi, 0 falliti, 0 saltati, 26 in attesa.**
+**Totale: 232 verdi, 0 falliti, 1 saltati, 26 in attesa.**
 
 | File | Verdi | Falliti | Saltati | In attesa | Durata |
 |---|---|---|---|---|---|
-| `tests/integration/blob-replica.test.js` | 4 | 0 | 0 | 0 | 22.7 s |
-| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 2.2 s |
-| `tests/integration/feed-via-tor.test.js` | 1 | 0 | 0 | 0 | 248.6 s |
-| `tests/integration/two-nodes.test.js` | 2 | 0 | 0 | 0 | 322.1 s |
+| `tests/integration/blob-replica.test.js` | 4 | 0 | 0 | 0 | 20.4 s |
+| `tests/integration/directory.test.js` | 1 | 0 | 0 | 0 | 1.1 s |
+| `tests/integration/feed-via-tor.test.js` | 1 | 0 | 0 | 0 | 36.6 s |
+| `tests/integration/two-nodes.test.js` | 2 | 0 | 0 | 0 | 12.8 s |
 | `tests/invariants/inv-01-no-clearnet.test.js` | 3 | 0 | 0 | 0 | 0.1 s |
-| `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 6.9 s |
-| `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.8 s |
-| `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.8 s |
-| `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 3.3 s |
-| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 5.0 s |
-| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 2.4 s |
-| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.4 s |
-| `tests/invariants/inv-15-no-h8-in-events.test.js` | 10 | 0 | 0 | 0 | 1.6 s |
-| `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 1.1 s |
-| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.6 s |
-| `tests/invariants/inv-25-deps.test.js` | 5 | 0 | 0 | 0 | 0.2 s |
-| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 6.8 s |
-| `tests/invariants/inv-28-secrets.test.js` | 24 | 0 | 0 | 0 | 0.4 s |
-| `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 1.2 s |
-| `tests/invariants/inv-31-no-keys-in-js.test.js` | 7 | 0 | 0 | 0 | 84.8 s |
-| `tests/invariants/inv-36-transport-only.test.js` | 6 | 0 | 0 | 0 | 6.5 s |
-| `tests/invariants/inv-37-tor-process.test.js` | 4 | 0 | 0 | 0 | 309.7 s |
-| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 8.0 s |
-| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 8.8 s |
-| `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.3 s |
-| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 5.9 s |
-| `tests/invariants/inv-58-seed-window.test.js` | 5 | 0 | 0 | 0 | 0.9 s |
-| `tests/invariants/inv-59-node-tor-control.test.js` | 11 | 0 | 0 | 0 | 35.8 s |
-| `tests/invariants/pending.test.js` | 0 | 0 | 0 | 26 | 0.1 s |
-| `tests/unit/crash-log.test.js` | 2 | 0 | 0 | 0 | 0.7 s |
-| `tests/unit/fasi-tor.test.js` | 2 | 0 | 0 | 0 | 0.1 s |
-| `tests/unit/feed.test.js` | 1 | 0 | 0 | 0 | 5.0 s |
-| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.3 s |
-| `tests/unit/profilo.test.js` | 1 | 0 | 0 | 0 | 1.5 s |
-| `tests/unit/protocol-vectors.test.js` | 3 | 0 | 0 | 0 | 1.7 s |
-| `tests/unit/report-esito.test.js` | 18 | 0 | 0 | 0 | 9.3 s |
+| `tests/invariants/inv-01-rete.test.js` | 1 | 0 | 1 (mancano iptables/ipset/acl) | 0 | 0.1 s |
+| `tests/invariants/inv-02-bind.test.js` | 3 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-03-host.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-04-cors.test.js` | 10 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-05-onion-only.test.js` | 3 | 0 | 0 | 0 | 2.9 s |
+| `tests/invariants/inv-06-keys-at-rest.test.js` | 5 | 0 | 0 | 0 | 2.3 s |
+| `tests/invariants/inv-06b-node-secrets.test.js` | 3 | 0 | 0 | 0 | 1.1 s |
+| `tests/invariants/inv-07-role-separation.test.js` | 7 | 0 | 0 | 0 | 0.2 s |
+| `tests/invariants/inv-08-domain-sep.test.js` | 5 | 0 | 0 | 0 | 0.3 s |
+| `tests/invariants/inv-15-no-h8-in-events.test.js` | 10 | 0 | 0 | 0 | 0.9 s |
+| `tests/invariants/inv-17-blob-hash.test.js` | 4 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-18-no-ip-logs.test.js` | 1 | 0 | 0 | 0 | 0.6 s |
+| `tests/invariants/inv-23-release-gate.test.js` | 10 | 0 | 0 | 0 | 0.3 s |
+| `tests/invariants/inv-25-deps.test.js` | 5 | 0 | 0 | 0 | 0.1 s |
+| `tests/invariants/inv-26-fuzz.test.js` | 1 | 0 | 0 | 0 | 6.4 s |
+| `tests/invariants/inv-28-secrets.test.js` | 24 | 0 | 0 | 0 | 0.2 s |
+| `tests/invariants/inv-29-descriptor.test.js` | 7 | 0 | 0 | 0 | 0.1 s |
+| `tests/invariants/inv-30-33-admin-onion.test.js` | 7 | 0 | 0 | 0 | 0.4 s |
+| `tests/invariants/inv-31-no-keys-in-js.test.js` | 7 | 0 | 0 | 0 | 15.1 s |
+| `tests/invariants/inv-36-transport-only.test.js` | 7 | 0 | 0 | 0 | 1.3 s |
+| `tests/invariants/inv-37-tor-process.test.js` | 4 | 0 | 0 | 0 | 14.8 s |
+| `tests/invariants/inv-38-expiry.test.js` | 5 | 0 | 0 | 0 | 6.5 s |
+| `tests/invariants/inv-39-anchor-limits.test.js` | 8 | 0 | 0 | 0 | 5.8 s |
+| `tests/invariants/inv-40-signature-families.test.js` | 6 | 0 | 0 | 0 | 0.2 s |
+| `tests/invariants/inv-41-relay-space.test.js` | 4 | 0 | 0 | 0 | 4.2 s |
+| `tests/invariants/inv-58-seed-window.test.js` | 5 | 0 | 0 | 0 | 0.6 s |
+| `tests/invariants/inv-59-node-tor-control.test.js` | 11 | 0 | 0 | 0 | 22.2 s |
+| `tests/invariants/pending.test.js` | 0 | 0 | 0 | 26 | 0.0 s |
+| `tests/unit/crash-log.test.js` | 2 | 0 | 0 | 0 | 0.2 s |
+| `tests/unit/fasi-tor.test.js` | 2 | 0 | 0 | 0 | 0.0 s |
+| `tests/unit/feed.test.js` | 1 | 0 | 0 | 0 | 1.0 s |
+| `tests/unit/i01-dinamica.test.js` | 5 | 0 | 0 | 0 | 0.1 s |
+| `tests/unit/keys-vectors.test.js` | 4 | 0 | 0 | 0 | 0.2 s |
+| `tests/unit/merge.test.js` | 3 | 0 | 0 | 0 | 0.1 s |
+| `tests/unit/profilo.test.js` | 1 | 0 | 0 | 0 | 0.5 s |
+| `tests/unit/protocol-vectors.test.js` | 3 | 0 | 0 | 0 | 0.2 s |
+| `tests/unit/report-esito.test.js` | 19 | 0 | 0 | 0 | 7.5 s |
 | `tests/unit/runtime-sqlite.test.js` | 3 | 0 | 0 | 0 | 0.1 s |
-| `tests/unit/sabotage-esito.test.js` | 7 | 0 | 0 | 0 | 0.1 s |
+| `tests/unit/sabotage-esito.test.js` | 8 | 0 | 0 | 0 | 0.1 s |
 <!-- AUTO:TEST:FINE -->
 
 ### 11.2 Prove di accettazione e diagnosi (registro scritto a mano)
@@ -399,7 +402,7 @@ _Generato da `npm run report` dallo storico di `npm run misura:tor` (misura a fr
 ## 12. Dipendenze
 
 <!-- AUTO:DIPENDENZE:INIZIO -->
-_Generato da `npm run report` il 2026-10-21, dal lockfile e da `npm audit`._
+_Generato da `npm run report` il 2026-10-25, dal lockfile e da `npm audit`._
 
 | Pacchetto | Uso | Dichiarata | Installata |
 |---|---|---|---|
