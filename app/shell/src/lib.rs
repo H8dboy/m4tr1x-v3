@@ -9,7 +9,7 @@
 pub mod api;
 pub mod api_seme;
 
-use api::{Avanzamento, Feed, Identita, Messaggio, Post, Posta, Profilo, Stato};
+use api::{Avanzamento, Discussione, DiscussioneAperta, Feed, Forum, Identita, Messaggio, Post, Posta, Profilo, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::{firma_come_identita, Portachiavi, Sistema};
@@ -112,6 +112,7 @@ struct Operazioni {
     post: Operazione,
     profilo: Operazione,
     posta: Operazione,
+    forum: Operazione,
 }
 
 /// Aspetta che tor sia pronto (al massimo il tempo di bootstrap del trasporto), segnalando la fase.
@@ -243,10 +244,10 @@ fn feed_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
 /// L'UNICO punto del guscio che fa firmare la tua identità (post e profilo): la chiave si legge dal
 /// portachiavi SOLO dentro `firma_come_identita` e si cancella appena firmato (fondatore, 20/10/2026).
 /// L'evento firmato si riverifica (`firma_evento`) prima di uscire.
-fn firma_con_la_mia_identita(chiavi: &Chiavi, kind: u16, contenuto: &str) -> Result<m4tr1x_protocol::Evento, String> {
+fn firma_con_la_mia_identita(chiavi: &Chiavi, kind: u16, contenuto: &str, tags: &[Vec<String>]) -> Result<m4tr1x_protocol::Evento, String> {
     let identita = creazione::identita_salvata(&*chiavi.0).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
     let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
-    m4tr1x_protocol::firma_evento(kind, contenuto, &[], ora, m4tr1x_protocol::Rete::Prova, &identita.identity, |d| {
+    m4tr1x_protocol::firma_evento(kind, contenuto, tags, ora, m4tr1x_protocol::Rete::Prova, &identita.identity, |d| {
         firma_come_identita(&*chiavi.0, d).ok()
     })
     .map_err(|e| e.to_string())
@@ -267,7 +268,7 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
     }
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
-    let evento = firma_con_la_mia_identita(&chiavi, 1, &testo).map_err(|e| format!("post non firmato: {e}"))?;
+    let evento = firma_con_la_mia_identita(&chiavi, 1, &testo, &[]).map_err(|e| format!("post non firmato: {e}"))?;
     let op = &op.post;
     if op.in_corso.swap(true, Ordering::SeqCst) {
         return Err("un post è già in pubblicazione".into());
@@ -314,7 +315,7 @@ async fn profilo_salva(nome: String, descrizione: String, rete: tauri::State<'_,
     let contenuto = m4tr1x_protocol::contenuto_profilo(&nome, &descrizione).map_err(|e| e.to_string())?;
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
-    let evento = firma_con_la_mia_identita(&chiavi, 0, &contenuto).map_err(|e| format!("profilo non firmato: {e}"))?;
+    let evento = firma_con_la_mia_identita(&chiavi, 0, &contenuto, &[]).map_err(|e| format!("profilo non firmato: {e}"))?;
     let op = &op.profilo;
     if op.in_corso.swap(true, Ordering::SeqCst) {
         return Err("il profilo è già in aggiornamento".into());
@@ -337,6 +338,116 @@ async fn profilo_salva(nome: String, descrizione: String, rete: tauri::State<'_,
 #[tauri::command]
 fn profilo_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.profilo.fase()
+}
+
+// ─── Forum ───────────────────────────────────────────────────────────────────
+// Stesso schema della v2 (discussioni e risposte sono kind 1 con il tag del forum). Tutto ciò che arriva dal
+// nodo è verificato in m4tr1x-feed; si firma con la tua identità da `firma_con_la_mia_identita`, come i post.
+
+/// Testo di una discussione o di una risposta: non vuoto, entro il limite dei post.
+fn testo_forum(testo: &str) -> Result<String, String> {
+    let t = testo.trim().to_string();
+    if t.is_empty() {
+        return Err("il testo è vuoto".into());
+    }
+    if t.chars().count() > m4tr1x_protocol::MASSIMO_TESTO_POST {
+        return Err(format!("il testo supera i {} caratteri", m4tr1x_protocol::MASSIMO_TESTO_POST));
+    }
+    Ok(t)
+}
+
+/// Pubblica sul nodo un evento GIÀ firmato, con la fase del forum. Una operazione del forum alla volta.
+async fn pubblica_nel_forum(rete: &Rete, op: &Operazione, evento: &m4tr1x_protocol::Evento) -> Result<(), String> {
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("il forum è già in aggiornamento".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::pubblica(&*tor, &nodo, evento, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map(|_| ()).map_err(|e| match e {
+            m4tr1x_feed::ErrorePubblica::Rifiutato(m) => format!("il nodo ha rifiutato: {m}"),
+            m4tr1x_feed::ErrorePubblica::NonRaggiungibile(n) => format!("non è partito: il nodo non risponde ancora. Il testo resta qui, riprova tra un minuto ({})", n.ultimo),
+        })
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Le discussioni del forum dal nodo, verificate nel lato Rust.
+#[tauri::command]
+async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Forum, String> {
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let op = &op.forum;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("il forum è già in aggiornamento".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::leggi_forum(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+            .await
+            .map(Forum::from)
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Una discussione con le sue risposte. Ok(None): il nodo non ce l'ha (o l'id non è di una discussione).
+#[tauri::command]
+async fn forum_discussione(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Option<DiscussioneAperta>, String> {
+    if id.len() != 64 || !id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) {
+        return Err("id della discussione non valido".into());
+    }
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let op = &op.forum;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("il forum è già in aggiornamento".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::leggi_discussione(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &id, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+            .await
+            .map(|d| d.map(DiscussioneAperta::from))
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Apre una discussione nuova (titolo e testo), firmata con la TUA identità.
+#[tauri::command]
+async fn forum_pubblica(titolo: String, testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Discussione, String> {
+    let testo = testo_forum(&testo)?;
+    let tags = m4tr1x_protocol::tag_discussione(&titolo).map_err(|e| match e {
+        m4tr1x_protocol::Rifiuto::Forma(m) => m.to_string(),
+        altro => altro.to_string(),
+    })?;
+    let evento = firma_con_la_mia_identita(&chiavi, 1, &testo, &tags).map_err(|e| format!("discussione non firmata: {e}"))?;
+    pubblica_nel_forum(&rete, &op.forum, &evento).await?;
+    let titolo = m4tr1x_protocol::discussione_da_evento(&evento).unwrap_or_default();
+    Ok(Discussione { id: evento.id, autore: evento.pubkey, nome: None, titolo, testo: evento.content, creato: evento.created_at, risposte: 0, attivita: evento.created_at })
+}
+
+/// Risponde alla discussione `id`, con la TUA identità.
+#[tauri::command]
+async fn forum_rispondi(id: String, testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Post, String> {
+    let testo = testo_forum(&testo)?;
+    let tags = m4tr1x_protocol::tag_risposta(&id).map_err(|e| e.to_string())?;
+    let evento = firma_con_la_mia_identita(&chiavi, 1, &testo, &tags).map_err(|e| format!("risposta non firmata: {e}"))?;
+    pubblica_nel_forum(&rete, &op.forum, &evento).await?;
+    Ok(Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None })
+}
+
+/// Fase del forum in corso, per l'interfaccia.
+#[tauri::command]
+fn forum_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
+    op.forum.fase()
 }
 
 /// Errore della posta per l'interfaccia: cosa non va, mai l'indirizzo del nodo.
@@ -509,7 +620,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento])
 }
 
 pub fn run() {

@@ -232,6 +232,75 @@ pub fn contenuto_profilo(name: &str, about: &str) -> Result<String, Rifiuto> {
     Ok(serde_json::to_string(&p).expect("due stringhe"))
 }
 
+// ─── Forum (stesso schema della v2: kind 1 con tag `t` = m4tr1x-forum) ──────────────────────────────────
+// Una DISCUSSIONE è un kind 1 con ["t","m4tr1x-forum"] e il titolo in ["subject", …], senza tag `e`.
+// Una RISPOSTA è un kind 1 con ["t","m4tr1x-forum"] e UN solo tag ["e", <id della discussione>, "", "root"]
+// (NIP-10). Il tag `t` serve a tenere forum e Signal separati: il feed non mostra né discussioni né risposte.
+
+/// Etichetta del forum (la stessa della v2).
+pub const TAG_FORUM: &str = "m4tr1x-forum";
+/// Titolo massimo di una discussione (caratteri).
+pub const MASSIMO_TITOLO: usize = 120;
+
+fn ha_tag_forum(tags: &[Vec<String>]) -> bool {
+    tags.iter().any(|t| t[0] == "t" && t.get(1).map(String::as_str) == Some(TAG_FORUM))
+}
+
+/// L'evento appartiene al forum (discussione o risposta): il feed di Signal lo salta.
+pub fn e_del_forum(e: &Evento) -> bool {
+    e.kind == 1 && ha_tag_forum(&e.tags)
+}
+
+/// Titolo pulito come un nome (niente controllo, invisibili, direzione; spazi unificati), al massimo MASSIMO_TITOLO.
+fn pulisci_titolo(s: &str) -> String {
+    let senza: String = s.chars().filter(|&c| !c.is_control() && !ingannevole(c)).collect();
+    senza.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MASSIMO_TITOLO).collect()
+}
+
+/// Tag di una discussione nuova scritta dall'app. Errore se il titolo è vuoto o troppo lungo (chi scrive lo
+/// deve sapere, non vederselo tagliare).
+pub fn tag_discussione(titolo: &str) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if titolo.chars().count() > MASSIMO_TITOLO {
+        return Err(Rifiuto::Forma("titolo oltre il limite"));
+    }
+    let t = pulisci_titolo(titolo);
+    if t.is_empty() {
+        return Err(Rifiuto::Forma("titolo vuoto"));
+    }
+    Ok(vec![vec!["t".into(), TAG_FORUM.into()], vec!["subject".into(), t]])
+}
+
+/// Tag di una risposta alla discussione `radice` (id esadecimale di 64 caratteri).
+pub fn tag_risposta(radice: &str) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !esadecimale_minuscolo(radice, 64) {
+        return Err(Rifiuto::Forma("id della discussione"));
+    }
+    Ok(vec![vec!["t".into(), TAG_FORUM.into()], vec!["e".into(), radice.into(), String::new(), "root".into()]])
+}
+
+/// Titolo di una discussione, da un evento GIÀ verificato: Some solo se è del forum e non ha tag `e`
+/// (altrimenti è una risposta o altro). Senza `subject` il titolo è vuoto (le discussioni della v2 potevano non averlo).
+pub fn discussione_da_evento(e: &Evento) -> Option<String> {
+    if !e_del_forum(e) || e.tags.iter().any(|t| t[0] == "e") {
+        return None;
+    }
+    let sub = e.tags.iter().find(|t| t[0] == "subject").and_then(|t| t.get(1)).map(String::as_str).unwrap_or("");
+    Some(pulisci_titolo(sub))
+}
+
+/// La discussione a cui risponde un evento GIÀ verificato: Some(id) solo se è del forum e ha UN solo tag `e`,
+/// con id valido. Più tag `e` = struttura che l'app non scrive: non la si attribuisce a nessuna discussione.
+pub fn risposta_a(e: &Evento) -> Option<String> {
+    if !e_del_forum(e) {
+        return None;
+    }
+    let es: Vec<&Vec<String>> = e.tags.iter().filter(|t| t[0] == "e").collect();
+    match es.as_slice() {
+        [t] => t.get(1).filter(|id| esadecimale_minuscolo(id, 64)).cloned(),
+        _ => None,
+    }
+}
+
 /// Id dell'evento in esadecimale: SHA-256 della serializzazione NIP-01.
 /// `serde_json` scrive le stringhe come `JSON.stringify` (stessi caratteri scappati, stesso
 /// `\u00XX` minuscolo, niente `\/`, U+2028 lasciato com'è): lo provano i vettori.

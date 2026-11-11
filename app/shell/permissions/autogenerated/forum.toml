@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-forum"
+description = "Enables the forum command without any pre-configured scope."
+commands.allow = ["forum"]
+
+[[permission]]
+identifier = "deny-forum"
+description = "Denies the forum command without any pre-configured scope."
+commands.deny = ["forum"]

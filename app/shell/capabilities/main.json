@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Finestra principale: solo stato, identità pubblica, feed (post già verificati in Rust), pubblicazione di post e del profilo (firmati nel lato Rust), messaggi privati (aperti e incartati nel lato Rust) scelta del nodo (solo onion v3; l'indirizzo non torna all'interfaccia) e apertura della finestra del seme. Nessun comando del seme, nessun plugin, nessuna API core (I-31, I-58)",
+  "description": "Finestra principale: solo stato, identità pubblica, feed (post già verificati in Rust), pubblicazione di post e del profilo (firmati nel lato Rust), forum (letto e firmato nel lato Rust), messaggi privati (aperti e incartati nel lato Rust) scelta del nodo (solo onion v3; l'indirizzo non torna all'interfaccia) e apertura della finestra del seme. Nessun comando del seme, nessun plugin, nessuna API core (I-31, I-58)",
   "windows": ["main"],
-  "permissions": ["allow-stato", "allow-identita", "allow-apri-finestra-seme", "allow-feed", "allow-feed-avanzamento", "allow-pubblica", "allow-pubblica-avanzamento", "allow-profilo-mio", "allow-profilo-salva", "allow-profilo-avanzamento", "allow-messaggi", "allow-messaggio-invia", "allow-messaggi-avanzamento", "allow-nodo-impostato", "allow-nodo-imposta"]
+  "permissions": ["allow-stato", "allow-identita", "allow-apri-finestra-seme", "allow-feed", "allow-feed-avanzamento", "allow-pubblica", "allow-pubblica-avanzamento", "allow-profilo-mio", "allow-profilo-salva", "allow-profilo-avanzamento", "allow-messaggi", "allow-messaggio-invia", "allow-messaggi-avanzamento", "allow-nodo-impostato", "allow-nodo-imposta", "allow-forum", "allow-forum-discussione", "allow-forum-pubblica", "allow-forum-rispondi", "allow-forum-avanzamento"]
 }

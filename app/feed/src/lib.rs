@@ -12,7 +12,7 @@
 
 use m4tr1x_protocol::{verifica, Rete};
 use m4tr1x_transport::{Isolation, OnionV3, Relay, Transport, TransportError};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -274,6 +274,8 @@ pub fn verificati(grezzi: Vec<serde_json::Value>, rete: Rete) -> (Vec<Post>, usi
     let mut post: Vec<Post> = vec![];
     for g in grezzi {
         match verifica(&g, rete) {
+            // discussioni e risposte del forum: valide, ma non sono post di Signal (né scartate)
+            Ok(e) if e.kind == 1 && m4tr1x_protocol::e_del_forum(&e) => {}
             Ok(e) if e.kind == 1 => {
                 if !post.iter().any(|p| p.id == e.id) {
                     post.push(Post { id: e.id, autore: e.pubkey, creato: e.created_at, testo: e.content, nome: None });
@@ -284,4 +286,121 @@ pub fn verificati(grezzi: Vec<serde_json::Value>, rete: Rete) -> (Vec<Post>, usi
     }
     post.sort_by(|a, b| b.creato.cmp(&a.creato).then_with(|| a.id.cmp(&b.id)));
     (post, scartati)
+}
+
+// ─── Forum ───────────────────────────────────────────────────────────────────
+// Stesso schema della v2 (m4tr1x_protocol: TAG_FORUM, discussione_da_evento, risposta_a). Ogni evento passa da
+// `verifica`; i nomi vengono SOLO da profili verificati, come nel feed.
+
+/// Quante discussioni si chiedono al nodo, e quante risposte al massimo (il client del relay ne accetta 500).
+pub const QUANTE_DISCUSSIONI: u64 = 100;
+pub const QUANTE_RISPOSTE: u64 = 500;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Discussione {
+    pub id: String,
+    pub autore: String,
+    pub nome: Option<String>,
+    pub titolo: String,
+    pub testo: String,
+    pub creato: u64,
+    /// risposte valide trovate sul nodo
+    pub risposte: u32,
+    /// ora dell'ultima risposta (o della discussione): l'elenco si ordina da qui
+    pub attivita: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Forum {
+    pub discussioni: Vec<Discussione>,
+    pub scartati: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiscussioneAperta {
+    pub discussione: Discussione,
+    /// dalla più vecchia
+    pub risposte: Vec<Post>,
+}
+
+fn verificato(g: &Value, rete: Rete) -> Option<m4tr1x_protocol::Evento> {
+    verifica(g, rete).ok()
+}
+
+/// Le discussioni del nodo, dalla più attiva, con il numero di risposte e i nomi degli autori.
+pub async fn leggi_forum<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Duration, avanza: impl Fn(Fase)) -> Result<Forum, NonRaggiungibile> {
+    let avanza = &avanza;
+    let primo = richiedi(t, nodo, &[json!({ "kinds": [1], "#t": [m4tr1x_protocol::TAG_FORUM], "limit": QUANTE_DISCUSSIONI })], budget, avanza).await?;
+    let mut scartati = 0;
+    let mut discussioni: Vec<Discussione> = vec![];
+    for g in primo.into_iter().flatten() {
+        let Some(e) = verificato(&g, rete) else {
+            scartati += 1;
+            continue;
+        };
+        if let Some(titolo) = m4tr1x_protocol::discussione_da_evento(&e) {
+            if !discussioni.iter().any(|d| d.id == e.id) {
+                discussioni.push(Discussione { attivita: e.created_at, id: e.id, autore: e.pubkey, nome: None, titolo, testo: e.content, creato: e.created_at, risposte: 0 });
+            }
+        }
+    }
+    if !discussioni.is_empty() {
+        let ids: Vec<&str> = discussioni.iter().map(|d| d.id.as_str()).collect();
+        let mut autori: Vec<&str> = discussioni.iter().map(|d| d.autore.as_str()).collect();
+        autori.sort_unstable();
+        autori.dedup();
+        let filtri = [json!({ "kinds": [1], "#e": ids, "limit": QUANTE_RISPOSTE }), json!({ "kinds": [0], "authors": autori, "limit": QUANTE_DISCUSSIONI })];
+        // risposte e nomi sono un di più: senza, l'elenco si mostra lo stesso
+        if let Ok(mut r) = richiedi(t, nodo, &filtri, budget, avanza).await {
+            let nomi = nomi_dai_profili(r.pop().unwrap_or_default(), rete);
+            let mut viste = std::collections::HashSet::new();
+            for g in r.pop().unwrap_or_default() {
+                let Some(e) = verificato(&g, rete) else { continue };
+                let Some(radice) = m4tr1x_protocol::risposta_a(&e) else { continue };
+                if !viste.insert(e.id.clone()) {
+                    continue;
+                }
+                if let Some(d) = discussioni.iter_mut().find(|d| d.id == radice) {
+                    d.risposte += 1;
+                    d.attivita = d.attivita.max(e.created_at);
+                }
+            }
+            for d in &mut discussioni {
+                d.nome = nomi.get(&d.autore).cloned();
+            }
+        }
+    }
+    discussioni.sort_by(|a, b| b.attivita.cmp(&a.attivita).then_with(|| a.id.cmp(&b.id)));
+    Ok(Forum { discussioni, scartati })
+}
+
+/// Una discussione con tutte le sue risposte e i nomi di chi scrive. Ok(None): il nodo non ce l'ha.
+pub async fn leggi_discussione<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, id: &str, budget: Duration, avanza: impl Fn(Fase)) -> Result<Option<DiscussioneAperta>, NonRaggiungibile> {
+    let avanza = &avanza;
+    let filtri = [json!({ "ids": [id], "limit": 1 }), json!({ "kinds": [1], "#e": [id], "limit": QUANTE_RISPOSTE })];
+    let mut r = richiedi(t, nodo, &filtri, budget, avanza).await?;
+    let grezze = r.pop().unwrap_or_default();
+    let radice = r.pop().unwrap_or_default().iter().filter_map(|g| verificato(g, rete)).find(|e| e.id == id);
+    let Some(e) = radice else { return Ok(None) };
+    let Some(titolo) = m4tr1x_protocol::discussione_da_evento(&e) else { return Ok(None) };
+    let mut risposte: Vec<Post> = vec![];
+    for g in grezze {
+        let Some(r) = verificato(&g, rete) else { continue };
+        if m4tr1x_protocol::risposta_a(&r).as_deref() == Some(id) && !risposte.iter().any(|p| p.id == r.id) {
+            risposte.push(Post { id: r.id, autore: r.pubkey, creato: r.created_at, testo: r.content, nome: None });
+        }
+    }
+    risposte.sort_by(|a, b| a.creato.cmp(&b.creato).then_with(|| a.id.cmp(&b.id)));
+    let mut d = Discussione { attivita: risposte.last().map_or(e.created_at, |p| p.creato.max(e.created_at)), risposte: risposte.len() as u32, id: e.id, autore: e.pubkey, nome: None, titolo, testo: e.content, creato: e.created_at };
+    let mut autori: Vec<&str> = std::iter::once(d.autore.as_str()).chain(risposte.iter().map(|p| p.autore.as_str())).collect();
+    autori.sort_unstable();
+    autori.dedup();
+    if let Ok(mut p) = richiedi(t, nodo, &[json!({ "kinds": [0], "authors": autori, "limit": QUANTE_DISCUSSIONI })], budget, avanza).await {
+        let nomi = nomi_dai_profili(p.pop().unwrap_or_default(), rete);
+        d.nome = nomi.get(&d.autore).cloned();
+        for r in &mut risposte {
+            r.nome = nomi.get(&r.autore).cloned();
+        }
+    }
+    Ok(Some(DiscussioneAperta { discussione: d, risposte }))
 }
