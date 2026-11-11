@@ -50,3 +50,6 @@ spikes/*/icon-src.png
 
 # App: cartelle generate da Tauri
 app/shell/gen/
+
+# Tor per l'installer: scaricato e verificato da tools/tor/prepara-installer.js, mai nel repo
+app/shell/tor-incluso/
