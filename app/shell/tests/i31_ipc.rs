@@ -184,6 +184,9 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("messaggio_invia", json!({"a": "0".repeat(64), "testo": "prova"}), "tor non configurato"),
         ("messaggio_invia", json!({"a": "0".repeat(64), "testo": "  "}), "il messaggio è vuoto"),
         ("messaggi_avanzamento", json!({}), OK),
+        ("nodo_impostato", json!({}), OK),
+        ("nodo_imposta", json!({"indirizzo": "esempio.com"}), "indirizzo non valido"),
+        ("nodo_imposta", json!({"indirizzo": "192.0.2.1"}), "indirizzo non valido"),
         ("apri_finestra_seme", json!({"modo": "sconosciuto"}), "modo sconosciuto"),
     ];
     for (cmd, args, atteso) in comandi {

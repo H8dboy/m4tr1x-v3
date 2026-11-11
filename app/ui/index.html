@@ -212,6 +212,15 @@
           <p class="riga-dato"><span>Tor</span><strong id="rete-tor">—</strong></p>
           <p class="riga-dato"><span>Versione dell'app</span><span class="mono">v<span id="versione">—</span></span></p>
         </div>
+        <div class="scheda">
+          <label for="nodo-indirizzo" class="etichetta">Il tuo nodo</label>
+          <p id="nodo-attuale" class="tenue"></p>
+          <input id="nodo-indirizzo" class="campo mono" maxlength="80" autocomplete="off" spellcheck="false" placeholder="indirizzo .onion del nodo">
+          <div class="riga">
+            <span id="nodo-stato" class="tenue cresce" aria-live="polite"></span>
+            <button type="button" id="nodo-salva" class="tasto pieno">Usa questo nodo</button>
+          </div>
+        </div>
         <div class="scheda garanzie">
           <p class="etichetta">Cosa fa questa app, sempre</p>
           <ul>

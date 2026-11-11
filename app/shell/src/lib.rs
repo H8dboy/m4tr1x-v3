@@ -63,12 +63,30 @@ fn escludi_dalle_catture<R: Runtime>(_w: &WebviewWindow<R>) -> Result<(), String
     Ok(())
 }
 
-/// Tor dell'app (I-37, ADR-0016) e nodo di prova. `tor` None: tor non indicato (in F4 la variabile
-/// `M4TR1X_TOR_BIN`) oppure piattaforma che userà Arti (non ancora fatto). `nodo` None: variabile
-/// `M4TR1X_NODO_PROVA` assente o non un onion v3 valido. L'onion NON esce mai verso l'interfaccia.
+/// Tor dell'app (I-37, ADR-0016) e nodo a cui collegarsi. `tor` None: tor non indicato (in F4 la variabile
+/// `M4TR1X_TOR_BIN`) oppure piattaforma che userà Arti (non ancora fatto). `nodo`: quello scelto da chi usa
+/// l'app (file `nodo` nella cartella dati), oppure `M4TR1X_NODO_PROVA` per le prove, che ha la precedenza.
+/// Si accetta SOLO un onion v3 valido (I-36). L'onion NON esce mai verso l'interfaccia: lei sa solo se c'è.
 struct Rete {
     tor: Option<Arc<TorProcessTransport>>,
-    nodo: Option<OnionV3>,
+    nodo: Mutex<Option<OnionV3>>,
+    /// file dove si salva il nodo scelto (None nelle prove: niente da scrivere su disco)
+    file_nodo: Option<PathBuf>,
+}
+
+impl Rete {
+    fn nodo(&self) -> Result<OnionV3, String> {
+        self.nodo.lock().unwrap().clone().ok_or_else(|| "nessun nodo impostato: aggiungine uno nella sezione Rete".to_string())
+    }
+}
+
+/// Legge un indirizzo di nodo scritto da una persona: con o senza `http://` e `/` finale, maiuscole comprese.
+/// Tutto il resto (host in chiaro, onion v2, caratteri estranei, porte, percorsi) è rifiutato da `OnionV3::parse`.
+fn indirizzo_nodo(s: &str) -> Option<OnionV3> {
+    let t = s.trim();
+    let t = t.strip_prefix("http://").unwrap_or(t);
+    let t = t.strip_suffix('/').unwrap_or(t);
+    OnionV3::parse(&t.to_ascii_lowercase()).ok()
 }
 
 /// Un'operazione verso il nodo (leggere il feed, pubblicare un post): una alla volta, con la fase letta
@@ -114,6 +132,7 @@ async fn attendi_tor(tor: &TorProcessTransport, op: &Operazione) -> Result<(), S
 /// Gli errori restano nello stato del trasporto (`Errore`); all'interfaccia arriva solo "errore" (api.rs).
 fn avvia_rete<R: Runtime>(app: &tauri::App<R>) -> Result<Rete, Box<dyn std::error::Error>> {
     let dati = app.path().app_data_dir()?;
+    let dati_app = dati.clone();
     // desktop = tor come processo (ADR-0016 aggiornata il 21/10/2026); mobile = Arti, non ancora fatto
     let desktop = cfg!(any(windows, target_os = "linux", target_os = "macos"));
     let cfg = if desktop { TorProcessConfig::per_l_app(std::env::var_os("M4TR1X_TOR_BIN").map(PathBuf::from), dati) } else { None };
@@ -125,8 +144,12 @@ fn avvia_rete<R: Runtime>(app: &tauri::App<R>) -> Result<Rete, Box<dyn std::erro
             }
         });
     }
-    let nodo = std::env::var("M4TR1X_NODO_PROVA").ok().and_then(|s| OnionV3::parse(s.trim().trim_start_matches("http://")).ok());
-    Ok(Rete { tor, nodo })
+    let file_nodo = dati_app.join("nodo");
+    let nodo = match std::env::var("M4TR1X_NODO_PROVA") {
+        Ok(s) => indirizzo_nodo(&s),
+        Err(_) => std::fs::read_to_string(&file_nodo).ok().and_then(|s| indirizzo_nodo(&s)),
+    };
+    Ok(Rete { tor, nodo: Mutex::new(nodo), file_nodo: Some(file_nodo) })
 }
 
 /// Stato dell'app per l'interfaccia. Nessun dato sensibile.
@@ -142,7 +165,7 @@ fn stato(rete: tauri::State<'_, Rete>) -> Stato {
 #[tauri::command]
 async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Feed, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
-    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let nodo = rete.nodo()?;
     let op = &op.feed;
     if op.in_corso.swap(true, Ordering::SeqCst) {
         return Err("feed già in aggiornamento".into());
@@ -158,6 +181,46 @@ async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) ->
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
     esito
+}
+
+/// C'è un nodo impostato? All'interfaccia arriva solo sì/no, mai l'indirizzo.
+#[tauri::command]
+fn nodo_impostato(rete: tauri::State<'_, Rete>) -> bool {
+    rete.nodo.lock().unwrap().is_some()
+}
+
+/// Imposta il nodo a cui collegarsi: solo un indirizzo onion v3 valido (I-36). Si salva nella cartella dati
+/// dell'app, leggibile solo dall'utente; vale da subito e ai prossimi avvii.
+#[tauri::command]
+fn nodo_imposta(indirizzo: String, rete: tauri::State<'_, Rete>) -> Result<(), String> {
+    let nodo = indirizzo_nodo(&indirizzo).ok_or("indirizzo non valido: serve l'indirizzo .onion (v3) del nodo")?;
+    if let Some(f) = &rete.file_nodo {
+        salva_privato(f, &format!("{}\n", nodo.host())).map_err(|e| format!("nodo non salvato: {e}"))?;
+    }
+    *rete.nodo.lock().unwrap() = Some(nodo);
+    Ok(())
+}
+
+/// Scrive `testo` in `f` in modo atomico (file temporaneo + rinomina), leggibile solo dal proprietario.
+fn salva_privato(f: &std::path::Path, testo: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    if let Some(c) = f.parent() {
+        std::fs::create_dir_all(c)?;
+    }
+    let tmp = f.with_extension("tmp");
+    let _ = std::fs::remove_file(&tmp);
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    let mut w = o.open(&tmp)?;
+    w.write_all(testo.as_bytes())?;
+    w.sync_all()?;
+    drop(w);
+    std::fs::rename(&tmp, f)
 }
 
 /// Fase del feed in corso (o dell'ultimo), per l'interfaccia.
@@ -192,7 +255,7 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
         return Err(format!("il post supera i {} caratteri", m4tr1x_protocol::MASSIMO_TESTO_POST));
     }
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
-    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let nodo = rete.nodo()?;
     let evento = firma_con_la_mia_identita(&chiavi, 1, &testo).map_err(|e| format!("post non firmato: {e}"))?;
     let op = &op.post;
     if op.in_corso.swap(true, Ordering::SeqCst) {
@@ -216,7 +279,7 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
 #[tauri::command]
 async fn profilo_mio(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Option<Profilo>, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
-    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let nodo = rete.nodo()?;
     let identita = creazione::identita_salvata(&*chiavi.0).map_err(|e| e.to_string())?.ok_or("crea prima la tua identità")?;
     let op = &op.profilo;
     if op.in_corso.swap(true, Ordering::SeqCst) {
@@ -239,7 +302,7 @@ async fn profilo_mio(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazio
 async fn profilo_salva(nome: String, descrizione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Profilo, String> {
     let contenuto = m4tr1x_protocol::contenuto_profilo(&nome, &descrizione).map_err(|e| e.to_string())?;
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
-    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let nodo = rete.nodo()?;
     let evento = firma_con_la_mia_identita(&chiavi, 0, &contenuto).map_err(|e| format!("profilo non firmato: {e}"))?;
     let op = &op.profilo;
     if op.in_corso.swap(true, Ordering::SeqCst) {
@@ -279,7 +342,7 @@ fn errore_posta(e: m4tr1x_posta::ErrorePosta) -> String {
 #[tauri::command]
 async fn messaggi(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Posta, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
-    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let nodo = rete.nodo()?;
     let portachiavi = chiavi.0.clone();
     let op = &op.posta;
     if op.in_corso.swap(true, Ordering::SeqCst) {
@@ -302,7 +365,7 @@ async fn messaggio_invia(a: String, testo: String, rete: tauri::State<'_, Rete>,
         return Err("il messaggio è vuoto".into());
     }
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
-    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let nodo = rete.nodo()?;
     let portachiavi = chiavi.0.clone();
     let op = &op.posta;
     if op.in_corso.swap(true, Ordering::SeqCst) {
@@ -435,7 +498,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta])
 }
 
 pub fn run() {

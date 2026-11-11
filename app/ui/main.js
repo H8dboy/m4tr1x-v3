@@ -68,7 +68,7 @@ async function aggiornaStato() {
     if (spia) spia.className = `spia ${Object.hasOwn(NOMI, s.trasporto) ? s.trasporto : ''}`
     ancora = s.trasporto === 'avvio' || (s.trasporto === 'spento' && tentativiSpento-- > 0)
     // appena Tor è pronto il feed parte da solo, una volta: poi decide chi usa l'app
-    if (s.trasporto === 'pronto' && !feedPartito) { feedPartito = true; aggiornaFeed() }
+    if (s.trasporto === 'pronto' && !feedPartito && await aggiornaNodo()) { feedPartito = true; aggiornaFeed() }
   } catch {
     mostra('trasporto', 'non raggiungibile')
     mostra('rete-tor', 'non raggiungibile')
@@ -316,6 +316,30 @@ async function salvaProfilo() {
   })
 }
 
+// ─── Nodo ─────────────────────────────────────────────────────────────────────
+// L'indirizzo si scrive qui e si controlla nel lato Rust (solo onion v3). Non torna indietro:
+// l'interfaccia sa solo se un nodo c'è.
+
+async function aggiornaNodo() {
+  const si = await invoke('nodo_impostato').catch(() => false)
+  mostra('nodo-attuale', si ? 'Un nodo è impostato: puoi sostituirlo scrivendone un altro.' : 'Nessun nodo: scrivi qui l\'indirizzo .onion del nodo a cui collegarti.')
+  return !!si
+}
+
+async function salvaNodo() {
+  const c = campo('nodo-indirizzo')
+  try {
+    await invoke('nodo_imposta', { indirizzo: c.value })
+    c.value = ''
+    mostra('nodo-stato', 'nodo impostato ✓')
+    await aggiornaNodo()
+    feedPartito = true
+    aggiornaFeed()
+  } catch (e) {
+    mostra('nodo-stato', String(e))
+  }
+}
+
 // ─── Messaggi privati ─────────────────────────────────────────────────────────
 // Le buste si aprono e si incartano nel lato Rust (m4tr1x-posta): qui arrivano testi già controllati e
 // chiavi PUBBLICHE. Una conversazione senza `identita` è di un mittente SCONOSCIUTO: nessun nome, nessuna
@@ -446,6 +470,8 @@ async function inviaMessaggio() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
+  aggiornaNodo()
   document.getElementById('posta-aggiorna')?.addEventListener('click', caricaPosta)
   document.getElementById('posta-nuovo')?.addEventListener('click', () => { aperta = 'nuovo'; disegnaPosta() })
   document.getElementById('filo-invia')?.addEventListener('click', inviaMessaggio)
