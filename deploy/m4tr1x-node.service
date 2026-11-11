@@ -1,0 +1,63 @@
+# Servizio del nodo M4TR1X v3 (Linux, systemd).
+# Il nodo gira come utente dedicato senza privilegi, vede in scrittura SOLO la sua cartella dati e
+# ascolta solo su 127.0.0.1: da fuori si raggiunge unicamente dal suo indirizzo onion (lo apre il tor
+# che il nodo stesso avvia). Nessuna porta va aperta nel firewall.
+# Percorsi attesi (docs/NODO_INSTALLAZIONE.md): codice in /opt/m4tr1x, Node fissato in /opt/m4tr1x-node22,
+# configurazione in /etc/m4tr1x, dati in /var/lib/m4tr1x.
+
+[Unit]
+Description=Nodo M4TR1X v3
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=m4tr1x
+Group=m4tr1x
+WorkingDirectory=/opt/m4tr1x
+# librerie del tor del bundle (tor non ha RPATH): solo questa variabile, ambiente pulito per il resto
+Environment=LD_LIBRARY_PATH=/opt/m4tr1x-tor
+Environment=NODE_ENV=production
+# io_uring fuori dal filtro delle chiamate di sistema: libuv usa le chiamate classiche
+Environment=UV_USE_IO_URING=0
+ExecStart=/opt/m4tr1x-node22/bin/node --max-old-space-size=160 /opt/m4tr1x/node/bin/m4tr1x-node.js --config /etc/m4tr1x/node.json
+# tor morto o bootstrap non completato: il nodo esce con errore e riparte da qui
+Restart=on-failure
+RestartSec=20
+TimeoutStartSec=600
+TimeoutStopSec=30
+
+# ── Recinto ──────────────────────────────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/m4tr1x
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# niente @resources nel divieto: tor alza da solo il limite dei file aperti
+SystemCallFilter=~@privileged
+UMask=0077
+# macchina piccola: il nodo non deve soffocare il sistema
+MemoryMax=400M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
