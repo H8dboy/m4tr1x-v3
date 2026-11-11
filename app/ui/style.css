@@ -89,7 +89,8 @@ button, input, textarea { font: inherit; color: inherit; }
   color: var(--text-muted);
 }
 .stato-rete .etichetta { display: inline; margin: 0; font-size: 11px; letter-spacing: 0.1em; }
-.stato-rete strong { color: var(--text-dim); font-weight: 500; }
+/* lo stato resta scritto com'è ("pronto"): la prova I-01 dinamica lo legge come lo vede chi usa l'app */
+.stato-rete strong { color: var(--text-dim); font-weight: 500; text-transform: none; letter-spacing: 0.04em; }
 .spia { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
 .spia.pronto { background: var(--green); box-shadow: 0 0 8px rgba(0, 255, 136, 0.7); }
 .spia.avvio { background: var(--amber); animation: batte 1.2s ease-in-out infinite; }
@@ -185,7 +186,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .chiave { font: 12px var(--font-mono); color: var(--green-dim); word-break: break-all; }
 
 .riga-dato { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); color: var(--text-dim); }
-.riga-dato strong { color: var(--text); font: 500 13px var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; }
+.riga-dato strong { color: var(--text); font: 500 13px var(--font-mono); }
 .garanzie ul { list-style: none; margin: 0; padding: 0; }
 .garanzie li { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); color: var(--text-dim); }
 .garanzie li .ic { color: var(--green-dim); margin-top: 2px; }
