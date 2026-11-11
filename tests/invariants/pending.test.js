@@ -14,7 +14,6 @@ const PENDING = [
   ['I-12', 'doppia spesa impossibile (seq per conto)', 'F7'],
   ['I-13', 'equivocazione dell\'emittente scoperta', 'F7'],
   ['I-14', 'conti H8 non collegabili alle chiavi Nostr', 'F7'],
-  ['I-16', 'metadati tolti sul dispositivo', 'F6'],
   ['I-21', 'aggiornamento con firma non valida rifiutato', 'F8'],
   ['I-22', 'niente rollback di versione o seq', 'F8'],
   ['I-24', 'build riproducibile dove possibile', 'F8'],

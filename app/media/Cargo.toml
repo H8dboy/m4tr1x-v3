@@ -1,0 +1,16 @@
+[package]
+name = "m4tr1x-media"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Pulizia dei metadati sul dispositivo prima del caricamento (I-16): JPEG, PNG, MP4/MOV/M4A, MP3"
+
+# Nessuna dipendenza: si leggono e riscrivono solo le strutture dei file, senza decodificare immagini o video.
+# Nessuna libreria di rete (I-36).
+[dependencies]
+thiserror = "=2.0.21"
+
+# examples/ripulisci.rs: pulizia di un file vero (solo prove)
+[[example]]
+name = "ripulisci"

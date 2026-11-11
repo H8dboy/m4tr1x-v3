@@ -2142,6 +2142,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "m4tr1x-media"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "m4tr1x-posta"
 version = "0.1.0"
 dependencies = [
