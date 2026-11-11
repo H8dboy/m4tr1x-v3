@@ -9,7 +9,7 @@
 pub mod api;
 pub mod api_seme;
 
-use api::{Avanzamento, Feed, Identita, Post, Profilo, Stato};
+use api::{Avanzamento, Feed, Identita, Messaggio, Post, Posta, Profilo, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::{firma_come_identita, Portachiavi, Sistema};
@@ -93,6 +93,7 @@ struct Operazioni {
     feed: Operazione,
     post: Operazione,
     profilo: Operazione,
+    posta: Operazione,
 }
 
 /// Aspetta che tor sia pronto (al massimo il tempo di bootstrap del trasporto), segnalando la fase.
@@ -264,6 +265,67 @@ fn profilo_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.profilo.fase()
 }
 
+/// Errore della posta per l'interfaccia: cosa non va, mai l'indirizzo del nodo.
+fn errore_posta(e: m4tr1x_posta::ErrorePosta) -> String {
+    match e {
+        m4tr1x_posta::ErrorePosta::NonRaggiungibile(n) => format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", n.ultimo),
+        altro => altro.to_string(),
+    }
+}
+
+/// I TUOI messaggi privati: buste prese dal nodo via Tor, aperte e controllate nel lato Rust (m4tr1x-posta).
+/// La chiave dei messaggi si legge dal portachiavi solo dentro m4tr1x-posta, per il tempo di aprire le
+/// buste: qui non passa e all'interfaccia arrivano solo testi e chiavi PUBBLICHE.
+#[tauri::command]
+async fn messaggi(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Posta, String> {
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let portachiavi = chiavi.0.clone();
+    let op = &op.posta;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("la posta è già in aggiornamento".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_posta::leggi(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &*portachiavi, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map(Posta::from).map_err(errore_posta)
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Manda un messaggio privato alla persona con chiave pubblica d'identità `a`. Al nodo arrivano solo buste
+/// cifrate (kind 1059): né il testo né chi scrive. Se non parte, il testo resta nella casella.
+#[tauri::command]
+async fn messaggio_invia(a: String, testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Messaggio, String> {
+    if testo.trim().is_empty() {
+        return Err("il messaggio è vuoto".into());
+    }
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo.clone().ok_or("nodo di prova non configurato (M4TR1X_NODO_PROVA)")?;
+    let portachiavi = chiavi.0.clone();
+    let op = &op.posta;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("la posta è già in aggiornamento".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_posta::invia(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &*portachiavi, a.trim(), &testo, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+            .await
+            .map(Messaggio::from)
+            .map_err(errore_posta)
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Fase della posta in corso (lettura o invio), per l'interfaccia.
+#[tauri::command]
+fn messaggi_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
+    op.posta.fase()
+}
+
 /// Fase della pubblicazione in corso (o dell'ultima), per l'interfaccia.
 #[tauri::command]
 fn pubblica_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
@@ -373,7 +435,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento])
 }
 
 pub fn run() {

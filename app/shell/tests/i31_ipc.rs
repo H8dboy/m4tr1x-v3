@@ -180,6 +180,10 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("profilo_mio", json!({}), "tor non configurato"),
         ("profilo_salva", json!({"nome": "prova", "descrizione": "prova"}), "tor non configurato"),
         ("profilo_avanzamento", json!({}), OK),
+        ("messaggi", json!({}), "tor non configurato"),
+        ("messaggio_invia", json!({"a": "0".repeat(64), "testo": "prova"}), "tor non configurato"),
+        ("messaggio_invia", json!({"a": "0".repeat(64), "testo": "  "}), "il messaggio è vuoto"),
+        ("messaggi_avanzamento", json!({}), OK),
         ("apri_finestra_seme", json!({"modo": "sconosciuto"}), "modo sconosciuto"),
     ];
     for (cmd, args, atteso) in comandi {

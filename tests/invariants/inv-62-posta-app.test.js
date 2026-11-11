@@ -1,0 +1,67 @@
+// @ts-check
+'use strict'
+/**
+ * I-62 — I messaggi privati DENTRO l'app (m4tr1x-posta + guscio):
+ *  (1) al nodo arrivano solo buste (kind 1059) e annunci (kind 10477): mai il testo, mai l'identità di chi scrive;
+ *  (2) si cifra SOLO per la chiave DM dichiarata dall'annuncio valido dell'identità scelta: senza annuncio non
+ *      parte niente, e l'annuncio di un altro (nodo malevolo) non devia il messaggio;
+ *  (3) un mittente senza annuncio valido resta sconosciuto: nessuna identità, nessun nome;
+ *  (4) la chiave DM si legge dal portachiavi solo dentro m4tr1x-posta: il guscio non la tocca e
+ *      all'interfaccia arrivano solo testi e chiavi pubbliche (con I-31).
+ * Parte dinamica: app/posta/tests/posta.rs (nodo finto, portachiavi in memoria). Parte statica: qui.
+ */
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('fs')
+const path = require('path')
+const { spawnSync } = require('child_process')
+
+const ROOT = path.resolve(__dirname, '..', '..')
+const APP = path.join(ROOT, 'app')
+const read = (/** @type {string} */ f) => fs.readFileSync(f, 'utf8')
+const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' })
+
+test('la chiave dei messaggi vive solo in m4tr1x-posta: il guscio passa il portachiavi e riceve testi', () => {
+  const lib = read(path.join(APP, 'shell', 'src', 'lib.rs')).replace(/\/\/[^\n]*/g, '')
+  // il guscio non apre né incarta buste e non nomina il ruolo DM: lo fa solo m4tr1x-posta
+  assert.ok(!/m4tr1x_dm\b/.test(lib), 'il guscio usa m4tr1x-dm direttamente')
+  assert.ok(!/Ruolo::Dm/.test(lib), 'il guscio nomina la chiave DM')
+  const toml = read(path.join(APP, 'shell', 'Cargo.toml'))
+  assert.ok(!/^\s*m4tr1x-dm\s*=/m.test(toml), 'm4tr1x-dm tra le dipendenze dirette del guscio')
+  // i due comandi della posta passano da m4tr1x-posta
+  for (const [cmd, fun] of [['messaggi', 'm4tr1x_posta::leggi('], ['messaggio_invia', 'm4tr1x_posta::invia(']]) {
+    const corpo = new RegExp(`async fn ${cmd}\\([\\s\\S]*?\\n}\\n`).exec(lib)
+    assert.ok(corpo && corpo[0].includes(fun), `${cmd} non passa da ${fun}`)
+  }
+})
+
+test('m4tr1x-posta: nessuna libreria di rete, chiave DM mai tenuta attraverso un\'attesa', () => {
+  const toml = read(path.join(APP, 'posta', 'Cargo.toml'))
+  const dipendenze = /\[dependencies\]([\s\S]*?)(?:\n\[|$)/.exec(toml)
+  assert.ok(dipendenze)
+  const nomi = [...dipendenze[1].matchAll(/^\s*([a-z0-9_-]+)\s*=/gm)].map(m => m[1]).sort()
+  assert.deepEqual(nomi, ['m4tr1x-dm', 'm4tr1x-feed', 'm4tr1x-identity', 'm4tr1x-protocol', 'm4tr1x-transport', 'serde_json', 'thiserror'], `dipendenze di m4tr1x-posta: ${nomi}`)
+  const src = read(path.join(APP, 'posta', 'src', 'lib.rs')).replace(/\/\/[^\n]*/g, '')
+  // ogni lettura della chiave DM sta in una funzione NON async, oppure in un blocco che si chiude prima di ogni .await
+  const letture = [...src.matchAll(/carica\(p, Ruolo::Dm, 1\)/g)].length
+  assert.equal(letture, 3, `letture della chiave DM attese: 3 (annuncio, apertura, incarto), trovate ${letture}`)
+  const invia = /pub async fn invia[\s\S]*?\n}\n/.exec(src)
+  assert.ok(invia)
+  const blocco = /let buste = \{([\s\S]*?)\n    \};/.exec(invia[0])
+  assert.ok(blocco && blocco[1].includes('carica(p, Ruolo::Dm, 1)') && !blocco[1].includes('.await'), 'in invia la chiave DM attraversa un\'attesa di rete')
+  assert.equal([...invia[0].matchAll(/carica\(p, Ruolo::Dm, 1\)/g)].length, 1)
+  // l'identità non si carica mai qui: firma solo tramite firma_come_identita
+  assert.ok(!/Ruolo::Identity/.test(src), 'm4tr1x-posta carica la chiave d\'identità')
+  assert.match(src, /annuncio_dm_con\(rete, &chi\.identity, \|d\| firma_come_identita\(p, d\)\.ok\(\)/)
+})
+
+test('posta (Rust): solo buste e annunci al nodo, destinatario dall\'annuncio giusto, sconosciuti senza nome', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 900000 }, () => {
+  const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(APP, 'Cargo.toml'), '-p', 'm4tr1x-posta', '--test', 'posta'],
+    { cwd: APP, encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
+  const out = (r.stdout || '') + (r.stderr || '')
+  assert.equal(r.status, 0, out.slice(-4000))
+  for (const t of ['due_utenti_si_scrivono_e_al_nodo_arrivano_solo_buste_e_annunci', 'senza_annuncio_del_destinatario_non_parte_niente',
+    'testo_o_destinatario_non_validi_si_fermano_prima_della_rete', 'mittente_senza_annuncio_resta_sconosciuto_e_le_buste_forgiate_non_si_mostrano',
+    'un_annuncio_che_rivendica_la_chiave_di_un_altro_non_ruba_il_nome', 'un_nodo_che_risponde_con_l_annuncio_di_un_altro_non_fa_cifrare_per_la_chiave_sbagliata'])
+    assert.match(out, new RegExp(`${t} \\.\\.\\. ok`), `manca o fallisce la prova ${t}`)
+})

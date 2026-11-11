@@ -168,6 +168,36 @@ pub async fn pubblica<T: Transport>(t: &T, nodo: &OnionV3, evento: &m4tr1x_proto
     Ok(Pubblicato { secondi, tentativi })
 }
 
+/// Più richieste nella STESSA connessione al nodo (una risposta per filtro, nell'ordine), con i tentativi
+/// e la ripresa del feed. Gli eventi tornano GREZZI: chi chiama li deve verificare uno per uno prima di
+/// crederci (la posta lo fa con `m4tr1x-dm`). Se una richiesta fallisce, fallisce il tentativo intero.
+pub async fn richiedi<T: Transport>(t: &T, nodo: &OnionV3, filtri: &[serde_json::Value], budget: Duration, avanza: impl Fn(Fase)) -> Result<Vec<Vec<serde_json::Value>>, NonRaggiungibile> {
+    let avanza = &avanza;
+    let una_volta = || async move {
+        con_tentativi(budget, avanza, |tentativo, t0| async move {
+            let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
+            let mut relay = Relay::apri(flusso, nodo).await?;
+            avanza(Fase::Scarico { secondi: t0.elapsed().as_secs(), tentativo });
+            let mut risposte = Vec::with_capacity(filtri.len());
+            for f in filtri {
+                match relay.richiedi(f.clone()).await {
+                    Ok(r) => risposte.push(r),
+                    Err(e) => {
+                        relay.chiudi().await;
+                        return Err(e);
+                    }
+                }
+            }
+            relay.chiudi().await;
+            Ok(risposte)
+        })
+        .await
+    };
+    let (risposte, secondi, tentativi) = con_ripresa(avanza, una_volta).await?;
+    avanza(Fase::Fatto { secondi, tentativo: tentativi });
+    Ok(risposte)
+}
+
 async fn un_tentativo<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, scarico: impl Fn()) -> Result<(Vec<Post>, usize), TransportError> {
     // ogni collegamento dura al massimo TEMPO_MASSIMO_CONNESSIONE (30 s): lo garantisce il trasporto
     let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;

@@ -63,6 +63,9 @@ pub struct Buste {
 pub struct Aperto {
     /// Chiave DM che ha sigillato il messaggio: NON è ancora un'identità (vedi [`identita_del_mittente`]).
     pub dm_mittente: String,
+    /// Chiave DM a cui il messaggio è indirizzato (il suo unico tag `p`): la mia se l'ho ricevuto, quella
+    /// dell'altro se è la mia copia di un messaggio che ho scritto io.
+    pub dm_destinatario: String,
     pub testo: String,
     /// Ora dichiarata nel messaggio.
     pub created_at: u64,
@@ -369,7 +372,8 @@ pub fn apri(rete: Rete, mia: &ChiaveRuolo, busta: &Value) -> Result<Aperto, Erro
     if ps.len() != 1 {
         return Err(no("serve un solo destinatario"));
     }
-    Ok(Aperto { dm_mittente: s_pub.to_string(), testo: m_testo.to_string(), created_at: m_ora, sigillo_created_at: s_ora })
+    let dm_destinatario = ps[0].get(1).filter(|d| da_hex32(d).is_some()).ok_or(no("destinatario del messaggio non valido"))?.clone();
+    Ok(Aperto { dm_mittente: s_pub.to_string(), dm_destinatario, testo: m_testo.to_string(), created_at: m_ora, sigillo_created_at: s_ora })
 }
 
 fn campo<'a>(v: &'a Value, k: &'static str) -> Result<&'a str, ErroreDm> {
@@ -403,13 +407,20 @@ pub fn annuncio_dm(rete: Rete, identita: &ChiaveRuolo, dm_attive: &[&ChiaveRuolo
     if identita.ruolo() != Ruolo::Identity {
         return Err(ErroreDm::Chiave);
     }
+    annuncio_dm_con(rete, &identita.pubblica_hex(), |d| identita.firma_schnorr(d), dm_attive, relay, ora)
+}
+
+/// Come [`annuncio_dm`], ma l'identità firma tramite `firma` (nell'app: la lettura dal portachiavi per la
+/// sola durata della firma), così chi chiama non tiene mai in mano la chiave d'identità. Se `firma` non è
+/// della chiave `identita_pubblica`, l'evento non supera la riverifica di `firma_evento` e non esce.
+pub fn annuncio_dm_con(rete: Rete, identita_pubblica: &str, firma: impl FnOnce(&[u8; 32]) -> Option<[u8; 64]>, dm_attive: &[&ChiaveRuolo], relay: &[String], ora: u64) -> Result<Evento, ErroreDm> {
     if dm_attive.is_empty() || dm_attive.len() > MAX_CHIAVI_DM || dm_attive.iter().any(|k| k.ruolo() != Ruolo::Dm) {
         return Err(ErroreDm::Chiave);
     }
     if relay.len() > MAX_RELAY || relay.iter().any(|r| r.is_empty() || r.len() > MAX_LUNGHEZZA_RELAY || r.chars().any(char::is_control)) {
         return Err(ErroreDm::Messaggio("relay non validi"));
     }
-    let id_pub = identita.pubblica_hex();
+    let id_pub = identita_pubblica.to_string();
     let mut tags = Vec::new();
     for k in dm_attive {
         let dm_pub = k.pubblica_hex();
@@ -419,7 +430,7 @@ pub fn annuncio_dm(rete: Rete, identita: &ChiaveRuolo, dm_attive: &[&ChiaveRuolo
     for r in relay {
         tags.push(vec!["relay".to_string(), r.clone()]);
     }
-    firma_evento(KIND_ANNUNCIO_DM, "", &tags, ora, rete, &id_pub, |d| identita.firma_schnorr(d)).map_err(|r| ErroreDm::Protocollo(r.to_string()))
+    firma_evento(KIND_ANNUNCIO_DM, "", &tags, ora, rete, &id_pub, firma).map_err(|r| ErroreDm::Protocollo(r.to_string()))
 }
 
 /// Le chiavi DM che un annuncio dichiara valide per la sua identità: solo quelle con una prova di possesso
