@@ -17,6 +17,7 @@ pub mod tor_process;
 
 pub use onion::{OnionError, OnionV3};
 pub use relay::Relay;
+pub mod http;
 pub use tor_process::{TorProcessConfig, TorProcessTransport};
 
 use std::future::Future;

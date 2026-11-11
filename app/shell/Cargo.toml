@@ -28,6 +28,8 @@ m4tr1x-feed = { path = "../feed" }
 m4tr1x-protocol = { path = "../protocol" }
 # messaggi privati: buste aperte e incartate nel lato Rust, la chiave dei messaggi non arriva al guscio
 m4tr1x-posta = { path = "../posta" }
+# reels, film, musica: pulizia dei metadati SUL computer prima di caricare (I-16)
+m4tr1x-media = { path = "../media" }
 # solo timer (attesa di tor pronto nel feed); niente rete (I-36)
 tokio = { version = "=1.53.3", default-features = false, features = ["time"] }
 zeroize = "=1.8.2"

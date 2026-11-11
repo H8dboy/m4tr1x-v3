@@ -26,7 +26,8 @@ test('CSP: ogni sorgente di ogni direttiva è locale (elenco chiuso)', () => {
   const AMMESSE = new Set(["'self'", "'none'", 'ipc:', 'http://ipc.localhost'])
   assert.ok(Object.keys(csp).length > 0, 'CSP vuota')
   for (const [dir, val] of Object.entries(csp)) {
-    for (const s of String(val).split(/\s+/).filter(Boolean)) assert.ok(AMMESSE.has(s), `CSP ${dir}: sorgente non locale ${s}`)
+    // blob: = indirizzo creato dalla pagina con byte che ha già (verificati nel lato Rust): niente rete. Solo per immagini e audio/video.
+    for (const s of String(val).split(/\s+/).filter(Boolean)) assert.ok(AMMESSE.has(s) || (s === 'blob:' && (dir === 'img-src' || dir === 'media-src')), `CSP ${dir}: sorgente non locale ${s}`)
   }
   assert.equal(csp['default-src'], "'self'", 'default-src deve restare locale (vale per ogni direttiva non scritta)')
 })

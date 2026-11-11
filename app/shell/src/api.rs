@@ -91,6 +91,65 @@ impl From<m4tr1x_feed::Feed> for Feed {
     }
 }
 
+/// Un file descritto da una scheda verificata (hash, tipo da un elenco chiuso, dimensione, sezione, titolo pulito).
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct FileMedia {
+    pub sha256: String,
+    pub mime: String,
+    pub dimensione: u64,
+    pub sezione: String,
+    pub titolo: String,
+}
+
+impl From<m4tr1x_protocol::SchedaFile> for FileMedia {
+    fn from(f: m4tr1x_protocol::SchedaFile) -> Self {
+        let sezione = match f.sezione {
+            m4tr1x_protocol::Sezione::Signal => "signal",
+            m4tr1x_protocol::Sezione::Film => "film",
+            m4tr1x_protocol::Sezione::Musica => "musica",
+        };
+        Self { sha256: f.sha256, mime: f.mime, dimensione: f.dimensione, sezione: sezione.into(), titolo: f.titolo }
+    }
+}
+
+/// Un reel, una foto, un film o un brano, GIÀ verificato. La didascalia si mostra solo con `textContent`.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Media {
+    pub id: String,
+    pub autore: String,
+    pub nome: Option<String>,
+    pub testo: String,
+    pub creato: u64,
+    pub file: FileMedia,
+}
+
+impl From<m4tr1x_feed::Media> for Media {
+    fn from(m: m4tr1x_feed::Media) -> Self {
+        Self { id: m.id, autore: m.autore, nome: m.nome, testo: m.testo, creato: m.creato, file: m.file.into() }
+    }
+}
+
+/// Una sezione: dalla scheda più recente; `scartati` = schede non valide, contate e mai mostrate.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Galleria {
+    pub media: Vec<Media>,
+    pub scartati: u32,
+}
+
+impl From<m4tr1x_feed::Galleria> for Galleria {
+    fn from(g: m4tr1x_feed::Galleria) -> Self {
+        Self { media: g.media.into_iter().map(Media::from).collect(), scartati: u32::try_from(g.scartati).unwrap_or(u32::MAX) }
+    }
+}
+
+/// Un file scelto e GIÀ pulito sul computer, pronto da pubblicare: tipo e dimensioni prima e dopo la pulizia.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct FilePronto {
+    pub mime: String,
+    pub dimensione: u64,
+    pub prima: u64,
+}
+
 /// Una discussione del forum, GIÀ verificata nel lato Rust (m4tr1x-feed → m4tr1x-protocol). Titolo e testo
 /// si mostrano solo con `textContent`.
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]

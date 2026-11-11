@@ -31,22 +31,27 @@ function icona(/** @type {string} */ nome) {
 
 // ─── Sezioni ──────────────────────────────────────────────────────────────────
 
-const VISTE = ['signal', 'forum', 'messaggi', 'profilo', 'rete']
+const VISTE = ['signal', 'media', 'forum', 'messaggi', 'profilo', 'rete']
+/** le tre voci Reels, Film, Musica aprono la stessa sezione con la sezione di M4TR1X giusta */
+const SEZIONI = { reels: { nome: 'signal', titolo: 'Reels', file: 'Foto o video (JPEG, PNG, MP4, MOV)', accetta: 'image/jpeg,image/png,video/mp4,video/quicktime', icona: 'reel' }, film: { nome: 'film', titolo: 'Film', file: 'Video (MP4, MOV)', accetta: 'video/mp4,video/quicktime', icona: 'film' }, musica: { nome: 'musica', titolo: 'Musica', file: 'Brano (MP3, M4A)', accetta: 'audio/mpeg,audio/mp4,.m4a,.mp3', icona: 'music' } }
 
-function apriVista(/** @type {string} */ nome) {
+function apriVista(/** @type {string} */ voce) {
+  const sez = Object.hasOwn(SEZIONI, voce) ? SEZIONI[/** @type {keyof typeof SEZIONI} */ (voce)] : null
+  const nome = sez ? 'media' : voce
   if (!VISTE.includes(nome)) return
   for (const v of VISTE) {
     const el = document.getElementById(`vista-${v}`)
     if (el) el.hidden = v !== nome
   }
   for (const b of document.querySelectorAll('.voce')) {
-    const attiva = /** @type {HTMLElement} */ (b).dataset.vista === nome
+    const attiva = /** @type {HTMLElement} */ (b).dataset.vista === voce
     b.classList.toggle('attiva', attiva)
     if (attiva) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current')
   }
   if (nome === 'profilo' && identita && !profiloChiesto) caricaProfilo()
   if (nome === 'messaggi' && identita && !postaChiesta) caricaPosta()
   if (nome === 'forum' && !forumChiesto) caricaForum()
+  if (sez) apriSezione(sez)
 }
 
 // ─── Stato di Tor ─────────────────────────────────────────────────────────────
@@ -315,6 +320,154 @@ async function salvaProfilo() {
     mostraMioNome(String(p.nome))
     mostra('profilo-stato', 'profilo salvato ✓')
   })
+}
+
+// ─── Reels, film, musica ──────────────────────────────────────────────────────
+// Le schede arrivano GIÀ verificate dal lato Rust. Il file si scarica solo quando lo apri: torna come byte già
+// controllati (hash e tipo) e si mostra con un indirizzo blob: del tipo della scheda (elenco chiuso nel lato Rust).
+// Per pubblicare, i byte del file scelto vanno al lato Rust, che lo PULISCE prima di tutto il resto.
+
+/** @typedef {{sha256: string, mime: string, dimensione: number, sezione: string, titolo: string}} FileMedia */
+/** @typedef {{id: string, autore: string, nome: string|null, testo: string, creato: number, file: FileMedia}} Media */
+
+/** @type {typeof SEZIONI[keyof typeof SEZIONI]} */ let sezioneAperta = SEZIONI.reels
+let mediaInCorso = false
+/** @type {string|null} */ let urlAperto = null
+
+function mega(/** @type {number} */ n) {
+  return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`
+}
+
+/** @param {Media} m */
+function voceMedia(m) {
+  const li = document.createElement('li')
+  const b = document.createElement('button')
+  b.type = 'button'
+  const cop = document.createElement('span')
+  cop.className = 'copertina'
+  const tipo = String(m.file.mime)
+  cop.append(icona(tipo.startsWith('audio/') ? 'music' : tipo.startsWith('image/') ? 'photo' : 'film'))
+  const t = document.createElement('span')
+  t.className = 't'
+  t.textContent = String(m.file.titolo) || String(m.testo).slice(0, 60) || 'Senza titolo'
+  const meta = document.createElement('span')
+  meta.className = 'm'
+  meta.textContent = `${m.nome ? String(m.nome) : String(m.autore).slice(0, 12) + '…'} · ${quando(Number(m.creato))} · ${mega(Number(m.file.dimensione))}`
+  b.append(cop, t, meta)
+  b.addEventListener('click', () => apriMedia(m))
+  li.append(b)
+  return li
+}
+
+/** @param {string} comando @param {() => Promise<void>} lavoro */
+async function conFaseMedia(comando, lavoro) {
+  if (mediaInCorso) return
+  mediaInCorso = true
+  const bottoni = ['media-aggiorna', 'media-pubblica'].map(id => /** @type {HTMLButtonElement|null} */ (document.getElementById(id)))
+  bottoni.forEach(b => { if (b) b.disabled = true })
+  const fase = setInterval(async () => {
+    const a = await invoke('media_avanzamento').catch(() => null)
+    if (a) mostra('media-stato', testoFase(a))
+  }, 1000)
+  mostra('media-stato', comando)
+  try { await lavoro() } catch (e) { mostra('media-stato', String(e)) } finally {
+    clearInterval(fase)
+    const pub = /** @type {HTMLButtonElement|null} */ (document.getElementById('media-pubblica'))
+    bottoni.forEach(b => { if (b && b !== pub) b.disabled = false })
+    if (pub) pub.disabled = !filePronto
+    mediaInCorso = false
+  }
+}
+
+function chiudiVisore() {
+  if (urlAperto) { URL.revokeObjectURL(urlAperto); urlAperto = null }
+  document.getElementById('media-schermo')?.replaceChildren()
+  nascondi('media-visore', true)
+}
+
+/** @param {typeof SEZIONI[keyof typeof SEZIONI]} s */
+function apriSezione(s) {
+  if (sezioneAperta !== s) { chiudiVisore(); document.getElementById('media-lista')?.replaceChildren() }
+  sezioneAperta = s
+  mostra('t-media', s.titolo)
+  mostra('media-cosa', s.file)
+  const scegli = /** @type {HTMLInputElement|null} */ (document.getElementById('media-scegli'))
+  if (scegli) scegli.accept = s.accetta
+  caricaMedia()
+}
+
+async function caricaMedia() {
+  const s = sezioneAperta
+  await conFaseMedia('cerco i contenuti sul nodo…', async () => {
+    const g = await invoke('media', { sezione: s.nome })
+    if (s !== sezioneAperta) return
+    const lista = Array.isArray(g.media) ? g.media : []
+    document.getElementById('media-lista')?.replaceChildren(...lista.map(voceMedia))
+    nascondi('media-vuoto', lista.length > 0)
+    const scartati = Number(g.scartati) ? ` · ${Number(g.scartati)} scartati (non validi)` : ''
+    mostra('media-stato', `${lista.length} contenuti${scartati}`)
+  })
+}
+
+/** @param {Media} m */
+async function apriMedia(m) {
+  await conFaseMedia(`scarico ${mega(Number(m.file.dimensione))} via Tor…`, async () => {
+    /** @type {ArrayBuffer} */
+    const byte = await invoke('media_file', { sha256: m.file.sha256, mime: m.file.mime, dimensione: m.file.dimensione })
+    chiudiVisore()
+    const tipo = String(m.file.mime)
+    urlAperto = URL.createObjectURL(new Blob([byte], { type: tipo }))
+    /** @type {HTMLElement} */ let el
+    if (tipo.startsWith('image/')) { const i = document.createElement('img'); i.src = urlAperto; i.alt = String(m.file.titolo); el = i }
+    else if (tipo.startsWith('audio/')) { const a = document.createElement('audio'); a.src = urlAperto; a.controls = true; el = a }
+    else { const v = document.createElement('video'); v.src = urlAperto; v.controls = true; v.playsInline = true; el = v }
+    document.getElementById('media-schermo')?.append(el)
+    mostra('media-v-titolo', String(m.file.titolo) || 'Senza titolo')
+    mostra('media-v-chi', `${m.nome ? String(m.nome) : String(m.autore).slice(0, 12) + '…'} · ${quando(Number(m.creato))}`)
+    mostra('media-v-testo', String(m.testo))
+    nascondi('media-visore', false)
+    mostra('media-stato', 'file verificato ✓')
+    document.getElementById('media-visore')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+let filePronto = false
+
+async function sceltoFile() {
+  const scegli = /** @type {HTMLInputElement} */ (document.getElementById('media-scegli'))
+  const f = scegli.files && scegli.files[0]
+  filePronto = false
+  const pub = /** @type {HTMLButtonElement|null} */ (document.getElementById('media-pubblica'))
+  if (pub) pub.disabled = true
+  mostra('media-pulito', '')
+  if (!f) return
+  if (f.size > 50 * 1024 * 1024) { mostra('media-pulito', 'file troppo grande (massimo 50 MB)'); return }
+  mostra('media-pulito', 'pulisco il file sul tuo computer…')
+  try {
+    // solo il CONTENUTO: il nome del file e la cartella non vanno al lato Rust né al nodo
+    const p = await invoke('media_prepara', new Uint8Array(await f.arrayBuffer()))
+    filePronto = true
+    if (pub) pub.disabled = false
+    mostra('media-pulito', `pulito ✓ · ${String(p.mime)} · ${mega(Number(p.prima))} → ${mega(Number(p.dimensione))}`)
+  } catch (e) {
+    mostra('media-pulito', String(e))
+  }
+}
+
+async function pubblicaMedia() {
+  if (!filePronto) return
+  const s = sezioneAperta
+  let fatto = false
+  await conFaseMedia('firmo, carico il file e cerco il nodo…', async () => {
+    await invoke('media_pubblica', { sezione: s.nome, titolo: campo('media-titolo').value, testo: campo('media-testo').value })
+    fatto = true
+    filePronto = false
+    campo('media-titolo').value = ''; campo('media-testo').value = ''
+    const scegli = /** @type {HTMLInputElement} */ (document.getElementById('media-scegli')); scegli.value = ''
+    mostra('media-pulito', '')
+    nascondi('media-scrivi', true)
+  })
+  if (fatto) await caricaMedia()
 }
 
 // ─── Forum ────────────────────────────────────────────────────────────────────
@@ -588,6 +741,11 @@ async function inviaMessaggio() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
+  document.getElementById('media-aggiorna')?.addEventListener('click', caricaMedia)
+  document.getElementById('media-nuovo')?.addEventListener('click', () => nascondi('media-scrivi', false))
+  document.getElementById('media-annulla')?.addEventListener('click', () => nascondi('media-scrivi', true))
+  document.getElementById('media-scegli')?.addEventListener('change', sceltoFile)
+  document.getElementById('media-pubblica')?.addEventListener('click', pubblicaMedia)
   document.getElementById('forum-aggiorna')?.addEventListener('click', caricaForum)
   document.getElementById('forum-nuova')?.addEventListener('click', () => { nascondi('forum-scrivi', false); campo('forum-titolo').focus() })
   document.getElementById('forum-annulla')?.addEventListener('click', () => nascondi('forum-scrivi', true))

@@ -404,3 +404,93 @@ pub async fn leggi_discussione<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, 
     }
     Ok(Some(DiscussioneAperta { discussione: d, risposte }))
 }
+
+// ─── File: reels, film, musica ───────────────────────────────────────────────
+// Le schede (kind 1063) passano da `verifica` e da `file_da_evento`; il file si scarica per hash e si accetta
+// solo se l'hash torna (m4tr1x_transport::http). Nomi solo da profili verificati.
+
+/// Quante schede si chiedono per sezione.
+pub const QUANTI_FILE: u64 = 60;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Media {
+    pub id: String,
+    pub autore: String,
+    pub nome: Option<String>,
+    /// didascalia
+    pub testo: String,
+    pub creato: u64,
+    pub file: m4tr1x_protocol::SchedaFile,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Galleria {
+    pub media: Vec<Media>,
+    pub scartati: usize,
+}
+
+/// Le schede di una sezione, dalla più recente, con i nomi degli autori.
+pub async fn leggi_media<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, sezione: m4tr1x_protocol::Sezione, budget: Duration, avanza: impl Fn(Fase)) -> Result<Galleria, NonRaggiungibile> {
+    let avanza = &avanza;
+    let filtro = json!({ "kinds": [m4tr1x_protocol::KIND_FILE], "#t": [sezione.tag()], "limit": QUANTI_FILE });
+    let grezzi = richiedi(t, nodo, &[filtro], budget, avanza).await?.into_iter().flatten();
+    let mut scartati = 0;
+    let mut media: Vec<Media> = vec![];
+    for g in grezzi {
+        let scheda = verificato(&g, rete).and_then(|e| m4tr1x_protocol::file_da_evento(&e).filter(|f| f.sezione == sezione).map(|f| (e, f)));
+        let Some((e, file)) = scheda else {
+            scartati += 1;
+            continue;
+        };
+        if !media.iter().any(|m| m.id == e.id) {
+            media.push(Media { id: e.id, autore: e.pubkey, nome: None, testo: e.content, creato: e.created_at, file });
+        }
+    }
+    if !media.is_empty() {
+        let mut autori: Vec<&str> = media.iter().map(|m| m.autore.as_str()).collect();
+        autori.sort_unstable();
+        autori.dedup();
+        if let Ok(mut p) = richiedi(t, nodo, &[json!({ "kinds": [0], "authors": autori, "limit": QUANTI_FILE })], budget, avanza).await {
+            let nomi = nomi_dai_profili(p.pop().unwrap_or_default(), rete);
+            for m in &mut media {
+                m.nome = nomi.get(&m.autore).cloned();
+            }
+        }
+    }
+    media.sort_by(|a, b| b.creato.cmp(&a.creato).then_with(|| a.id.cmp(&b.id)));
+    Ok(Galleria { media, scartati })
+}
+
+/// Scarica il file `sha256` (al massimo `dimensione` byte, come dice la scheda): solo se l'hash torna (I-17).
+pub async fn scarica_file<T: Transport>(t: &T, nodo: &OnionV3, sha256: &str, dimensione: usize, avanza: impl Fn(Fase)) -> Result<Vec<u8>, NonRaggiungibile> {
+    let budget = BUDGET + m4tr1x_transport::http::tempo_per(dimensione);
+    let avanza = &avanza;
+    let una_volta = || async move {
+        con_tentativi(budget, avanza, |tentativo, t0| async move {
+            let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
+            avanza(Fase::Scarico { secondi: t0.elapsed().as_secs(), tentativo });
+            m4tr1x_transport::http::scarica(flusso, nodo, sha256, dimensione).await
+        })
+        .await
+    };
+    let (b, secondi, tentativi) = con_ripresa(avanza, una_volta).await?;
+    avanza(Fase::Fatto { secondi, tentativo: tentativi });
+    Ok(b)
+}
+
+/// Carica un file GIÀ pulito con l'autorizzazione GIÀ firmata. Un "no" del nodo non si ritenta: è una risposta.
+pub async fn carica_file<T: Transport>(t: &T, nodo: &OnionV3, autorizzazione: &str, corpo: &[u8], avanza: impl Fn(Fase)) -> Result<m4tr1x_transport::http::Caricato, NonRaggiungibile> {
+    let budget = BUDGET + m4tr1x_transport::http::tempo_per(corpo.len());
+    let avanza = &avanza;
+    let una_volta = || async move {
+        con_tentativi(budget, avanza, |tentativo, t0| async move {
+            let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
+            avanza(Fase::Invio { secondi: t0.elapsed().as_secs(), tentativo });
+            m4tr1x_transport::http::carica(flusso, nodo, autorizzazione, corpo).await
+        })
+        .await
+    };
+    let (r, secondi, tentativi) = con_ripresa(avanza, una_volta).await?;
+    avanza(Fase::Fatto { secondi, tentativo: tentativi });
+    Ok(r)
+}
