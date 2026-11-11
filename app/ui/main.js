@@ -5,57 +5,124 @@
 //   chiavi PUBBLICHE; le 24 parole compaiono solo nella finestra del seme;
 // - nessuna rete qui (elenco di ciò che è vietato: inv-36-transport-only.test.js);
 //   tutto passa da invoke() verso i comandi elencati in app/shell/build.rs;
-// - testo inserito solo con textContent (mai innerHTML con dati).
+// - testo inserito solo con textContent (mai HTML costruito con dati): nomi, post e
+//   messaggi d'errore sono scritti da altri e non devono mai diventare markup.
 
 /** @type {(cmd: string, args?: object) => Promise<any>} */
 const invoke = /** @type {any} */ (window).__TAURI__.core.invoke
 
 const NOMI = { spento: 'spento', avvio: 'in avvio', pronto: 'pronto', errore: 'errore' }
+const SVG = 'http://www.w3.org/2000/svg'
 
 function mostra(/** @type {string} */ id, /** @type {string} */ testo) {
   const el = document.getElementById(id)
   if (el) el.textContent = testo
 }
 
-function vedi(/** @type {string} */ id, /** @type {boolean} */ si) {
-  const el = document.getElementById(id)
-  if (el) el.hidden = !si
+/** Icona dallo sprite di index.html (disegno fisso: l'id è una costante del codice, mai un dato). */
+function icona(/** @type {string} */ nome) {
+  const svg = document.createElementNS(SVG, 'svg')
+  svg.setAttribute('class', 'ic')
+  const use = document.createElementNS(SVG, 'use')
+  use.setAttribute('href', `#i-${nome}`)
+  svg.append(use)
+  return svg
 }
+
+// ─── Sezioni ──────────────────────────────────────────────────────────────────
+
+const VISTE = ['signal', 'profilo', 'rete']
+
+function apriVista(/** @type {string} */ nome) {
+  if (!VISTE.includes(nome)) return
+  for (const v of VISTE) {
+    const el = document.getElementById(`vista-${v}`)
+    if (el) el.hidden = v !== nome
+  }
+  for (const b of document.querySelectorAll('.voce')) {
+    const attiva = /** @type {HTMLElement} */ (b).dataset.vista === nome
+    b.classList.toggle('attiva', attiva)
+    if (attiva) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current')
+  }
+  if (nome === 'profilo' && identita && !profiloChiesto) caricaProfilo()
+}
+
+// ─── Stato di Tor ─────────────────────────────────────────────────────────────
 
 /** "spento" all'apertura può voler dire "tor non ancora partito": si riprova per qualche secondo. */
 let tentativiSpento = 5
+let feedPartito = false
 
 /** Stato del trasporto: si richiede ogni secondo finché tor è in avvio (poi si ferma). */
 async function aggiornaStato() {
   let ancora = false
   try {
     const s = await invoke('stato')
+    const nome = NOMI[/** @type {keyof typeof NOMI} */ (s.trasporto)] || '?'
     mostra('versione', String(s.versione))
-    mostra('trasporto', NOMI[/** @type {keyof typeof NOMI} */ (s.trasporto)] || '?')
+    mostra('trasporto', nome)
+    mostra('rete-tor', nome)
     mostra('percento', s.trasporto === 'avvio' ? `${Number(s.percento)}%` : '')
+    const spia = document.getElementById('spia')
+    if (spia) spia.className = `spia ${Object.hasOwn(NOMI, s.trasporto) ? s.trasporto : ''}`
     ancora = s.trasporto === 'avvio' || (s.trasporto === 'spento' && tentativiSpento-- > 0)
+    // appena Tor è pronto il feed parte da solo, una volta: poi decide chi usa l'app
+    if (s.trasporto === 'pronto' && !feedPartito) { feedPartito = true; aggiornaFeed() }
   } catch {
     mostra('trasporto', 'non raggiungibile')
+    mostra('rete-tor', 'non raggiungibile')
   }
   if (ancora) setTimeout(aggiornaStato, 1000)
 }
 
+// ─── Identità ─────────────────────────────────────────────────────────────────
+
+/** @type {{identity: string}|null} */ let identita = null
 /** @type {ReturnType<typeof setInterval>|null} */ let attesa = null
+
+/** Tinta dell'avatar dalla chiave pubblica: una di 8 classi fisse (niente stile costruito con dati). */
+function tinta(/** @type {string} */ chiave) {
+  const n = parseInt(String(chiave).slice(0, 2), 16)
+  return `av-${Number.isFinite(n) ? n % 8 : 7}`
+}
+
+/** @param {HTMLElement} el @param {string} chiave @param {string|null|undefined} nome */
+function vestiAvatar(el, chiave, nome) {
+  const iniziale = nome ? [...String(nome).trim()][0] : ''
+  el.textContent = iniziale || String(chiave).slice(0, 2)
+  el.classList.add(tinta(chiave))
+}
 
 async function aggiornaIdentita() {
   const id = await invoke('identita').catch(() => null)
-  vedi('senza-identita', !id)
-  vedi('con-identita', !!id)
-  if (id) {
-    mostra('chiave-identita', String(id.identity))
+  identita = id ? { identity: String(id.identity) } : null
+  for (const el of document.querySelectorAll('.solo-con-identita')) /** @type {HTMLElement} */ (el).hidden = !identita
+  for (const el of document.querySelectorAll('.solo-senza-identita')) /** @type {HTMLElement} */ (el).hidden = !!identita
+  if (identita) {
+    mostra('chiave-identita', identita.identity)
+    const av = document.getElementById('mio-avatar')
+    if (av) vestiAvatar(av, identita.identity, null)
     if (attesa) { clearInterval(attesa); attesa = null }
   }
 }
 
-async function apriSeme(/** @type {'crea'|'recupera'} */ modo) {
+async function apriSeme(/** @type {string} */ modo) {
+  if (modo !== 'crea' && modo !== 'recupera') return
   await invoke('apri_finestra_seme', { modo })
   // la finestra del seme salva l'identità e si chiude: qui si controlla ogni 2 s
   if (!attesa) attesa = setInterval(aggiornaIdentita, 2000)
+}
+
+/** Copia la chiave PUBBLICA (è fatta per essere data agli altri). Mai segreti: qui non ce ne sono. */
+async function copiaChiave() {
+  if (!identita) return
+  try {
+    await navigator.clipboard.writeText(identita.identity)
+    mostra('copia-chiave-testo', 'Copiata')
+  } catch {
+    mostra('copia-chiave-testo', 'Non riuscito')
+  }
+  setTimeout(() => mostra('copia-chiave-testo', 'Copia'), 2000)
 }
 
 // ─── Feed ────────────────────────────────────────────────────────────────────
@@ -76,28 +143,64 @@ function testoFase(a) {
   }
 }
 
+/** "adesso", "12 min", "3 h", poi la data. */
+function quando(/** @type {number} */ creato) {
+  const d = Math.floor(Date.now() / 1000) - creato
+  if (d < 60) return 'adesso'
+  if (d < 3600) return `${Math.floor(d / 60)} min`
+  if (d < 86400) return `${Math.floor(d / 3600)} h`
+  return new Date(creato * 1000).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 /** @param {any} p */
 function voce(p) {
+  const autore = String(p.autore)
   const li = document.createElement('li')
+  const av = document.createElement('div')
+  av.className = 'avatar'
+  av.setAttribute('aria-hidden', 'true')
+  vestiAvatar(av, autore, p.nome)
+  const corpo = document.createElement('div')
   const chi = document.createElement('div')
   chi.className = 'chi'
-  const quando = new Date(Number(p.creato) * 1000).toLocaleString('it-IT')
   // nome dal profilo (già pulito nel lato Rust) e sempre l'inizio della chiave: il nome si può copiare, la chiave no
   if (p.nome) {
     const nome = document.createElement('span')
     nome.className = 'nome'
     nome.textContent = String(p.nome)
-    chi.append(nome, ' · ')
+    chi.append(nome)
   }
-  chi.append(`${String(p.autore).slice(0, 12)}… · ${quando}`)
+  const chiave = document.createElement('span')
+  chiave.textContent = `${autore.slice(0, 12)}…`
+  const firma = document.createElement('span')
+  firma.className = 'verificato'
+  firma.title = 'Firma verificata'
+  firma.append(icona('verified'))
+  const ora = document.createElement('time')
+  const creato = Number(p.creato)
+  ora.dateTime = new Date(creato * 1000).toISOString()
+  ora.title = new Date(creato * 1000).toLocaleString('it-IT')
+  ora.textContent = quando(creato)
+  chi.append(chiave, firma, ora)
   const testo = document.createElement('p')
   testo.className = 'testo'
   testo.textContent = String(p.testo)
-  li.append(chi, testo)
+  corpo.append(chi, testo)
+  li.append(av, corpo)
   return li
 }
 
+function segnaVuoto() {
+  const lista = document.getElementById('feed-lista')
+  const vuoto = document.getElementById('feed-vuoto')
+  if (lista && vuoto) vuoto.hidden = lista.childElementCount > 0
+}
+
+let feedInCorso = false
+
 async function aggiornaFeed() {
+  if (feedInCorso) return
+  feedInCorso = true
   const bottone = /** @type {HTMLButtonElement|null} */ (document.getElementById('aggiorna-feed'))
   if (bottone) bottone.disabled = true
   const fase = setInterval(async () => {
@@ -116,6 +219,8 @@ async function aggiornaFeed() {
   } finally {
     clearInterval(fase)
     if (bottone) bottone.disabled = false
+    feedInCorso = false
+    segnaVuoto()
   }
 }
 
@@ -145,7 +250,9 @@ async function pubblicaPost() {
     casella.value = ''
     contaPost()
     mostra('post-stato', 'pubblicato ✓')
+    if (mioNome) p.nome = mioNome
     document.getElementById('feed-lista')?.prepend(voce(p))
+    segnaVuoto()
   } catch (e) {
     mostra('post-stato', String(e)) // il testo resta nella casella
   } finally {
@@ -156,6 +263,17 @@ async function pubblicaPost() {
 
 // ─── Profilo ──────────────────────────────────────────────────────────────────
 // Solo nome e descrizione (l'immagine arriva in F6). La firma la fa il lato Rust con la tua identità.
+
+let profiloChiesto = false
+/** @type {string|null} */ let mioNome = null
+
+/** Il nome nel riquadro in alto: quello tornato dal lato Rust (già pulito), mai quello appena digitato. */
+function mostraMioNome(/** @type {string|null} */ nome) {
+  mioNome = nome || null
+  mostra('mio-nome', mioNome || 'Senza nome')
+  const av = document.getElementById('mio-avatar')
+  if (av && identita) vestiAvatar(av, identita.identity, mioNome)
+}
 
 /** @param {string} comando @param {() => Promise<void>} lavoro */
 async function conFaseProfilo(comando, lavoro) {
@@ -177,9 +295,11 @@ function campo(/** @type {string} */ id) {
 }
 
 async function caricaProfilo() {
+  profiloChiesto = true
   await conFaseProfilo('cerco il tuo profilo sul nodo…', async () => {
     const p = await invoke('profilo_mio')
     if (p) { campo('profilo-nome').value = String(p.nome); campo('profilo-descrizione').value = String(p.descrizione) }
+    mostraMioNome(p ? String(p.nome) : null)
     mostra('profilo-stato', p ? 'profilo caricato dal nodo' : 'non hai ancora un profilo sul nodo')
   })
 }
@@ -190,18 +310,21 @@ async function salvaProfilo() {
     // il profilo com'è stato firmato (pulito nel lato Rust): quello che vedranno gli altri
     campo('profilo-nome').value = String(p.nome)
     campo('profilo-descrizione').value = String(p.descrizione)
+    mostraMioNome(String(p.nome))
     mostra('profilo-stato', 'profilo salvato ✓')
   })
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  for (const b of document.querySelectorAll('.voce')) b.addEventListener('click', () => apriVista(/** @type {HTMLElement} */ (b).dataset.vista || ''))
+  for (const b of document.querySelectorAll('[data-seme]')) b.addEventListener('click', () => apriSeme(/** @type {HTMLElement} */ (b).dataset.seme || ''))
+  document.getElementById('copia-chiave')?.addEventListener('click', copiaChiave)
   document.getElementById('profilo-salva')?.addEventListener('click', salvaProfilo)
   document.getElementById('profilo-carica')?.addEventListener('click', caricaProfilo)
   document.getElementById('pubblica')?.addEventListener('click', pubblicaPost)
   document.getElementById('post-testo')?.addEventListener('input', contaPost)
   document.getElementById('aggiorna-feed')?.addEventListener('click', aggiornaFeed)
-  document.getElementById('crea')?.addEventListener('click', () => apriSeme('crea'))
-  document.getElementById('recupera')?.addEventListener('click', () => apriSeme('recupera'))
+  mostraMioNome(null)
   aggiornaStato()
   aggiornaIdentita()
 })

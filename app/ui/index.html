@@ -5,62 +5,149 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>M4TR1X</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Regole (I-31, I-01): nessuno script inline, nessun gestore on*=, nessuna
-       risorsa esterna. Il JavaScript parla solo con il lato Rust via invoke. -->
+  <!-- Regole (I-31, I-01): nessuno script inline, nessun gestore di eventi nell'HTML, nessuno
+       stile inline, nessuna risorsa esterna (font e icone sono dentro l'app). Il JavaScript
+       parla solo con il lato Rust via invoke. -->
   <script src="main.js" defer></script>
 </head>
 <body>
-  <main class="guscio">
-    <header class="testata">
-      <h1>M4TR1X</h1>
-      <p class="sotto">v<span id="versione">—</span></p>
-    </header>
-    <section class="scheda" aria-live="polite">
-      <h2>Identità</h2>
-      <div id="senza-identita" hidden>
-        <p>Non hai ancora un'identità su questo computer.</p>
-        <button id="crea">Crea una nuova identità</button>
-        <button id="recupera" class="secondario">Recupera dalle 24 parole</button>
+  <!-- Icone a linea (disegni fissi, nessun dato): si richiamano con <use href="#i-…"> -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-signal" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><path d="M7.8 7.8a6 6 0 0 0 0 8.4"></path><path d="M16.2 7.8a6 6 0 0 1 0 8.4"></path><path d="M4.9 5a10 10 0 0 0 0 14"></path><path d="M19.1 5a10 10 0 0 1 0 14"></path></symbol>
+    <symbol id="i-profile" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 4-6 8-6s8 2 8 6"></path></symbol>
+    <symbol id="i-node" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="2"></rect><rect x="4" y="13" width="16" height="7" rx="2"></rect><circle cx="8" cy="7.5" r="1" fill="currentColor" stroke="none"></circle><circle cx="8" cy="16.5" r="1" fill="currentColor" stroke="none"></circle><path d="M12 7.5h5M12 16.5h5"></path></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"></path><path d="M20 3v4h-4"></path></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-7-7 16-2-7-7-2z"></path></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="14" r="4"></circle><path d="M11 11l8-8"></path><path d="M16 6l2.5 2.5M13.5 8.5L16 11"></path></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></symbol>
+    <symbol id="i-verified" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"></path><path d="M9 12l2 2 4-4"></path></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></symbol>
+  </svg>
+
+  <div class="app">
+    <aside class="lato">
+      <div class="marchio">
+        <span class="logo">M4TR1X</span><span class="punto" aria-hidden="true"></span>
       </div>
-      <div id="con-identita" hidden>
-        <p>La tua chiave pubblica:</p>
-        <p class="chiave" id="chiave-identita"></p>
+      <nav class="voci" aria-label="Sezioni">
+        <button type="button" class="voce attiva" data-vista="signal" aria-current="page">
+          <svg class="ic"><use href="#i-signal"></use></svg><span>Signal</span>
+        </button>
+        <button type="button" class="voce" data-vista="profilo">
+          <svg class="ic"><use href="#i-profile"></use></svg><span>Profilo</span>
+        </button>
+        <button type="button" class="voce" data-vista="rete">
+          <svg class="ic"><use href="#i-node"></use></svg><span>Rete</span>
+        </button>
+      </nav>
+      <div class="stato-rete" aria-live="polite">
+        <span class="spia" id="spia" aria-hidden="true"></span>
+        <span class="etichetta">Tor</span>
+        <strong id="trasporto">—</strong>
+        <span id="percento"></span>
       </div>
-    </section>
-    <section class="scheda" aria-live="polite">
-      <h2>Rete</h2>
-      <p>Tor: <strong id="trasporto">—</strong> <span id="percento"></span></p>
-    </section>
-    <section class="scheda">
-      <h2>Profilo</h2>
-      <label for="profilo-nome" class="tenue">Nome</label>
-      <input id="profilo-nome" class="campo" maxlength="50" autocomplete="off">
-      <label for="profilo-descrizione" class="tenue">Descrizione</label>
-      <textarea id="profilo-descrizione" class="post-testo" rows="2" maxlength="500"></textarea>
-      <p class="riga-feed">
-        <button id="profilo-salva">Salva</button>
-        <button id="profilo-carica" class="secondario">Carica dal nodo</button>
-        <span id="profilo-stato" class="tenue" aria-live="polite"></span>
-      </p>
-    </section>
-    <section class="scheda">
-      <h2>Scrivi</h2>
-      <label for="post-testo" class="tenue">Il post si firma con la tua identità, sul tuo computer.</label>
-      <textarea id="post-testo" class="post-testo" rows="3" maxlength="2000"></textarea>
-      <p class="riga-feed">
-        <button id="pubblica">Pubblica</button>
-        <span id="post-conta" class="tenue">0/2000</span>
-        <span id="post-stato" class="tenue" aria-live="polite"></span>
-      </p>
-    </section>
-    <section class="scheda">
-      <h2>Feed</h2>
-      <p class="riga-feed">
-        <button id="aggiorna-feed">Aggiorna</button>
-        <span id="feed-stato" class="tenue" aria-live="polite"></span>
-      </p>
-      <ol id="feed-lista" class="feed"></ol>
-    </section>
-  </main>
+    </aside>
+
+    <main class="centro">
+      <!-- ── SIGNAL: scrivi e leggi ─────────────────────────────────────────── -->
+      <section class="vista" id="vista-signal" aria-labelledby="t-signal">
+        <header class="barra">
+          <h1 id="t-signal">Signal</h1>
+          <button type="button" id="aggiorna-feed" class="tasto contorno">
+            <svg class="ic"><use href="#i-refresh"></use></svg><span>Aggiorna</span>
+          </button>
+        </header>
+
+        <div class="scheda solo-con-identita" hidden>
+          <label for="post-testo" class="tenue">Il post si firma con la tua identità, sul tuo computer.</label>
+          <textarea id="post-testo" class="campo" rows="3" maxlength="2000" placeholder="Cosa vuoi dire?"></textarea>
+          <div class="riga">
+            <span id="post-stato" class="tenue cresce" aria-live="polite"></span>
+            <span id="post-conta" class="conta">0/2000</span>
+            <button type="button" id="pubblica" class="tasto pieno">
+              <svg class="ic"><use href="#i-send"></use></svg><span>Pubblica</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="scheda invito solo-senza-identita" hidden>
+          <svg class="ic grande"><use href="#i-key"></use></svg>
+          <div class="cresce">
+            <h2>Per scrivere ti serve un'identità</h2>
+            <p class="tenue">Nasce da 24 parole che restano a te. Niente email, niente numero di telefono. Leggere si può anche senza.</p>
+          </div>
+          <div class="colonna">
+            <button type="button" class="tasto pieno" data-seme="crea">Crea identità</button>
+            <button type="button" class="tasto contorno" data-seme="recupera">Ho già le 24 parole</button>
+          </div>
+        </div>
+
+        <p id="feed-stato" class="tenue stato-feed" aria-live="polite"></p>
+        <ol id="feed-lista" class="feed"></ol>
+        <p id="feed-vuoto" class="vuoto tenue">Qui compaiono i post del nodo, verificati uno per uno prima di essere mostrati.</p>
+      </section>
+
+      <!-- ── PROFILO ────────────────────────────────────────────────────────── -->
+      <section class="vista" id="vista-profilo" aria-labelledby="t-profilo" hidden>
+        <header class="barra"><h1 id="t-profilo">Profilo</h1></header>
+
+        <div class="scheda invito solo-senza-identita" hidden>
+          <svg class="ic grande"><use href="#i-key"></use></svg>
+          <div class="cresce">
+            <h2>Non hai ancora un'identità su questo computer</h2>
+            <p class="tenue">Le 24 parole si mostrano in una finestra protetta: scrivile su carta, sono l'unico modo per recuperare l'identità.</p>
+          </div>
+          <div class="colonna">
+            <button type="button" class="tasto pieno" id="crea" data-seme="crea">Crea una nuova identità</button>
+            <button type="button" class="tasto contorno" id="recupera" data-seme="recupera">Recupera dalle 24 parole</button>
+          </div>
+        </div>
+
+        <div class="solo-con-identita" hidden>
+          <div class="scheda chi-sono">
+            <div class="avatar grande" id="mio-avatar" aria-hidden="true"></div>
+            <div class="cresce">
+              <p class="nome-grande" id="mio-nome">—</p>
+              <p class="etichetta">La tua chiave pubblica</p>
+              <p class="chiave" id="chiave-identita"></p>
+            </div>
+            <button type="button" id="copia-chiave" class="tasto contorno piccolo">
+              <svg class="ic"><use href="#i-copy"></use></svg><span id="copia-chiave-testo">Copia</span>
+            </button>
+          </div>
+
+          <div class="scheda">
+            <label for="profilo-nome" class="etichetta">Nome</label>
+            <input id="profilo-nome" class="campo" maxlength="50" autocomplete="off" spellcheck="false">
+            <label for="profilo-descrizione" class="etichetta">Descrizione</label>
+            <textarea id="profilo-descrizione" class="campo" rows="3" maxlength="500"></textarea>
+            <div class="riga">
+              <span id="profilo-stato" class="tenue cresce" aria-live="polite"></span>
+              <button type="button" id="profilo-carica" class="tasto contorno">Carica dal nodo</button>
+              <button type="button" id="profilo-salva" class="tasto pieno">Salva</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── RETE ───────────────────────────────────────────────────────────── -->
+      <section class="vista" id="vista-rete" aria-labelledby="t-rete" hidden>
+        <header class="barra"><h1 id="t-rete">Rete</h1></header>
+        <div class="scheda">
+          <p class="etichetta">Collegamento</p>
+          <p class="riga-dato"><span>Tor</span><strong id="rete-tor">—</strong></p>
+          <p class="riga-dato"><span>Versione dell'app</span><span class="mono">v<span id="versione">—</span></span></p>
+        </div>
+        <div class="scheda garanzie">
+          <p class="etichetta">Cosa fa questa app, sempre</p>
+          <ul>
+            <li><svg class="ic"><use href="#i-lock"></use></svg><span>Parla con la rete <strong>solo attraverso Tor</strong>: il nodo non vede il tuo indirizzo.</span></li>
+            <li><svg class="ic"><use href="#i-key"></use></svg><span>Le tue chiavi restano nel portachiavi del sistema: <strong>l'interfaccia non le vede mai</strong>.</span></li>
+            <li><svg class="ic"><use href="#i-verified"></use></svg><span>Ogni post è <strong>verificato</strong> (firma e rete) prima di comparire sullo schermo.</span></li>
+          </ul>
+        </div>
+      </section>
+    </main>
+  </div>
 </body>
 </html>
