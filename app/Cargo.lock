@@ -2142,6 +2142,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "m4tr1x-posta"
+version = "0.1.0"
+dependencies = [
+ "m4tr1x-dm",
+ "m4tr1x-feed",
+ "m4tr1x-identity",
+ "m4tr1x-protocol",
+ "m4tr1x-transport",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "m4tr1x-protocol"
 version = "0.1.0"
 dependencies = [
@@ -2160,6 +2174,7 @@ dependencies = [
  "m4tr1x-crash",
  "m4tr1x-feed",
  "m4tr1x-identity",
+ "m4tr1x-posta",
  "m4tr1x-protocol",
  "m4tr1x-transport",
  "serde",

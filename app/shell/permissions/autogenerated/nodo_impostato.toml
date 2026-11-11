@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-nodo-impostato"
+description = "Enables the nodo_impostato command without any pre-configured scope."
+commands.allow = ["nodo_impostato"]
+
+[[permission]]
+identifier = "deny-nodo-impostato"
+description = "Denies the nodo_impostato command without any pre-configured scope."
+commands.deny = ["nodo_impostato"]

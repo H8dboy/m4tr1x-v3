@@ -1,0 +1,22 @@
+[package]
+name = "m4tr1x-posta"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Messaggi privati dentro l'app M4TR1X: buste (m4tr1x-dm) + portachiavi + nodo via Tor, con attribuzione verificata"
+
+# Versioni esatte (I-25). Nessuna libreria di rete (I-36): la rete passa da m4tr1x-transport (via m4tr1x-feed).
+[dependencies]
+m4tr1x-dm = { path = "../dm" }
+m4tr1x-feed = { path = "../feed" }
+m4tr1x-identity = { path = "../identity" }
+m4tr1x-protocol = { path = "../protocol" }
+m4tr1x-transport = { path = "../transport" }
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"
+
+[dev-dependencies]
+m4tr1x-transport = { path = "../transport", features = ["prova"] }
+m4tr1x-dm = { path = "../dm", features = ["prova"] }
+tokio = { version = "=1.53.3", default-features = false, features = ["time", "io-util", "rt-multi-thread", "macros", "test-util"] }

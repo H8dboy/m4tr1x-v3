@@ -507,4 +507,17 @@ module.exports = [
     find: "    if KIND_VIETATI.contains(&kind) {\n        return Err(Rifiuto::KindVietato(kind));\n    }\n    if tags.iter().any(|t| t.is_empty())", replace: "    if tags.iter().any(|t| t.is_empty())", test: T("inv-19-dm-wrap"), timeoutMs: 900000 },
   { id: "dm-ruolo-incarta", rule: "I-19", name: "si incarta anche con una chiave che non è di ruolo DM", file: "app/dm/src/lib.rs",
     find: "    if mittente.ruolo() != Ruolo::Dm {\n        return Err(ErroreDm::Ruolo);\n    }\n    let dest", replace: "    let dest", test: T("inv-19-dm-wrap"), timeoutMs: 900000 },
+  // I-62: i messaggi privati dentro l'app (m4tr1x-posta + guscio)
+  { id: "posta-annuncio-di-un-altro", rule: "I-62", name: "si cifra per la chiave DM dell'annuncio più recente, di chiunque sia", file: "app/posta/src/lib.rs",
+    find: "            (autore == identita).then_some((ora, id, chiavi))", replace: "            { let _ = (&autore, identita); Some((ora, id, chiavi)) }", test: T("inv-62-posta-app"), timeoutMs: 900000 },
+  { id: "posta-senza-annuncio", rule: "I-62", name: "senza annuncio del destinatario si cifra per la sua chiave d'identità", file: "app/posta/src/lib.rs",
+    find: "chiave_dm_di(rete, &suoi, destinatario).ok_or(ErrorePosta::SenzaAnnuncio)?;", replace: "chiave_dm_di(rete, &suoi, destinatario).unwrap_or_else(|| destinatario.to_string());", test: T("inv-62-posta-app"), timeoutMs: 900000 },
+  { id: "posta-sconosciuto-con-identita", rule: "I-62", name: "un mittente senza annuncio riceve un'identità", file: "app/posta/src/lib.rs",
+    find: "Conversazione { identita: dm::identita_del_mittente(rete, annunci, &chiave), dm: chiave, nome: None, messaggi }", replace: "Conversazione { identita: { let _ = (rete, annunci); Some(chiave.clone()) }, dm: chiave, nome: None, messaggi }", test: T("inv-62-posta-app"), timeoutMs: 900000 },
+  { id: "posta-destinatario-non-controllato", rule: "I-62", name: "un destinatario non valido arriva fino alla rete", file: "app/posta/src/lib.rs",
+    find: "    if !chiave_valida(destinatario) {\n        return Err(ErrorePosta::Destinatario);\n    }\n", replace: "", test: T("inv-62-posta-app"), timeoutMs: 900000 },
+  { id: "posta-dm-nel-guscio", rule: "I-62", name: "il guscio apre le buste da sé (usa m4tr1x-dm)", file: "app/shell/src/lib.rs",
+    find: "pub mod api;\n", replace: "pub mod api;\n#[allow(unused_imports)]\nuse m4tr1x_dm as _;\n", test: T("inv-62-posta-app") },
+  { id: "posta-chiave-attraverso-la-rete", rule: "I-62", name: "la chiave DM resta in mano durante l'invio al nodo", file: "app/posta/src/lib.rs",
+    find: "    let buste = {\n        let mia = carica(p, Ruolo::Dm, 1)", replace: "    let mia_fuori = carica(p, Ruolo::Dm, 1);\n    let _ = &mia_fuori;\n    let buste = {\n        let mia = carica(p, Ruolo::Dm, 1)", test: T("inv-62-posta-app") },
 ]

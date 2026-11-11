@@ -21,6 +21,9 @@
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="14" r="4"></circle><path d="M11 11l8-8"></path><path d="M16 6l2.5 2.5M13.5 8.5L16 11"></path></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></symbol>
     <symbol id="i-verified" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"></path><path d="M9 12l2 2 4-4"></path></symbol>
+    <symbol id="i-dm" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 4l9 16H3l9-16z"></path><path d="M12 10v4M12 17v.5"></path></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></symbol>
   </svg>
 
@@ -32,6 +35,9 @@
       <nav class="voci" aria-label="Sezioni">
         <button type="button" class="voce attiva" data-vista="signal" aria-current="page">
           <svg class="ic"><use href="#i-signal"></use></svg><span>Signal</span>
+        </button>
+        <button type="button" class="voce" data-vista="messaggi">
+          <svg class="ic"><use href="#i-dm"></use></svg><span>Messaggi</span>
         </button>
         <button type="button" class="voce" data-vista="profilo">
           <svg class="ic"><use href="#i-profile"></use></svg><span>Profilo</span>
@@ -87,6 +93,74 @@
         <p id="feed-vuoto" class="vuoto tenue">Qui compaiono i post del nodo, verificati uno per uno prima di essere mostrati.</p>
       </section>
 
+      <!-- ── MESSAGGI PRIVATI ───────────────────────────────────────────────── -->
+      <section class="vista larga" id="vista-messaggi" aria-labelledby="t-messaggi" hidden>
+        <header class="barra">
+          <h1 id="t-messaggi">Messaggi</h1>
+          <div class="riga solo-con-identita" hidden>
+            <button type="button" id="posta-nuovo" class="tasto contorno">
+              <svg class="ic"><use href="#i-plus"></use></svg><span>Nuovo</span>
+            </button>
+            <button type="button" id="posta-aggiorna" class="tasto contorno">
+              <svg class="ic"><use href="#i-refresh"></use></svg><span>Aggiorna</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="scheda invito solo-senza-identita" hidden>
+          <svg class="ic grande"><use href="#i-key"></use></svg>
+          <div class="cresce">
+            <h2>Per i messaggi privati ti serve un'identità</h2>
+            <p class="tenue">I messaggi si cifrano sul tuo computer con una chiave separata da quella dei post.</p>
+          </div>
+          <div class="colonna">
+            <button type="button" class="tasto pieno" data-seme="crea">Crea identità</button>
+            <button type="button" class="tasto contorno" data-seme="recupera">Ho già le 24 parole</button>
+          </div>
+        </div>
+
+        <div class="solo-con-identita" hidden>
+          <p id="posta-stato" class="tenue stato-feed" aria-live="polite"></p>
+          <div class="posta">
+            <ul id="posta-lista" class="conversazioni" aria-label="Conversazioni"></ul>
+            <div class="filo">
+              <div id="filo-vuoto" class="vuoto tenue">
+                <svg class="ic grande"><use href="#i-lock"></use></svg>
+                <p>Cifrati da un capo all'altro: il nodo vede solo buste chiuse, non il testo e non chi le manda.</p>
+              </div>
+
+              <div id="filo-nuovo" class="scheda" hidden>
+                <label for="nuovo-a" class="etichetta">Chiave pubblica del destinatario</label>
+                <input id="nuovo-a" class="campo mono" maxlength="64" autocomplete="off" spellcheck="false" placeholder="64 caratteri: te la dà la persona a cui scrivi">
+                <p class="tenue">Si può scrivere solo a chi ha già aperto i messaggi nella sua app.</p>
+              </div>
+
+              <div id="filo-aperto" hidden>
+                <div class="chi-filo">
+                  <div class="avatar" id="filo-avatar" aria-hidden="true"></div>
+                  <div class="cresce">
+                    <p class="nome-filo" id="filo-nome"></p>
+                    <p class="chiave" id="filo-chiave"></p>
+                  </div>
+                </div>
+                <p id="filo-sconosciuto" class="avviso" hidden>
+                  <svg class="ic"><use href="#i-warning"></use></svg>
+                  <span>Mittente sconosciuto: nessuna identità ha dimostrato che questo indirizzo è suo. Non fidarti di un nome scritto nel testo, e non si può rispondere.</span>
+                </p>
+                <ol id="filo-messaggi" class="bolle"></ol>
+              </div>
+
+              <div id="filo-scrivi" class="scrivi" hidden>
+                <textarea id="filo-testo" class="campo" rows="2" maxlength="2000" placeholder="Scrivi un messaggio"></textarea>
+                <button type="button" id="filo-invia" class="tasto pieno">
+                  <svg class="ic"><use href="#i-send"></use></svg><span>Invia</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ── PROFILO ────────────────────────────────────────────────────────── -->
       <section class="vista" id="vista-profilo" aria-labelledby="t-profilo" hidden>
         <header class="barra"><h1 id="t-profilo">Profilo</h1></header>
@@ -137,6 +211,15 @@
           <p class="etichetta">Collegamento</p>
           <p class="riga-dato"><span>Tor</span><strong id="rete-tor">—</strong></p>
           <p class="riga-dato"><span>Versione dell'app</span><span class="mono">v<span id="versione">—</span></span></p>
+        </div>
+        <div class="scheda">
+          <label for="nodo-indirizzo" class="etichetta">Il tuo nodo</label>
+          <p id="nodo-attuale" class="tenue"></p>
+          <input id="nodo-indirizzo" class="campo mono" maxlength="80" autocomplete="off" spellcheck="false" placeholder="indirizzo .onion del nodo">
+          <div class="riga">
+            <span id="nodo-stato" class="tenue cresce" aria-live="polite"></span>
+            <button type="button" id="nodo-salva" class="tasto pieno">Usa questo nodo</button>
+          </div>
         </div>
         <div class="scheda garanzie">
           <p class="etichetta">Cosa fa questa app, sempre</p>

@@ -26,6 +26,8 @@ m4tr1x-crash = { path = "../crash" }
 # feed: ultimi post del nodo via Tor, verificati in Rust
 m4tr1x-feed = { path = "../feed" }
 m4tr1x-protocol = { path = "../protocol" }
+# messaggi privati: buste aperte e incartate nel lato Rust, la chiave dei messaggi non arriva al guscio
+m4tr1x-posta = { path = "../posta" }
 # solo timer (attesa di tor pronto nel feed); niente rete (I-36)
 tokio = { version = "=1.53.3", default-features = false, features = ["time"] }
 zeroize = "=1.8.2"

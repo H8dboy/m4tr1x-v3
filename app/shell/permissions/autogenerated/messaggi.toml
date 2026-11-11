@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-messaggi"
+description = "Enables the messaggi command without any pre-configured scope."
+commands.allow = ["messaggi"]
+
+[[permission]]
+identifier = "deny-messaggi"
+description = "Denies the messaggi command without any pre-configured scope."
+commands.deny = ["messaggi"]

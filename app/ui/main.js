@@ -31,7 +31,7 @@ function icona(/** @type {string} */ nome) {
 
 // ─── Sezioni ──────────────────────────────────────────────────────────────────
 
-const VISTE = ['signal', 'profilo', 'rete']
+const VISTE = ['signal', 'messaggi', 'profilo', 'rete']
 
 function apriVista(/** @type {string} */ nome) {
   if (!VISTE.includes(nome)) return
@@ -45,6 +45,7 @@ function apriVista(/** @type {string} */ nome) {
     if (attiva) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current')
   }
   if (nome === 'profilo' && identita && !profiloChiesto) caricaProfilo()
+  if (nome === 'messaggi' && identita && !postaChiesta) caricaPosta()
 }
 
 // ─── Stato di Tor ─────────────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ async function aggiornaStato() {
     if (spia) spia.className = `spia ${Object.hasOwn(NOMI, s.trasporto) ? s.trasporto : ''}`
     ancora = s.trasporto === 'avvio' || (s.trasporto === 'spento' && tentativiSpento-- > 0)
     // appena Tor è pronto il feed parte da solo, una volta: poi decide chi usa l'app
-    if (s.trasporto === 'pronto' && !feedPartito) { feedPartito = true; aggiornaFeed() }
+    if (s.trasporto === 'pronto' && !feedPartito && await aggiornaNodo()) { feedPartito = true; aggiornaFeed() }
   } catch {
     mostra('trasporto', 'non raggiungibile')
     mostra('rete-tor', 'non raggiungibile')
@@ -137,7 +138,7 @@ function testoFase(a) {
     case 'tor': return `aspetto che Tor sia pronto… ${s} s`
     case 'cerco': return n > 1 ? `sto cercando il nodo… ${s} s (tentativo ${n})` : `sto cercando il nodo… ${s} s`
     case 'scarico': return `nodo trovato, scarico i post… ${s} s`
-    case 'invio': return `nodo trovato, invio il post firmato… ${s} s`
+    case 'invio': return `nodo trovato, invio… ${s} s`
     case 'attesa_ripresa': return `il nodo non risponde ancora, Tor continua a cercarlo: riprovo tra ${s} s`
     default: return ''
   }
@@ -315,7 +316,165 @@ async function salvaProfilo() {
   })
 }
 
+// ─── Nodo ─────────────────────────────────────────────────────────────────────
+// L'indirizzo si scrive qui e si controlla nel lato Rust (solo onion v3). Non torna indietro:
+// l'interfaccia sa solo se un nodo c'è.
+
+async function aggiornaNodo() {
+  const si = await invoke('nodo_impostato').catch(() => false)
+  mostra('nodo-attuale', si ? 'Un nodo è impostato: puoi sostituirlo scrivendone un altro.' : 'Nessun nodo: scrivi qui l\'indirizzo .onion del nodo a cui collegarti.')
+  return !!si
+}
+
+async function salvaNodo() {
+  const c = campo('nodo-indirizzo')
+  try {
+    await invoke('nodo_imposta', { indirizzo: c.value })
+    c.value = ''
+    mostra('nodo-stato', 'nodo impostato ✓')
+    await aggiornaNodo()
+    feedPartito = true
+    aggiornaFeed()
+  } catch (e) {
+    mostra('nodo-stato', String(e))
+  }
+}
+
+// ─── Messaggi privati ─────────────────────────────────────────────────────────
+// Le buste si aprono e si incartano nel lato Rust (m4tr1x-posta): qui arrivano testi già controllati e
+// chiavi PUBBLICHE. Una conversazione senza `identita` è di un mittente SCONOSCIUTO: nessun nome, nessuna
+// risposta. Tutto con textContent: il testo di un messaggio lo scrive un altro.
+
+/** @typedef {{mio: boolean, testo: string, creato: number}} Messaggio */
+/** @typedef {{identita: string|null, dm: string, nome: string|null, messaggi: Messaggio[]}} Conversazione */
+
+let postaChiesta = false
+let postaInCorso = false
+/** @type {Conversazione[]} */ let conversazioni = []
+/** chiave DM della conversazione aperta, oppure 'nuovo' @type {string|null} */ let aperta = null
+
+function nascondi(/** @type {string} */ id, /** @type {boolean} */ si) {
+  const el = document.getElementById(id)
+  if (el) el.hidden = si
+}
+
+/** @param {Conversazione} c */
+function titoloDi(c) {
+  if (!c.identita) return 'Mittente sconosciuto'
+  return c.nome ? String(c.nome) : `${String(c.identita).slice(0, 12)}…`
+}
+
+/** @param {Messaggio} m */
+function bolla(m) {
+  const li = document.createElement('li')
+  if (m.mio) li.className = 'mio'
+  const testo = document.createElement('p')
+  testo.className = 'testo'
+  testo.textContent = String(m.testo)
+  const ora = document.createElement('time')
+  const creato = Number(m.creato)
+  ora.dateTime = new Date(creato * 1000).toISOString()
+  ora.textContent = new Date(creato * 1000).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  li.append(testo, ora)
+  return li
+}
+
+function disegnaPosta() {
+  const lista = document.getElementById('posta-lista')
+  if (lista) {
+    lista.replaceChildren(...conversazioni.map(c => {
+      const li = document.createElement('li')
+      const b = document.createElement('button')
+      b.type = 'button'
+      if (c.dm === aperta) b.className = 'scelta'
+      const av = document.createElement('div')
+      av.className = 'avatar'
+      av.setAttribute('aria-hidden', 'true')
+      vestiAvatar(av, c.identita || c.dm, c.identita ? c.nome : '?')
+      const testi = document.createElement('div')
+      const chi = document.createElement('span')
+      chi.className = c.identita ? 'chi-conv' : 'chi-conv ignoto'
+      chi.textContent = titoloDi(c)
+      const ultimo = document.createElement('span')
+      ultimo.className = 'ultimo'
+      const m = c.messaggi[c.messaggi.length - 1]
+      ultimo.textContent = m ? `${m.mio ? 'Tu: ' : ''}${String(m.testo).slice(0, 80)}` : ''
+      testi.append(chi, ultimo)
+      b.append(av, testi)
+      b.addEventListener('click', () => { aperta = c.dm; disegnaPosta() })
+      li.append(b)
+      return li
+    }))
+  }
+  const c = conversazioni.find(x => x.dm === aperta) || null
+  const nuovo = aperta === 'nuovo'
+  nascondi('filo-vuoto', !!c || nuovo)
+  nascondi('filo-nuovo', !nuovo)
+  nascondi('filo-aperto', !c)
+  nascondi('filo-scrivi', !(nuovo || (c && c.identita)))
+  if (!c) return
+  mostra('filo-nome', titoloDi(c))
+  mostra('filo-chiave', c.identita ? String(c.identita) : '')
+  nascondi('filo-sconosciuto', !!c.identita)
+  const av = document.getElementById('filo-avatar')
+  if (av) { av.className = 'avatar'; vestiAvatar(av, c.identita || c.dm, c.identita ? c.nome : '?') }
+  document.getElementById('filo-messaggi')?.replaceChildren(...c.messaggi.map(bolla))
+}
+
+/** @param {string} comando @param {() => Promise<void>} lavoro */
+async function conFasePosta(comando, lavoro) {
+  if (postaInCorso) return
+  postaInCorso = true
+  const bottoni = ['posta-aggiorna', 'filo-invia'].map(id => /** @type {HTMLButtonElement|null} */ (document.getElementById(id)))
+  bottoni.forEach(b => { if (b) b.disabled = true })
+  const fase = setInterval(async () => {
+    const a = await invoke('messaggi_avanzamento').catch(() => null)
+    if (a) mostra('posta-stato', testoFase(a))
+  }, 1000)
+  mostra('posta-stato', comando)
+  try { await lavoro() } catch (e) { mostra('posta-stato', String(e)) } finally {
+    clearInterval(fase)
+    bottoni.forEach(b => { if (b) b.disabled = false })
+    postaInCorso = false
+  }
+}
+
+async function caricaPosta() {
+  postaChiesta = true
+  await conFasePosta('cerco i tuoi messaggi sul nodo…', async () => {
+    const p = await invoke('messaggi')
+    conversazioni = Array.isArray(p.conversazioni) ? p.conversazioni : []
+    const scartate = Number(p.scartate) ? ` · ${Number(p.scartate)} buste scartate (non valide o non per te)` : ''
+    mostra('posta-stato', conversazioni.length ? `${conversazioni.length} conversazioni${scartate}` : `nessun messaggio${scartate}`)
+    disegnaPosta()
+  })
+}
+
+async function inviaMessaggio() {
+  const casella = /** @type {HTMLTextAreaElement} */ (document.getElementById('filo-testo'))
+  const c = conversazioni.find(x => x.dm === aperta) || null
+  const a = aperta === 'nuovo' ? campo('nuovo-a').value.trim().toLowerCase() : (c && c.identita) || ''
+  if (!a || !casella.value.trim()) return
+  let partito = false
+  await conFasePosta('incarto e cerco il nodo…', async () => {
+    await invoke('messaggio_invia', { a, testo: casella.value })
+    casella.value = ''
+    partito = true
+    mostra('posta-stato', 'inviato ✓')
+  })
+  if (!partito) return // il testo resta nella casella
+  // si rilegge dal nodo: il messaggio compare dalla MIA copia cifrata, non da quello che ho digitato
+  await caricaPosta()
+  const mia = conversazioni.find(x => x.identita === a)
+  if (mia) { aperta = mia.dm; campo('nuovo-a').value = ''; disegnaPosta() }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
+  aggiornaNodo()
+  document.getElementById('posta-aggiorna')?.addEventListener('click', caricaPosta)
+  document.getElementById('posta-nuovo')?.addEventListener('click', () => { aperta = 'nuovo'; disegnaPosta() })
+  document.getElementById('filo-invia')?.addEventListener('click', inviaMessaggio)
   for (const b of document.querySelectorAll('.voce')) b.addEventListener('click', () => apriVista(/** @type {HTMLElement} */ (b).dataset.vista || ''))
   for (const b of document.querySelectorAll('[data-seme]')) b.addEventListener('click', () => apriSeme(/** @type {HTMLElement} */ (b).dataset.seme || ''))
   document.getElementById('copia-chiave')?.addEventListener('click', copiaChiave)

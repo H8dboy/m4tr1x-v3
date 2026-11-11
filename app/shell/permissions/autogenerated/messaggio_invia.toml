@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-messaggio-invia"
+description = "Enables the messaggio_invia command without any pre-configured scope."
+commands.allow = ["messaggio_invia"]
+
+[[permission]]
+identifier = "deny-messaggio-invia"
+description = "Denies the messaggio_invia command without any pre-configured scope."
+commands.deny = ["messaggio_invia"]
