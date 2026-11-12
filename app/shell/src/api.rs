@@ -91,6 +91,55 @@ impl From<m4tr1x_feed::Feed> for Feed {
     }
 }
 
+/// Una discussione del forum, GIÀ verificata nel lato Rust (m4tr1x-feed → m4tr1x-protocol). Titolo e testo
+/// si mostrano solo con `textContent`.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Discussione {
+    pub id: String,
+    pub autore: String,
+    pub nome: Option<String>,
+    pub titolo: String,
+    pub testo: String,
+    pub creato: u64,
+    pub risposte: u32,
+    pub attivita: u64,
+}
+
+impl From<m4tr1x_feed::Discussione> for Discussione {
+    fn from(d: m4tr1x_feed::Discussione) -> Self {
+        Self { id: d.id, autore: d.autore, nome: d.nome, titolo: d.titolo, testo: d.testo, creato: d.creato, risposte: d.risposte, attivita: d.attivita }
+    }
+}
+
+/// Il forum: discussioni dalla più attiva; `scartati` = eventi non validi, contati e mai mostrati.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Forum {
+    pub discussioni: Vec<Discussione>,
+    pub scartati: u32,
+}
+
+impl From<m4tr1x_feed::Forum> for Forum {
+    fn from(f: m4tr1x_feed::Forum) -> Self {
+        Self { discussioni: f.discussioni.into_iter().map(Discussione::from).collect(), scartati: u32::try_from(f.scartati).unwrap_or(u32::MAX) }
+    }
+}
+
+/// Una discussione aperta con le sue risposte (dalla più vecchia).
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct DiscussioneAperta {
+    pub discussione: Discussione,
+    pub risposte: Vec<Post>,
+}
+
+impl From<m4tr1x_feed::DiscussioneAperta> for DiscussioneAperta {
+    fn from(d: m4tr1x_feed::DiscussioneAperta) -> Self {
+        Self {
+            discussione: d.discussione.into(),
+            risposte: d.risposte.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome }).collect(),
+        }
+    }
+}
+
 /// Un messaggio privato, GIÀ aperto e controllato nel lato Rust (m4tr1x-posta → m4tr1x-dm). Il testo si
 /// mostra solo con `textContent`.
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]

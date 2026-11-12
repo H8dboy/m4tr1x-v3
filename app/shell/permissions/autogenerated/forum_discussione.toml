@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-forum-discussione"
+description = "Enables the forum_discussione command without any pre-configured scope."
+commands.allow = ["forum_discussione"]
+
+[[permission]]
+identifier = "deny-forum-discussione"
+description = "Denies the forum_discussione command without any pre-configured scope."
+commands.deny = ["forum_discussione"]

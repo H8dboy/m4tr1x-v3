@@ -11,10 +11,17 @@ use tokio_tungstenite::tungstenite::Message;
 /// Contenuto che il relay finto rifiuta (`OK` false), per provare il "no" del nodo.
 pub const CONTENUTO_RIFIUTATO: &str = "relay finto: rifiutami";
 
-/// Un evento passa il filtro NIP-01 (solo `kinds`, `authors`, `ids`: quelli che usa l'app).
+/// Un evento passa il filtro NIP-01 (`kinds`, `authors`, `ids` e i filtri di tag `#x` che usa l'app, come il nodo).
 fn passa(filtro: &Value, e: &Value) -> bool {
     let in_elenco = |chiave: &str, valore: &Value| filtro.get(chiave).and_then(Value::as_array).is_none_or(|l| l.contains(valore));
-    in_elenco("kinds", &e["kind"]) && in_elenco("authors", &e["pubkey"]) && in_elenco("ids", &e["id"])
+    let tag_ok = filtro.as_object().is_none_or(|o| {
+        o.iter().filter(|(k, _)| k.starts_with('#') && k.len() == 2).all(|(k, valori)| {
+            let nome = &k[1..];
+            let valori = valori.as_array().cloned().unwrap_or_default();
+            e["tags"].as_array().is_some_and(|ts| ts.iter().any(|t| t[0].as_str() == Some(nome) && valori.contains(&t[1])))
+        })
+    });
+    in_elenco("kinds", &e["kind"]) && in_elenco("authors", &e["pubkey"]) && in_elenco("ids", &e["id"]) && tag_ok
 }
 
 /// Accetta il WebSocket sul flusso e a ogni `REQ` risponde con `eventi` e poi `EOSE`.

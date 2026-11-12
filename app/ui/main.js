@@ -31,7 +31,7 @@ function icona(/** @type {string} */ nome) {
 
 // ─── Sezioni ──────────────────────────────────────────────────────────────────
 
-const VISTE = ['signal', 'messaggi', 'profilo', 'rete']
+const VISTE = ['signal', 'forum', 'messaggi', 'profilo', 'rete']
 
 function apriVista(/** @type {string} */ nome) {
   if (!VISTE.includes(nome)) return
@@ -46,6 +46,7 @@ function apriVista(/** @type {string} */ nome) {
   }
   if (nome === 'profilo' && identita && !profiloChiesto) caricaProfilo()
   if (nome === 'messaggi' && identita && !postaChiesta) caricaPosta()
+  if (nome === 'forum' && !forumChiesto) caricaForum()
 }
 
 // ─── Stato di Tor ─────────────────────────────────────────────────────────────
@@ -316,6 +317,122 @@ async function salvaProfilo() {
   })
 }
 
+// ─── Forum ────────────────────────────────────────────────────────────────────
+// Stesso schema della v2. Discussioni e risposte arrivano GIÀ verificate dal lato Rust; qui solo textContent.
+// Si scrive firmando con la tua identità nel lato Rust (come i post).
+
+/** @typedef {{id: string, autore: string, nome: string|null, titolo: string, testo: string, creato: number, risposte: number, attivita: number}} Discussione */
+
+let forumChiesto = false
+let forumInCorso = false
+/** id della discussione aperta @type {string|null} */ let discAperta = null
+
+/** @param {Discussione} d */
+function chiDi(d) {
+  return d.nome ? String(d.nome) : `${String(d.autore).slice(0, 12)}…`
+}
+
+/** @param {Discussione} d */
+function voceDiscussione(d) {
+  const li = document.createElement('li')
+  const b = document.createElement('button')
+  b.type = 'button'
+  const t = document.createElement('span')
+  t.className = 'titolo-disc'
+  t.textContent = String(d.titolo) || 'Senza titolo'
+  const a = document.createElement('span')
+  a.className = 'anteprima'
+  a.textContent = String(d.testo).slice(0, 160)
+  const m = document.createElement('span')
+  m.className = 'meta'
+  const n = document.createElement('span')
+  n.className = 'n'
+  n.textContent = Number(d.risposte) === 1 ? '1 risposta' : `${Number(d.risposte)} risposte`
+  m.append(`${chiDi(d)} · ${quando(Number(d.attivita))} · `, n)
+  b.append(t, a, m)
+  b.addEventListener('click', () => apriDiscussione(String(d.id)))
+  li.append(b)
+  return li
+}
+
+/** @param {string} comando @param {() => Promise<void>} lavoro */
+async function conFaseForum(comando, lavoro) {
+  if (forumInCorso) return
+  forumInCorso = true
+  const bottoni = ['forum-aggiorna', 'forum-pubblica', 'disc-rispondi'].map(id => /** @type {HTMLButtonElement|null} */ (document.getElementById(id)))
+  bottoni.forEach(b => { if (b) b.disabled = true })
+  const fase = setInterval(async () => {
+    const a = await invoke('forum_avanzamento').catch(() => null)
+    if (a) mostra('forum-stato', testoFase(a))
+  }, 1000)
+  mostra('forum-stato', comando)
+  try { await lavoro() } catch (e) { mostra('forum-stato', String(e)) } finally {
+    clearInterval(fase)
+    bottoni.forEach(b => { if (b) b.disabled = false })
+    forumInCorso = false
+  }
+}
+
+function vediElenco() {
+  discAperta = null
+  nascondi('forum-aperta', true)
+  nascondi('forum-elenco', false)
+}
+
+async function caricaForum() {
+  forumChiesto = true
+  await conFaseForum('cerco le discussioni sul nodo…', async () => {
+    const f = await invoke('forum')
+    const lista = Array.isArray(f.discussioni) ? f.discussioni : []
+    document.getElementById('forum-lista')?.replaceChildren(...lista.map(voceDiscussione))
+    nascondi('forum-vuoto', lista.length > 0)
+    const scartati = Number(f.scartati) ? ` · ${Number(f.scartati)} scartati (non validi)` : ''
+    mostra('forum-stato', `${lista.length} discussioni${scartati}`)
+    vediElenco()
+  })
+}
+
+async function apriDiscussione(/** @type {string} */ id) {
+  await conFaseForum('apro la discussione…', async () => {
+    const d = await invoke('forum_discussione', { id })
+    if (!d) { mostra('forum-stato', 'discussione non trovata sul nodo'); return }
+    discAperta = String(d.discussione.id)
+    mostra('disc-titolo', String(d.discussione.titolo) || 'Senza titolo')
+    mostra('disc-chi', `${chiDi(d.discussione)} · ${quando(Number(d.discussione.creato))}`)
+    mostra('disc-testo', String(d.discussione.testo))
+    document.getElementById('disc-risposte')?.replaceChildren(...d.risposte.map(voce))
+    mostra('forum-stato', d.risposte.length === 1 ? '1 risposta' : `${d.risposte.length} risposte`)
+    nascondi('forum-elenco', true)
+    nascondi('forum-aperta', false)
+  })
+}
+
+async function pubblicaDiscussione() {
+  const titolo = campo('forum-titolo'), testo = campo('forum-testo')
+  if (!titolo.value.trim() || !testo.value.trim()) { mostra('forum-stato', 'servono titolo e testo'); return }
+  let fatto = false
+  await conFaseForum('firmo e cerco il nodo…', async () => {
+    await invoke('forum_pubblica', { titolo: titolo.value, testo: testo.value })
+    titolo.value = ''; testo.value = ''
+    nascondi('forum-scrivi', true)
+    fatto = true
+  })
+  if (fatto) await caricaForum() // si rilegge dal nodo: compare com'è stata firmata e verificata
+}
+
+async function rispondiDiscussione() {
+  const casella = campo('disc-risposta')
+  if (!discAperta || !casella.value.trim()) return
+  const id = discAperta
+  let fatto = false
+  await conFaseForum('firmo e cerco il nodo…', async () => {
+    await invoke('forum_rispondi', { id, testo: casella.value })
+    casella.value = ''
+    fatto = true
+  })
+  if (fatto) await apriDiscussione(id)
+}
+
 // ─── Nodo ─────────────────────────────────────────────────────────────────────
 // L'indirizzo si scrive qui e si controlla nel lato Rust (solo onion v3). Non torna indietro:
 // l'interfaccia sa solo se un nodo c'è.
@@ -471,6 +588,12 @@ async function inviaMessaggio() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
+  document.getElementById('forum-aggiorna')?.addEventListener('click', caricaForum)
+  document.getElementById('forum-nuova')?.addEventListener('click', () => { nascondi('forum-scrivi', false); campo('forum-titolo').focus() })
+  document.getElementById('forum-annulla')?.addEventListener('click', () => nascondi('forum-scrivi', true))
+  document.getElementById('forum-pubblica')?.addEventListener('click', pubblicaDiscussione)
+  document.getElementById('forum-indietro')?.addEventListener('click', vediElenco)
+  document.getElementById('disc-rispondi')?.addEventListener('click', rispondiDiscussione)
   aggiornaNodo()
   document.getElementById('posta-aggiorna')?.addEventListener('click', caricaPosta)
   document.getElementById('posta-nuovo')?.addEventListener('click', () => { aperta = 'nuovo'; disegnaPosta() })

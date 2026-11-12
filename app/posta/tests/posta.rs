@@ -144,7 +144,8 @@ async fn due_utenti_si_scrivono_e_al_nodo_arrivano_solo_buste_e_annunci() {
 
     // Bruno legge: il messaggio è attribuito ad Anna perché il SUO annuncio rivendica la chiave del sigillo
     let posta = leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
-    assert_eq!(posta.scartate, 1, "la copia di Anna (cifrata per lei) non si apre con la chiave di Bruno: contata e basta");
+    // il nodo filtra per destinatario (#p, come quello vero): la copia di Anna, cifrata per lei, a Bruno non arriva
+    assert_eq!(posta.scartate, 0);
     assert_eq!(posta.conversazioni.len(), 1);
     let c = &posta.conversazioni[0];
     assert_eq!(c.identita.as_deref(), Some(anna.identita.as_str()));

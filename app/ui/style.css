@@ -180,6 +180,22 @@ button, input, textarea { font: inherit; color: inherit; }
 .av-0 { color: #00ff88; } .av-1 { color: #4ca6ff; } .av-2 { color: #f5c451; } .av-3 { color: #b48cff; }
 .av-4 { color: #ff9a4d; } .av-5 { color: #ff5c8d; } .av-6 { color: #5eead4; } .av-7 { color: #e8edf2; }
 
+/* ── Forum ──────────────────────────────────────────────────────────────── */
+.discussioni { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.discussioni button {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px;
+}
+.discussioni button:hover { border-color: var(--border-hi); }
+.discussioni .titolo-disc { display: block; font: 600 15px var(--font-body); color: var(--text); overflow-wrap: anywhere; }
+.discussioni .anteprima { display: block; margin-top: 4px; font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.discussioni .meta, .chi-disc { display: block; margin-top: 8px; font: 11px var(--font-mono); color: var(--text-muted); }
+.discussioni .meta .n { color: #b48cff; }
+#forum-indietro { margin-bottom: 12px; }
+.discussione-aperta h2 { font: 600 18px var(--font-body); margin-bottom: 4px; overflow-wrap: anywhere; }
+.discussione-aperta .testo { margin-top: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#disc-risposte { margin-bottom: 14px; }
+
 /* ── Messaggi privati ───────────────────────────────────────────────────── */
 .vista.larga { max-width: 920px; }
 .posta { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; align-items: start; }

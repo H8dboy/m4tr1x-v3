@@ -27,3 +27,7 @@ name = "misura"
 # examples/pubblica.rs: pubblicazione di un post firmato via Tor su un nodo vero (solo prove)
 [[example]]
 name = "pubblica"
+
+# examples/forum.rs: discussione e risposta su un nodo vero via Tor (solo prove)
+[[example]]
+name = "forum"

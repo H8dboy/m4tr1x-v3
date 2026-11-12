@@ -24,6 +24,9 @@
     <symbol id="i-dm" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
     <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 4l9 16H3l9-16z"></path><path d="M12 10v4M12 17v.5"></path></symbol>
+    <symbol id="i-forum" viewBox="0 0 24 24"><path d="M3 9l9-5 9 5"></path><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8"></path><path d="M3 20h18"></path></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"></path></symbol>
+    <symbol id="i-reply" viewBox="0 0 24 24"><path d="M10 8L4 13l6 5"></path><path d="M4 13h10a6 6 0 0 1 6 6"></path></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></symbol>
   </svg>
 
@@ -35,6 +38,9 @@
       <nav class="voci" aria-label="Sezioni">
         <button type="button" class="voce attiva" data-vista="signal" aria-current="page">
           <svg class="ic"><use href="#i-signal"></use></svg><span>Signal</span>
+        </button>
+        <button type="button" class="voce" data-vista="forum">
+          <svg class="ic"><use href="#i-forum"></use></svg><span>Forum</span>
         </button>
         <button type="button" class="voce" data-vista="messaggi">
           <svg class="ic"><use href="#i-dm"></use></svg><span>Messaggi</span>
@@ -91,6 +97,63 @@
         <p id="feed-stato" class="tenue stato-feed" aria-live="polite"></p>
         <ol id="feed-lista" class="feed"></ol>
         <p id="feed-vuoto" class="vuoto tenue">Qui compaiono i post del nodo, verificati uno per uno prima di essere mostrati.</p>
+      </section>
+
+      <!-- ── FORUM ──────────────────────────────────────────────────────────── -->
+      <section class="vista" id="vista-forum" aria-labelledby="t-forum" hidden>
+        <header class="barra">
+          <h1 id="t-forum">Forum</h1>
+          <div class="riga">
+            <button type="button" id="forum-nuova" class="tasto contorno solo-con-identita" hidden>
+              <svg class="ic"><use href="#i-plus"></use></svg><span>Nuova</span>
+            </button>
+            <button type="button" id="forum-aggiorna" class="tasto contorno">
+              <svg class="ic"><use href="#i-refresh"></use></svg><span>Aggiorna</span>
+            </button>
+          </div>
+        </header>
+        <p id="forum-stato" class="tenue stato-feed" aria-live="polite"></p>
+
+        <div id="forum-scrivi" class="scheda" hidden>
+          <label for="forum-titolo" class="etichetta">Titolo</label>
+          <input id="forum-titolo" class="campo" maxlength="120" autocomplete="off">
+          <label for="forum-testo" class="etichetta">Testo</label>
+          <textarea id="forum-testo" class="campo" rows="4" maxlength="2000"></textarea>
+          <div class="riga">
+            <span class="cresce"></span>
+            <button type="button" id="forum-annulla" class="tasto contorno">Annulla</button>
+            <button type="button" id="forum-pubblica" class="tasto pieno">
+              <svg class="ic"><use href="#i-send"></use></svg><span>Pubblica</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="forum-elenco">
+          <ol id="forum-lista" class="discussioni"></ol>
+          <p id="forum-vuoto" class="vuoto tenue">Qui compaiono le discussioni del forum, verificate una per una.</p>
+        </div>
+
+        <div id="forum-aperta" hidden>
+          <button type="button" id="forum-indietro" class="tasto contorno piccolo">
+            <svg class="ic"><use href="#i-back"></use></svg><span>Discussioni</span>
+          </button>
+          <article class="scheda discussione-aperta">
+            <h2 id="disc-titolo"></h2>
+            <p id="disc-chi" class="chi-disc"></p>
+            <p id="disc-testo" class="testo"></p>
+          </article>
+          <ol id="disc-risposte" class="feed"></ol>
+          <div class="scheda solo-con-identita" hidden>
+            <label for="disc-risposta" class="etichetta">La tua risposta</label>
+            <textarea id="disc-risposta" class="campo" rows="3" maxlength="2000"></textarea>
+            <div class="riga">
+              <span class="cresce"></span>
+              <button type="button" id="disc-rispondi" class="tasto pieno">
+                <svg class="ic"><use href="#i-reply"></use></svg><span>Rispondi</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ── MESSAGGI PRIVATI ───────────────────────────────────────────────── -->

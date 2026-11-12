@@ -507,6 +507,17 @@ module.exports = [
     find: "    if KIND_VIETATI.contains(&kind) {\n        return Err(Rifiuto::KindVietato(kind));\n    }\n    if tags.iter().any(|t| t.is_empty())", replace: "    if tags.iter().any(|t| t.is_empty())", test: T("inv-19-dm-wrap"), timeoutMs: 900000 },
   { id: "dm-ruolo-incarta", rule: "I-19", name: "si incarta anche con una chiave che non è di ruolo DM", file: "app/dm/src/lib.rs",
     find: "    if mittente.ruolo() != Ruolo::Dm {\n        return Err(ErroreDm::Ruolo);\n    }\n    let dest", replace: "    let dest", test: T("inv-19-dm-wrap"), timeoutMs: 900000 },
+  // I-63: forum (schema della v2, verificato nel lato Rust)
+  { id: "forum-risposta-come-discussione", rule: "I-63", name: "una risposta (con tag e) conta come discussione", file: "app/protocol/src/lib.rs",
+    find: "    if !e_del_forum(e) || e.tags.iter().any(|t| t[0] == \"e\") {\n        return None;\n    }\n    let sub", replace: "    if !e_del_forum(e) {\n        return None;\n    }\n    let sub", test: T("inv-63-forum"), timeoutMs: 900000 },
+  { id: "forum-piu-tag-e", rule: "I-63", name: "una risposta con più tag e si attribuisce alla prima discussione", file: "app/protocol/src/lib.rs",
+    find: "        [t] => t.get(1).filter(|id| esadecimale_minuscolo(id, 64)).cloned(),", replace: "        [t, ..] => t.get(1).filter(|id| esadecimale_minuscolo(id, 64)).cloned(),", test: T("inv-63-forum"), timeoutMs: 900000 },
+  { id: "forum-nel-feed", rule: "I-63", name: "il forum finisce nel feed di Signal", file: "app/feed/src/lib.rs",
+    find: "            Ok(e) if e.kind == 1 && m4tr1x_protocol::e_del_forum(&e) => {}\n", replace: "", test: T("inv-63-forum"), timeoutMs: 900000 },
+  { id: "forum-titolo-sporco", rule: "I-63", name: "titoli con caratteri di direzione non ripuliti", file: "app/protocol/src/lib.rs",
+    find: "    let senza: String = s.chars().filter(|&c| !c.is_control() && !ingannevole(c)).collect();\n    senza.split_whitespace().collect::<Vec<_>>().join(\" \").chars().take(MASSIMO_TITOLO).collect()", replace: "    s.trim().chars().take(MASSIMO_TITOLO).collect()", test: T("inv-63-forum"), timeoutMs: 900000 },
+  { id: "forum-radice-non-controllata", rule: "I-63", name: "si apre come discussione l'evento con l'id chiesto anche se è una risposta", file: "app/feed/src/lib.rs",
+    find: "    let Some(titolo) = m4tr1x_protocol::discussione_da_evento(&e) else { return Ok(None) };\n    let mut risposte", replace: "    let titolo = m4tr1x_protocol::discussione_da_evento(&e).unwrap_or_default();\n    let mut risposte", test: T("inv-63-forum"), timeoutMs: 900000 },
   // I-62: i messaggi privati dentro l'app (m4tr1x-posta + guscio)
   { id: "posta-annuncio-di-un-altro", rule: "I-62", name: "si cifra per la chiave DM dell'annuncio più recente, di chiunque sia", file: "app/posta/src/lib.rs",
     find: "            (autore == identita).then_some((ora, id, chiavi))", replace: "            { let _ = (&autore, identita); Some((ora, id, chiavi)) }", test: T("inv-62-posta-app"), timeoutMs: 900000 },
