@@ -1,4 +1,4 @@
-# Nota di ripresa — 20/10/2026
+# Nota di ripresa — 12/11/2026
 
 > Fonte di verità: codice e test.
 
@@ -112,19 +112,35 @@
 75. **I-01 dinamica ATTIVA, su `main` (`9b8f852`, squash della PR #1).** CI di `801dee9` letta nel log: feed via Tor in 9 s, 0 violazioni, 6274 pacchetti verso relay (il rosso su `7624337` era il job `tor` in fase rete/pubblicazione: rete). **Buco trovato e chiuso:** `rete.sh controllo` sommava DNS e host esterno, così "ammetti tutto fuori dal loopback" passava (il DNS bastava a far salire il contatore): ora ogni prova si conta da sola. `inv-01-rete` (verifica.js ovunque; regole vere su Linux con sudo, in CI strumenti mancanti = errore), 4 sabotaggi (2 nel job `sabotaggio-linux`: 4/4 prese con base verde). CI di `cd7517f`: controllo positivo 0→4 e 4→6, feed via Tor in 68 s, 0 violazioni, 5031 verso relay; job `test` 220 verdi (gli 8 saltati sono le prove con tor vero, coperte dal job `tor`, come il 21/10). Report completo LOCALE non fatto (officina, niente tor del lock Windows): da fare a casa.
 76. **Cancello del merge (decisione del fondatore):** GitHub gratuito non ha check obbligatori sui repo privati (403 su protezione e rulesets). Fino al repo pubblico al lancio (protezione gratuita), l'UNICO modo di unire su main è `npm run merge -- <PR>` (`tools/merge.js`): squash solo se tutti i job di ci.yml + elenco fisso (i01-rete per primo) sono `success` di GitHub Actions all'ultimo tentativo sull'ultimo commit, PR aperta, non bozza, verso main, merge legato al commit. **MAI merge dal sito, mai push diretti su main.** Test `tests/unit/merge.test.js`, 4 sabotaggi presi.
 
-## Prossimo
+## Fatto l'11/11 e il 12/11 (l'app diventa un social vero; primo nodo v3 in produzione)
 
-1. A casa: tor del lock Windows (bundle da `app/tor-windows.lock.json`, verificare `bundle_sha256`), `M4TR1X_TOR_BIN` e `M4TR1X_TOR_DEL_LOCK`, poi `npm run report` completo.
-2. Campagna completa di sabotaggio a fine giornata (modifica i file: mai mentre si lavora); `docs/generated/sabotage.json` è vecchio (16/10).
-3. Identità/post nella prova I-01 (su Linux il portachiavi è keyutils, funziona in CI); macOS: lock di tor; B (strace) se serve.
-4. Al lancio, repo pubblico: protezione di main con tutti i job obbligatori (i01-rete compreso), poi `tools/merge.js` resta come doppia difesa.
+> Dall'11/11 il fondatore ha delegato le decisioni sul codice: si procede senza chiedere, le azioni verso l'esterno si chiedono. Tutto unito su `main` con `npm run merge` (punto 76), mai dal sito.
 
-- **Per l'installer del nodo (punto 25):** la configurazione di produzione si legge SOLO da file (JSON), così nessuna opzione `…ForTests` che sia una funzione può accendersi.
+77. **#6 — dipendenze:** `crypto-bigint` ritirata dall'indice → fissata a 0.7.11.
+78. **#5 — interfaccia vera dell'app:** sistema visivo "serio" (IBM Plex locale, niente font da rete, I-01 invariata), sezioni Signal / Profilo / Rete.
+79. **#7 — nodo da file per il server:** `m4tr1x-node --config /etc/m4tr1x/node.json` (la configurazione di produzione si legge SOLO da file, punto 25), unità systemd chiusa (`deploy/m4tr1x-node.service`), `deploy/installa-nodo.sh` (utente di sistema, Node 22.23.3 con hash da SHASUMS firmato GPG, tor dal lock Linux con hash di bundle e librerie, codice in /opt non scrivibile dal nodo, passphrase del vault generata, nessuna porta aperta: solo onion).
+80. **#8 — messaggi privati nell'app (F5):** crate `m4tr1x-posta`, **I-62 attiva** (al nodo solo buste 1059 e annunci 10477; chiave DM letta solo dentro la crate). Scelta del nodo dalla sezione Rete. Limite dichiarato in I-62: annuncio DM vecchio riproponibile da un nodo malevolo finché non c'è la scadenza degli annunci.
+81. **#9 — installer con tor incluso:** `node tools/tor/prepara-installer.js` (bundle dal lock, hash di bundle e di ogni file, estrazione in `app/shell/tor-incluso/` fuori da git) poi `cargo tauri build --config tauri.installer.conf.json` da `app/shell`. L'app ricontrolla gli hash contro il lock compilato dentro di lei prima di usare quel tor. Installer NSIS `app/target/release/bundle/nsis/M4TR1X_0.1.0_x64-setup.exe` (non firmato: la firma del codice Windows resta da fare, F8).
+82. **#10 — forum (F6b, schema della v2):** kind 1 con `["t","m4tr1x-forum"]` = discussione, risposta = kind 1 del forum con UN tag `e`; **I-63 attiva**, 5 sabotaggi presi. NIP-72 e le approvazioni dei moderatori (I-42) restano da fare: il forum di oggi è aperto, senza moderazione.
+83. **#11 — reels, film, musica (F6, prima parte):** kind 1063 con tag `m4tr1x-signal`/`-film`/`-music` come la v2; crate `m4tr1x-media` = pulizia dei metadati sul dispositivo senza dipendenze (**I-16 ATTIVA**: JPEG/PNG/MP4/MP3 riscritti, HEIC rifiutato con istruzione "Più compatibile" perché l'immagine sta nel `meta` e la pulizia la distruggerebbe; nei video iPhone trovate tracce `meta` con volti riconosciuti dentro `mdat`, tolte); client HTTP sul flusso onion (`transport/src/http.rs`, solo con `Content-Length`, massimo e tempo); **I-64 attiva**; CSP con `blob:` solo per img/media. Limite: file ≤ 50 MB in un pezzo; niente HEIC/FLAC/OGG. Provato sul nodo Oracle via Tor: caricato, pubblicato, riletto, riscaricato identico.
+84. **Primo nodo v3 in produzione (11/11):** la macchina Oracle del fondatore (Oracle Linux 9, ~500 MB RAM) installata con `deploy/installa-nodo.sh`, rete `m4tr1x-test`, ruolo `user`, ~51 MB di memoria, onion pubblicato in ~20 s; dal PC via Tor post pubblicato e riletto al primo tentativo. La v2 su quella macchina è ferma, con backup delle unità. Onion, passphrase del vault e `secrets.vault.json` stanno fuori dal repo (cartella segreti del fondatore + chiavetta).
+85. **12/11 — identità del fondatore:** creata con `packages/keys` (24 parole, mai nel repo né nei log), chiave pubblica dell'identità negli `uploaders` del nodo Oracle, servizio riavviato. Parole e credenziali del nodo copiate sulla chiavetta e verificate identiche. Il fondatore entra nell'app con "Recupera dal seme".
+86. **12/11 — CI e unioni:** i rossi di #9/#10/#11 erano apt dei runner (`azure.archive.ubuntu.com` non risolto) e poi, sui rilanci, la prova di rete I-01 in fase "pubblicazione" (descrittore non confermato) su tutte e tre nello stesso minuto: rete Tor, rilancio unico come da punto 52, poi tutte verdi. #9 → #10 uniti in squash; #11 risultava in conflitto solo per i due squash (stesso contenuto, commit diversi): main portato dentro `media` con albero verificato identico (`git diff` vuoto contro il ramo), CI rifatta, unita. Il nodo Oracle NON è stato riaggiornato: le tre PR non toccano `node/`, `packages/`, `deploy/` (verificato per hash sui 20 file: identici a main).
+87. **Gotcha nuovi:** l'heredoc di Git Bash mangia le barre (`\\0` in uno script python diventa un NUL vero): gli script con escape si scrivono su file con l'editor. In Tauri un parametro `sezione_` si chiama `sezione` dal JavaScript. Rilanciare i job falliti (`gh run rerun <id> --failed`) prima di guardare il codice SOLO se la fase in testa all'errore è pubblicazione/rete/tor.
 
-- OK del fondatore sulla bozza PEZZI_MANCANTI (tabella in fondo) → numeri I-42…I-50, K16, K17 entrano in SECURITY_INVARIANTS/KEYS.
-- Scrivere la procedura DSA (precondizione di F6).
+## Prossimo (dal 12/11/2026)
+
+**Per far usare l'app a persone fidate (giorni):**
+1. Installer ricostruito da `main` e provato dal fondatore con la sua identità (recupero dal seme, profilo, post, un file).
+2. Report completo con tor vero e campagna di sabotaggio completa su `main` (ultima completa il 16/10): serve un PC con il tor del lock Windows (casa), non l'officina.
+3. Scadenza degli annunci DM (limite di I-62) insieme alla rotazione della chiave DM.
+4. Repo v2: rotazione di `h8identity.enc` mai fatta; al lancio repo pubblico con protezione di `main` (tutti i job, `i01-rete` compreso) e `tools/merge.js` come doppia difesa.
+
+**Fasi del MIGRATION_PLAN ancora aperte:** F6 resto (upload a pezzi da 4 MB, hub HLS per film lunghi, edge, foto profilo con pulizia), F6b resto (NIP-72, moderatori, I-42), F2b metriche, F3b raggiungibilità, F7 H8 (registro, emittente privato, mance con split), F8 aggiornamenti firmati (updater in app e nodo, firma del codice Windows), F9 Android (serve un telefono), F7b/F7c/F10 dopo parere legale e SRLS (Q20), F11 lancio.
 
 ## Fuori dal repo, ancora aperto
-- Sito nderja.com: correggere "identità ML-DSA", "codice pubblico", download Kalendae rotto.
-- Telefono Android per F4a.
-- Repo v2: rotazione di `h8identity.enc` mai fatta.
+- Procedura DSA (`docs/legal/PROCEDURA_DSA.md`) da approvare: precondizione per spingere F6 agli hub.
+- Parere legale MiCA e SRLS prima di qualunque vendita di H8.
+- Sito nderja.com: "identità Nostr (Schnorr); registro H8 e aggiornamenti post-quantum (ML-DSA-65)", "codice pubblico" solo al lancio, download Kalendae rotto.
+- Telefono Android per F9.
+- Un secondo nodo che non sia del fondatore.
