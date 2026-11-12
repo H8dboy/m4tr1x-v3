@@ -44,6 +44,20 @@ Nessuno di questi usa l'esagono: quella parte è da costruire e misurare.
 - **Edge:** cache dello strato grezzo di tutto e dei raffinamenti più richiesti.
 - **App:** mostra lo strato grezzo appena arriva e sostituisce le celle man mano che arrivano le versioni fini.
 
+## Conseguenza (fondatore, 12/11/2026): può togliere l'hub convertitore
+
+Se la griglia si calcola **sul dispositivo di chi carica**, al momento dell'upload, in rete non serve più una macchina
+che riceve l'originale, lo converte e firma il manifest: spariscono il ruolo `hub` come convertitore, la chiave K8 e
+il rischio "due hub caduti = video nuovi fermi". Il manifest delle celle lo firma l'autore, come la scheda di oggi.
+Resta solo **un nodo con disco e banda** che tiene i blob: non è un ruolo speciale, è il "nodo dei file" già
+presente nell'app (12/11). Niente calcolo, niente fiducia in più.
+
+**Il rischio da non sottovalutare:** è un formato video nuovo; nessun telefono o browser lo codifica o decodifica da
+solo, e un codec da zero è il lavoro più duro del campo. **Strada che tiene l'idea e schiva il rischio:** le celle sì,
+il codec no. Ogni cella si codifica con un formato che l'hardware sa già leggere (es. AV1/HEVC a più livelli di
+finezza); griglia adattiva, separazione colore/dettaglio e raffinamento progressivo stanno nel modo in cui si spezza,
+si spedisce e si ricompone. Il telefono usa il suo decoder; il risultato per la rete è lo stesso.
+
 ## Domande aperte prima di progettarla
 
 - La misura di complessità che decide il numero di celle (energia dei bordi? varianza locale? movimento tra fotogrammi?) e quanti livelli di finezza per cella.
