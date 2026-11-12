@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-avanzamento"
+description = "Enables the media_avanzamento command without any pre-configured scope."
+commands.allow = ["media_avanzamento"]
+
+[[permission]]
+identifier = "deny-media-avanzamento"
+description = "Denies the media_avanzamento command without any pre-configured scope."
+commands.deny = ["media_avanzamento"]

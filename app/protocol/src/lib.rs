@@ -301,6 +301,129 @@ pub fn risposta_a(e: &Evento) -> Option<String> {
     }
 }
 
+// ─── File: reels, film, musica (stesso schema della v2: kind 1063 NIP-94 con tag `t` della sezione) ──────
+// La scheda dice SOLO: hash del file (`x`), tipo (`m`, da un elenco chiuso), dimensione, sezione, titolo. Il file
+// sta sul nodo per hash; chi lo scarica ricontrolla l'hash (I-17) e il tipo dai primi byte.
+
+/// Kind della scheda di un file (NIP-94).
+pub const KIND_FILE: u16 = 1063;
+/// Kind dell'autorizzazione a caricare un file (BUD-02).
+pub const KIND_AUTORIZZAZIONE_FILE: u16 = 24242;
+/// File più grande ammesso in una scheda (come il massimo predefinito del nodo e della pulizia).
+pub const MASSIMO_FILE: u64 = 50 * 1024 * 1024;
+/// Tipi ammessi: gli stessi che la pulizia dei metadati sa trattare (app/media).
+pub const MIME_AMMESSI: [&str; 5] = ["image/jpeg", "image/png", "video/mp4", "audio/mp4", "audio/mpeg"];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum Sezione {
+    /// reels e foto
+    Signal,
+    Film,
+    Musica,
+}
+
+impl Sezione {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Sezione::Signal => "m4tr1x-signal",
+            Sezione::Film => "m4tr1x-film",
+            Sezione::Musica => "m4tr1x-music",
+        }
+    }
+    pub fn da_nome(s: &str) -> Option<Self> {
+        match s {
+            "signal" => Some(Sezione::Signal),
+            "film" => Some(Sezione::Film),
+            "musica" => Some(Sezione::Musica),
+            _ => None,
+        }
+    }
+    /// Che tipi di file ha senso trovare in ogni sezione.
+    pub fn ammette(self, mime: &str) -> bool {
+        match self {
+            Sezione::Signal => matches!(mime, "image/jpeg" | "image/png" | "video/mp4"),
+            Sezione::Film => mime == "video/mp4",
+            Sezione::Musica => matches!(mime, "audio/mp4" | "audio/mpeg"),
+        }
+    }
+}
+
+/// Un file descritto da una scheda verificata.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SchedaFile {
+    pub sha256: String,
+    pub mime: String,
+    pub dimensione: u64,
+    pub sezione: Sezione,
+    pub titolo: String,
+}
+
+/// Tag della scheda di un file scritto dall'app. Errore se qualcosa non è nella forma giusta.
+pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, titolo: &str) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !esadecimale_minuscolo(sha256, 64) {
+        return Err(Rifiuto::Forma("hash del file"));
+    }
+    if !MIME_AMMESSI.contains(&mime) || !sezione.ammette(mime) {
+        return Err(Rifiuto::Forma("tipo di file non adatto alla sezione"));
+    }
+    if dimensione == 0 || dimensione > MASSIMO_FILE {
+        return Err(Rifiuto::Forma("dimensione del file"));
+    }
+    if titolo.chars().count() > MASSIMO_TITOLO {
+        return Err(Rifiuto::Forma("titolo oltre il limite"));
+    }
+    let mut t = vec![
+        vec!["x".into(), sha256.into()],
+        vec!["m".into(), mime.into()],
+        vec!["size".into(), dimensione.to_string()],
+        vec!["t".into(), sezione.tag().into()],
+    ];
+    let titolo = pulisci_titolo(titolo);
+    if !titolo.is_empty() {
+        t.push(vec!["title".into(), titolo]);
+    }
+    Ok(t)
+}
+
+/// La scheda di un file da un evento GIÀ verificato: Some solo se è un kind 1063 con UN hash valido, un tipo
+/// ammesso e adatto a UNA sezione, una dimensione entro il massimo. Tutto il resto (url esterni compresi) si ignora.
+pub fn file_da_evento(e: &Evento) -> Option<SchedaFile> {
+    if e.kind != KIND_FILE {
+        return None;
+    }
+    let uno = |n: &str| -> Option<&String> {
+        let mut v = e.tags.iter().filter(|t| t[0] == n);
+        let primo = v.next()?.get(1)?;
+        v.next().is_none().then_some(primo)
+    };
+    let sha256 = uno("x").filter(|x| esadecimale_minuscolo(x, 64))?.clone();
+    // il tipo deve essere adatto alla sezione (controllo sotto): `ammette` accetta solo tipi di MIME_AMMESSI
+    let mime = uno("m")?.clone();
+    let dimensione: u64 = uno("size")?.parse().ok().filter(|&n| n > 0 && n <= MASSIMO_FILE)?;
+    let sezioni: Vec<Sezione> = [Sezione::Signal, Sezione::Film, Sezione::Musica]
+        .into_iter()
+        .filter(|s| e.tags.iter().any(|t| t[0] == "t" && t.get(1).map(String::as_str) == Some(s.tag())))
+        .collect();
+    let [sezione] = sezioni.as_slice() else { return None };
+    if !sezione.ammette(&mime) {
+        return None;
+    }
+    let titolo = uno("title").map(|t| pulisci_titolo(t)).unwrap_or_default();
+    Some(SchedaFile { sha256, mime, dimensione, sezione: *sezione, titolo })
+}
+
+/// Tag dell'autorizzazione a caricare il file `sha256` (BUD-02): vale fino a `scadenza` (al massimo un'ora dopo `ora`,
+/// come chiede il nodo).
+pub fn tag_autorizzazione_file(sha256: &str, ora: u64, scadenza: u64) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !esadecimale_minuscolo(sha256, 64) {
+        return Err(Rifiuto::Forma("hash del file"));
+    }
+    if scadenza <= ora || scadenza > ora + 3600 {
+        return Err(Rifiuto::Forma("scadenza dell'autorizzazione"));
+    }
+    Ok(vec![vec!["t".into(), "upload".into()], vec!["x".into(), sha256.into()], vec!["expiration".into(), scadenza.to_string()]])
+}
+
 /// Id dell'evento in esadecimale: SHA-256 della serializzazione NIP-01.
 /// `serde_json` scrive le stringhe come `JSON.stringify` (stessi caratteri scappati, stesso
 /// `\u00XX` minuscolo, niente `\/`, U+2028 lasciato com'è): lo provano i vettori.

@@ -9,7 +9,7 @@
 pub mod api;
 pub mod api_seme;
 
-use api::{Avanzamento, Discussione, DiscussioneAperta, Feed, Forum, Identita, Messaggio, Post, Posta, Profilo, Stato};
+use api::{Avanzamento, Discussione, DiscussioneAperta, Feed, FilePronto, Forum, Galleria, Identita, Media, Messaggio, Post, Posta, Profilo, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::{firma_come_identita, Portachiavi, Sistema};
@@ -113,7 +113,12 @@ struct Operazioni {
     profilo: Operazione,
     posta: Operazione,
     forum: Operazione,
+    media: Operazione,
 }
+
+/// Il file scelto per la pubblicazione, GIÀ pulito (I-16): solo il contenuto, mai il nome né il percorso.
+#[derive(Default)]
+struct FileScelto(Mutex<Option<(Vec<u8>, &'static str)>>);
 
 /// Aspetta che tor sia pronto (al massimo il tempo di bootstrap del trasporto), segnalando la fase.
 /// "Spento" con tor configurato = sta per partire (app appena aperta): si aspetta; si smette solo su errore.
@@ -338,6 +343,138 @@ async fn profilo_salva(nome: String, descrizione: String, rete: tauri::State<'_,
 #[tauri::command]
 fn profilo_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.profilo.fase()
+}
+
+// ─── Reels, film, musica ─────────────────────────────────────────────────────
+// Si pubblica in due passi: `media_prepara` riceve i byte del file scelto (corpo grezzo dell'IPC, niente nome né
+// percorso) e lo PULISCE qui (I-16); `media_pubblica` firma l'autorizzazione, carica il file pulito, firma e
+// pubblica la scheda. Si guarda con `media` (schede verificate) e `media_file` (byte verificati per hash e tipo).
+
+fn sezione_da(s: &str) -> Result<m4tr1x_protocol::Sezione, String> {
+    m4tr1x_protocol::Sezione::da_nome(s).ok_or_else(|| "sezione sconosciuta".to_string())
+}
+
+/// Le schede di una sezione ("signal", "film", "musica").
+#[tauri::command]
+async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Galleria, String> {
+    let sez = sezione_da(&sezione)?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let op = &op.media;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra operazione sui file è in corso".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::leggi_media(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, sez, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+            .await
+            .map(Galleria::from)
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Il tipo trovato nei primi byte corrisponde a quello dichiarato dalla scheda?
+fn tipo_coerente(b: &[u8], mime: &str) -> bool {
+    use m4tr1x_media::Tipo;
+    matches!((m4tr1x_media::tipo(b), mime), (Some(Tipo::Jpeg), "image/jpeg") | (Some(Tipo::Png), "image/png") | (Some(Tipo::Mp4), "video/mp4" | "audio/mp4") | (Some(Tipo::Mp3), "audio/mpeg"))
+}
+
+/// I byte di un file, scaricati via Tor e accettati SOLO se l'hash è quello chiesto (I-17) e i primi byte sono del
+/// tipo dichiarato. Tornano grezzi all'interfaccia, che li mostra con un indirizzo `blob:` del tipo della scheda.
+#[tauri::command]
+async fn media_file(sha256: String, mime: String, dimensione: u64, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<tauri::ipc::Response, String> {
+    if sha256.len() != 64 || !sha256.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) {
+        return Err("hash del file non valido".into());
+    }
+    if !m4tr1x_protocol::MIME_AMMESSI.contains(&mime.as_str()) || dimensione == 0 || dimensione > m4tr1x_protocol::MASSIMO_FILE {
+        return Err("scheda del file non valida".into());
+    }
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let op = &op.media;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra operazione sui file è in corso".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::scarica_file(&*tor, &nodo, &sha256, dimensione as usize, |f| op.imposta(Avanzamento::from(&f)))
+            .await
+            .map_err(|e| format!("file non scaricato: {}", e.ultimo))
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    let b = esito?;
+    if !tipo_coerente(&b, &mime) {
+        return Err("il file non è del tipo che dichiara la scheda: scartato".into());
+    }
+    Ok(tauri::ipc::Response::new(b))
+}
+
+/// Riceve il file scelto (corpo grezzo dell'IPC) e lo pulisce SUL computer (I-16). Il file pulito resta qui
+/// in attesa di `media_pubblica`; all'interfaccia tornano solo tipo e dimensioni.
+#[tauri::command]
+fn media_prepara(request: tauri::ipc::Request<'_>, scelto: tauri::State<'_, FileScelto>) -> Result<FilePronto, String> {
+    let tauri::ipc::InvokeBody::Raw(b) = request.body() else { return Err("serve il contenuto del file".into()) };
+    let prima = b.len() as u64;
+    let (tipo, pulito) = m4tr1x_media::ripulisci(b).map_err(|e| e.to_string())?;
+    let mime = tipo.mime(tipo == m4tr1x_media::Tipo::Mp4 && m4tr1x_media::mp4_solo_audio(&pulito));
+    let pronto = FilePronto { mime: mime.into(), dimensione: pulito.len() as u64, prima };
+    *scelto.0.lock().unwrap() = Some((pulito, mime));
+    Ok(pronto)
+}
+
+/// Pubblica il file preparato nella sezione, con titolo e didascalia: autorizzazione firmata (valida 10 minuti),
+/// caricamento del file PULITO, scheda firmata. La firma passa da `firma_con_la_mia_identita`.
+#[tauri::command]
+async fn media_pubblica(sezione: String, titolo: String, testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>, scelto: tauri::State<'_, FileScelto>) -> Result<Media, String> {
+    let sez = sezione_da(&sezione)?;
+    if testo.chars().count() > m4tr1x_protocol::MASSIMO_TESTO_POST {
+        return Err(format!("la didascalia supera i {} caratteri", m4tr1x_protocol::MASSIMO_TESTO_POST));
+    }
+    let (file, mime) = scelto.0.lock().unwrap().clone().ok_or("scegli prima un file")?;
+    let sha = m4tr1x_transport::http::sha256_hex(&file);
+    let tags = m4tr1x_protocol::tag_file(sez, &sha, mime, file.len() as u64, &titolo).map_err(|e| match e {
+        m4tr1x_protocol::Rifiuto::Forma(m) => m.to_string(),
+        altro => altro.to_string(),
+    })?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
+    let tag_aut = m4tr1x_protocol::tag_autorizzazione_file(&sha, ora, ora + 600).map_err(|e| e.to_string())?;
+    let aut = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_AUTORIZZAZIONE_FILE, "Carico un file", &tag_aut).map_err(|e| format!("autorizzazione non firmata: {e}"))?;
+    let scheda = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_FILE, testo.trim(), &tags).map_err(|e| format!("scheda non firmata: {e}"))?;
+    let intestazione = m4tr1x_transport::http::autorizzazione(&serde_json::to_string(&aut).map_err(|e| e.to_string())?);
+    let op = &op.media;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra operazione sui file è in corso".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        match m4tr1x_feed::carica_file(&*tor, &nodo, &intestazione, &file, |f| op.imposta(Avanzamento::from(&f))).await {
+            Ok(m4tr1x_transport::http::Caricato::Accettato) => {}
+            Ok(m4tr1x_transport::http::Caricato::Rifiutato { stato, motivo }) => return Err(format!("il nodo non ha accettato il file ({stato}): {motivo}")),
+            Err(e) => return Err(format!("il file non è partito: il nodo non risponde ancora. Riprova tra un minuto ({})", e.ultimo)),
+        }
+        m4tr1x_feed::pubblica(&*tor, &nodo, &scheda, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map_err(|e| match e {
+            m4tr1x_feed::ErrorePubblica::Rifiutato(m) => format!("il nodo ha rifiutato la scheda: {m}"),
+            m4tr1x_feed::ErrorePubblica::NonRaggiungibile(n) => format!("file caricato, scheda non partita: riprova tra un minuto ({})", n.ultimo),
+        })
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito?;
+    *scelto.0.lock().unwrap() = None;
+    let file = m4tr1x_protocol::file_da_evento(&scheda).ok_or("scheda non leggibile")?;
+    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into() })
+}
+
+/// Fase dell'operazione sui file in corso, per l'interfaccia.
+#[tauri::command]
+fn media_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
+    op.media.fase()
 }
 
 // ─── Forum ───────────────────────────────────────────────────────────────────
@@ -605,6 +742,7 @@ pub fn costruisci<R: Runtime>(
 ) -> Builder<R> {
     b.manage(StatoSeme::default())
         .manage(Operazioni::default())
+        .manage(FileScelto::default())
         .manage(Chiavi(chiavi))
         .setup(move |app| {
             prima(app)?;
@@ -620,7 +758,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento])
 }
 
 pub fn run() {
