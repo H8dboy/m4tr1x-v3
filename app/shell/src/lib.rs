@@ -128,6 +128,13 @@ async fn attendi_tor(tor: &TorProcessTransport, op: &Operazione) -> Result<(), S
     Ok(())
 }
 
+/// Il tor incluso nell'installer (`tools/tor/prepara-installer.js` lo mette nelle risorse `tor/`), se c'è.
+fn tor_incluso<R: Runtime>(app: &tauri::App<R>) -> Option<PathBuf> {
+    let nome = if cfg!(windows) { "tor.exe" } else { "tor" };
+    let p = app.path().resource_dir().ok()?.join("tor").join(nome);
+    p.is_file().then_some(p)
+}
+
 /// Avvia tor in background: hash dal lock incluso alla compilazione, cartella dati dell'app.
 /// Gli errori restano nello stato del trasporto (`Errore`); all'interfaccia arriva solo "errore" (api.rs).
 fn avvia_rete<R: Runtime>(app: &tauri::App<R>) -> Result<Rete, Box<dyn std::error::Error>> {
@@ -135,7 +142,11 @@ fn avvia_rete<R: Runtime>(app: &tauri::App<R>) -> Result<Rete, Box<dyn std::erro
     let dati_app = dati.clone();
     // desktop = tor come processo (ADR-0016 aggiornata il 21/10/2026); mobile = Arti, non ancora fatto
     let desktop = cfg!(any(windows, target_os = "linux", target_os = "macos"));
-    let cfg = if desktop { TorProcessConfig::per_l_app(std::env::var_os("M4TR1X_TOR_BIN").map(PathBuf::from), dati) } else { None };
+    // tor: quello indicato da M4TR1X_TOR_BIN (sviluppo e prove), altrimenti quello incluso nell'installer
+    // (risorsa `tor/`). In entrambi i casi l'hash si controlla contro il lock PRIMA di usarlo (I-37):
+    // un tor cambiato nella cartella d'installazione non parte.
+    let tor_bin = std::env::var_os("M4TR1X_TOR_BIN").map(PathBuf::from).or_else(|| tor_incluso(app));
+    let cfg = if desktop { TorProcessConfig::per_l_app(tor_bin, dati) } else { None };
     let tor = cfg.map(|c| Arc::new(TorProcessTransport::new(c)));
     if let Some(t) = tor.clone() {
         tauri::async_runtime::spawn(async move {
