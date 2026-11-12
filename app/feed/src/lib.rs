@@ -40,6 +40,8 @@ pub enum Fase {
     NonRaggiungibile { secondi: u64, tentativo: u32 },
     /// budget scaduto: "il nodo non risponde ancora, Tor continua a cercarlo: riprovo tra N s"
     AttesaRipresa { fra_secondi: u64 },
+    /// un file a pezzi (ADR-0005): `fatti` pezzi su `totali` sono già passati; `verso_il_nodo` = caricamento
+    Pezzo { fatti: u32, totali: u32, secondi: u64, verso_il_nodo: bool },
 }
 
 /// Un post verificato.
@@ -493,4 +495,166 @@ pub async fn carica_file<T: Transport>(t: &T, nodo: &OnionV3, autorizzazione: &s
     let (r, secondi, tentativi) = con_ripresa(avanza, una_volta).await?;
     avanza(Fase::Fatto { secondi, tentativo: tentativi });
     Ok(r)
+}
+
+// ─── File a pezzi (ADR-0005) ──────────────────────────────────────────────────
+// Ogni blob del nodo è al massimo un PEZZO (4 MB). Un file più grande viaggia a fette: ognuna si carica (o si
+// scarica) da sola, con i suoi tentativi; un caricamento interrotto riprende dai pezzi che il nodo ha già
+// (HEAD). Chi scarica accetta ogni pezzo solo con il suo hash e, alla fine, il file ricomposto solo con l'hash
+// e la dimensione della scheda (I-17): un nodo non può sostituire un pezzo né aggiungerne.
+
+/// Le fette di un file come le vuole la scheda: una sola se il file sta in un pezzo, altrimenti da `PEZZO` byte
+/// (l'ultima più corta). Un file vuoto non ha fette.
+pub fn fette(file: &[u8]) -> Vec<&[u8]> {
+    let pezzo = usize::try_from(m4tr1x_protocol::PEZZO).unwrap_or(usize::MAX);
+    file.chunks(pezzo).collect()
+}
+
+/// Gli hash dei pezzi da scrivere nella scheda: nessuno se il file sta in un blob solo.
+pub fn hash_dei_pezzi(file: &[u8]) -> Vec<String> {
+    if file.len() as u64 <= m4tr1x_protocol::PEZZO {
+        vec![]
+    } else {
+        fette(file).into_iter().map(m4tr1x_transport::http::sha256_hex).collect()
+    }
+}
+
+/// Hash e dimensione attesi di ogni pezzo da scaricare, dalla scheda (`sha256` del file intero, `pezzi` in ordine).
+/// None se i pezzi non sono nella forma giusta per quella dimensione (vedi `m4tr1x_protocol::pezzi_validi`).
+pub fn pezzi_attesi(sha256: &str, dimensione: u64, pezzi: &[String]) -> Option<Vec<(String, usize)>> {
+    if dimensione == 0 || !m4tr1x_protocol::pezzi_validi(dimensione, pezzi) {
+        return None;
+    }
+    let dim = usize::try_from(dimensione).ok()?;
+    if pezzi.is_empty() {
+        return Some(vec![(sha256.to_string(), dim)]);
+    }
+    let pezzo = usize::try_from(m4tr1x_protocol::PEZZO).ok()?;
+    let ultimo = dim - pezzo * (pezzi.len() - 1);
+    Some(pezzi.iter().enumerate().map(|(i, p)| (p.clone(), if i + 1 == pezzi.len() { ultimo } else { pezzo })).collect())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ErroreCarico {
+    /// il nodo ha detto no a un pezzo (è una risposta: non si ritenta)
+    Rifiutato { stato: u16, motivo: String },
+    NonRaggiungibile(NonRaggiungibile),
+    /// l'autorizzazione di un pezzo non si è potuta firmare
+    Autorizzazione(String),
+}
+
+/// Carica un file GIÀ pulito, a pezzi, sul nodo dei file. Per ogni pezzo: se il nodo ce l'ha già si salta
+/// (ripresa di un caricamento interrotto); altrimenti `autorizza(sha_del_pezzo)` firma l'intestazione per QUEL
+/// pezzo (una chiave letta solo quando serve) e il pezzo parte. Un "no" del nodo ferma tutto.
+pub async fn carica_file_a_pezzi<T: Transport>(t: &T, nodo: &OnionV3, file: &[u8], autorizza: impl Fn(&str) -> Result<String, String>, avanza: impl Fn(Fase)) -> Result<(), ErroreCarico> {
+    let avanza = &avanza;
+    let fette = fette(file);
+    let totali = u32::try_from(fette.len()).unwrap_or(u32::MAX);
+    let t0 = Instant::now();
+    for (i, fetta) in fette.iter().enumerate() {
+        let fatti = u32::try_from(i).unwrap_or(u32::MAX);
+        avanza(Fase::Pezzo { fatti, totali, secondi: t0.elapsed().as_secs(), verso_il_nodo: true });
+        let sha = m4tr1x_transport::http::sha256_hex(fetta);
+        let sha = sha.as_str();
+        let budget = BUDGET + m4tr1x_transport::http::tempo_per(fetta.len());
+        let gia = || async move {
+            con_tentativi(BUDGET, avanza, |_, _| async move {
+                let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
+                m4tr1x_transport::http::esiste(flusso, nodo, sha).await
+            })
+            .await
+        };
+        let (c_e, _, _) = con_ripresa(avanza, gia).await.map_err(ErroreCarico::NonRaggiungibile)?;
+        if c_e {
+            continue;
+        }
+        let autorizzazione = autorizza(sha).map_err(ErroreCarico::Autorizzazione)?;
+        let autorizzazione = autorizzazione.as_str();
+        let manda = || async move {
+            con_tentativi(budget, avanza, |tentativo, t0| async move {
+                let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
+                avanza(Fase::Invio { secondi: t0.elapsed().as_secs(), tentativo });
+                m4tr1x_transport::http::carica(flusso, nodo, autorizzazione, fetta).await
+            })
+            .await
+        };
+        let (esito, _, _) = con_ripresa(avanza, manda).await.map_err(ErroreCarico::NonRaggiungibile)?;
+        if let m4tr1x_transport::http::Caricato::Rifiutato { stato, motivo } = esito {
+            return Err(ErroreCarico::Rifiutato { stato, motivo });
+        }
+    }
+    avanza(Fase::Pezzo { fatti: totali, totali, secondi: t0.elapsed().as_secs(), verso_il_nodo: true });
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ErroreScarico {
+    /// la scheda non descrive pezzi nella forma giusta
+    Scheda,
+    /// nessuna fonte raggiungibile ha il pezzo (le fonti che non rispondono si lasciano perdere)
+    NessunaFonte { pezzo: usize, ultimo: String },
+    /// il file ricomposto non ha l'hash o la dimensione della scheda: scartato
+    NonCorrisponde,
+}
+
+/// Scarica un file dalla sua scheda (`sha256` intero, `dimensione`, `pezzi`), pezzo per pezzo, dalle `fonti` in
+/// ordine (prima il nodo dei file, poi il nodo): una fonte che non ha il pezzo si salta, una che non risponde entro il
+/// budget si lascia perdere per i pezzi dopo. Ogni pezzo si accetta solo con il suo hash; il file ricomposto solo
+/// con l'hash e la dimensione della scheda (I-17).
+pub async fn scarica_file_a_pezzi<T: Transport>(t: &T, fonti: &[OnionV3], sha256: &str, dimensione: u64, pezzi: &[String], avanza: impl Fn(Fase)) -> Result<Vec<u8>, ErroreScarico> {
+    let avanza = &avanza;
+    let attesi = pezzi_attesi(sha256, dimensione, pezzi).ok_or(ErroreScarico::Scheda)?;
+    let totali = u32::try_from(attesi.len()).unwrap_or(u32::MAX);
+    let mut vive: Vec<&OnionV3> = fonti.iter().collect();
+    let mut file: Vec<u8> = Vec::with_capacity(usize::try_from(dimensione).unwrap_or(0));
+    let t0 = Instant::now();
+    for (i, (sha, quanto)) in attesi.iter().enumerate() {
+        avanza(Fase::Pezzo { fatti: u32::try_from(i).unwrap_or(u32::MAX), totali, secondi: t0.elapsed().as_secs(), verso_il_nodo: false });
+        let (sha, quanto) = (sha.as_str(), *quanto);
+        let budget = BUDGET + m4tr1x_transport::http::tempo_per(quanto);
+        let mut trovato: Option<Vec<u8>> = None;
+        let mut ultimo = String::from("nessuna fonte");
+        let mut morte: Vec<usize> = vec![];
+        for (f, fonte) in vive.iter().enumerate() {
+            let fonte = *fonte;
+            let una_volta = || async move {
+                con_tentativi(budget, avanza, |tentativo, t0| async move {
+                    let flusso = t.connect_onion(fonte, 80, ISOLAMENTO_FEED).await?;
+                    avanza(Fase::Scarico { secondi: t0.elapsed().as_secs(), tentativo });
+                    m4tr1x_transport::http::scarica_se_ce(flusso, fonte, sha, quanto).await
+                })
+                .await
+            };
+            use m4tr1x_transport::http::Scaricato;
+            match con_ripresa(avanza, una_volta).await {
+                Ok((Scaricato::File(b), _, _)) => {
+                    trovato = Some(b);
+                    break;
+                }
+                Ok((Scaricato::NonCeLHa, _, _)) => ultimo = "la fonte non ha questo pezzo".into(),
+                // una fonte che manda un altro pezzo mente: non si ritenta e non le si chiede più niente (I-17)
+                Ok((Scaricato::HashDiverso, _, _)) => {
+                    ultimo = "la fonte ha mandato un pezzo con hash diverso: scartato".into();
+                    morte.push(f);
+                }
+                Err(e) => {
+                    ultimo = e.ultimo;
+                    morte.push(f);
+                }
+            }
+        }
+        for f in morte.into_iter().rev() {
+            vive.remove(f);
+        }
+        let b = trovato.ok_or(ErroreScarico::NessunaFonte { pezzo: i + 1, ultimo })?;
+        if b.len() != quanto {
+            return Err(ErroreScarico::NonCorrisponde);
+        }
+        file.extend_from_slice(&b);
+    }
+    if file.len() as u64 != dimensione || m4tr1x_transport::http::sha256_hex(&file) != sha256 {
+        return Err(ErroreScarico::NonCorrisponde);
+    }
+    avanza(Fase::Pezzo { fatti: totali, totali, secondi: t0.elapsed().as_secs(), verso_il_nodo: false });
+    Ok(file)
 }
