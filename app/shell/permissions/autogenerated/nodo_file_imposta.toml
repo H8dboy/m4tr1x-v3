@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-nodo-file-imposta"
+description = "Enables the nodo_file_imposta command without any pre-configured scope."
+commands.allow = ["nodo_file_imposta"]
+
+[[permission]]
+identifier = "deny-nodo-file-imposta"
+description = "Denies the nodo_file_imposta command without any pre-configured scope."
+commands.deny = ["nodo_file_imposta"]

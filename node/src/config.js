@@ -10,6 +10,8 @@
 const { NETWORKS } = require('../../packages/protocol')
 
 const ROLES = Object.freeze(['user', 'edge', 'hub', 'anchor'])
+/** Un pezzo di file (ADR-0005): la stessa costante di `m4tr1x_protocol::PEZZO` nell'app. */
+const PEZZO_BYTES = 4 * 1024 * 1024
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
 
 /**
@@ -66,7 +68,9 @@ function normalize(c) {
     allowedOrigins: list(c.allowedOrigins),
     allowedHosts: list(c.allowedHosts).map(h => h.toLowerCase()),
     uploaders: list(c.uploaders).filter(p => /^[0-9a-f]{64}$/.test(p)),
-    maxBlobBytes: c.maxBlobBytes ?? 50 * 1024 * 1024,
+    // un blob = al massimo un PEZZO (ADR-0005, 4 MiB): i file più grandi arrivano a pezzi, ognuno un blob; così un
+    // nodo piccolo non riceve mai un corpo più grande di questo e un caricamento interrotto riprende dai pezzi mancanti
+    maxBlobBytes: c.maxBlobBytes ?? PEZZO_BYTES,
     quotaBytes: c.quotaBytes ?? 2 * 1024 * 1024 * 1024,
     peers: list(c.peers),
     allowLoopbackPeersForTests: !!c.allowLoopbackPeersForTests,
@@ -108,4 +112,4 @@ function normalize(c) {
   return cfg
 }
 
-module.exports = { ROLES, normalize }
+module.exports = { ROLES, PEZZO_BYTES, normalize }

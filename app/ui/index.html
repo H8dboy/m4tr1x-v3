@@ -341,6 +341,16 @@
             <button type="button" id="nodo-salva" class="tasto pieno">Usa questo nodo</button>
           </div>
         </div>
+        <div class="scheda">
+          <label for="nodo-file-indirizzo" class="etichetta">Nodo dei file</label>
+          <p id="nodo-file-attuale" class="tenue"></p>
+          <input id="nodo-file-indirizzo" class="campo mono" maxlength="80" autocomplete="off" spellcheck="false" placeholder="indirizzo .onion del nodo dei file (facoltativo)">
+          <div class="riga">
+            <span id="nodo-file-stato" class="tenue cresce" aria-live="polite"></span>
+            <button type="button" id="nodo-file-togli" class="tasto contorno" hidden>Torna al tuo nodo</button>
+            <button type="button" id="nodo-file-salva" class="tasto pieno">Usa per i file</button>
+          </div>
+        </div>
         <div class="scheda garanzie">
           <p class="etichetta">Cosa fa questa app, sempre</p>
           <ul>

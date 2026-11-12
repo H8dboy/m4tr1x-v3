@@ -34,12 +34,18 @@ test('guscio: si pulisce prima di tutto, si tiene e si carica solo il file pulit
   assert.ok(!/Some\(\(b\.|to_vec\(\), mime\)\)/.test(prepara), 'media_prepara tiene il file originale')
   const pubblica = corpo(lib, 'media_pubblica')
   assert.match(pubblica, /scelto\.0\.lock\(\)/, 'media_pubblica non usa il file preparato')
-  assert.match(pubblica, /carica_file\(&\*tor, &nodo, &intestazione, &file,/, 'media_pubblica carica un file diverso da quello preparato')
+  assert.match(pubblica, /carica_file_a_pezzi\(&\*tor, &nodo_file, &file, autorizza,/, 'media_pubblica carica un file diverso da quello preparato, o non a pezzi')
+  assert.match(pubblica, /let pezzi = m4tr1x_feed::hash_dei_pezzi\(&file\);/, 'la scheda non elenca i pezzi del file pulito')
   assert.ok(!/std::fs|PathBuf|read_to/.test(prepara + pubblica), 'si legge un file dal disco: deve arrivare solo il contenuto scelto')
   const scarica = corpo(lib, 'media_file')
   assert.match(scarica, /if !tipo_coerente\(&b, &mime\)/, 'media_file non controlla il tipo del file scaricato')
+  assert.match(scarica, /!m4tr1x_protocol::pezzi_validi\(dimensione, &pezzi\)/, 'media_file non controlla la forma dei pezzi')
+  assert.match(scarica, /scarica_file_a_pezzi\(&\*tor, &fonti, &sha256, dimensione, &pezzi,/, 'media_file non scarica a pezzi dalle fonti')
   const http = read(path.join(APP, 'transport', 'src', 'http.rs'))
-  assert.match(corpo(http, 'scarica'), /if sha256_hex\(&r\.corpo\) != sha256 \{/, 'il client dei file non controlla l\'hash')
+  assert.match(corpo(http, 'scarica_se_ce'), /if sha256_hex\(&r\.corpo\) != sha256 \{/, 'il client dei file non controlla l\'hash')
+  const feed = read(path.join(APP, 'feed', 'src', 'lib.rs'))
+  assert.match(corpo(feed, 'scarica_file_a_pezzi'), /if file\.len\(\) as u64 != dimensione \|\| m4tr1x_transport::http::sha256_hex\(&file\) != sha256 \{/, 'il file ricomposto non si controlla contro la scheda')
+  assert.match(corpo(feed, 'scarica_file_a_pezzi'), /Scaricato::HashDiverso, _, _\)\) => \{[\s\S]*?morte\.push\(f\);/, 'una fonte che manda un pezzo con hash diverso non si lascia perdere')
   const conf = JSON.parse(fs.readFileSync(path.join(APP, 'shell', 'tauri.conf.json'), 'utf8')).app.security.csp
   assert.equal(conf['img-src'], "'self' blob:")
   assert.equal(conf['media-src'], "'self' blob:")
@@ -50,12 +56,16 @@ test('interfaccia: al lato Rust va solo il contenuto del file, mai il nome', () 
   const js = read(path.join(APP, 'ui', 'main.js'))
   assert.match(js, /invoke\('media_prepara', new Uint8Array\(await f\.arrayBuffer\(\)\)\)/)
   assert.ok(!/f\.name|\.webkitRelativePath|\.path\b/.test(js), 'l\'interfaccia legge il nome o il percorso del file')
+  // i pezzi della scheda tornano al lato Rust così come sono: lì si controllano (l'interfaccia non ricompone niente)
+  assert.match(js, /invoke\('media_file', \{ sha256: m\.file\.sha256, mime: m\.file\.mime, dimensione: m\.file\.dimensione, pezzi: /)
+  assert.ok(!/crypto\.subtle|\.digest\(/.test(js), 'l\'interfaccia calcola hash: è compito del lato Rust')
 })
 
 test('file (Rust): client HTTP del trasporto e schede della sezione', { skip: cargo.status !== 0 ? 'cargo non disponibile' : false, timeout: 900000 }, () => {
   for (const [pacchetto, argomenti, prove] of /** @type {[string, string[], string[]][]} */ ([
-    ['m4tr1x-transport', ['--lib', 'http::'], ['scarica_solo_il_file_con_l_hash_chiesto', 'risposte_strane_si_rifiutano', 'un_nodo_che_non_risponde_scade', 'carica_manda_l_autorizzazione_e_legge_il_motivo_di_un_no']],
+    ['m4tr1x-transport', ['--lib', 'http::'], ['scarica_solo_il_file_con_l_hash_chiesto', 'risposte_strane_si_rifiutano', 'un_nodo_che_non_risponde_scade', 'carica_manda_l_autorizzazione_e_legge_il_motivo_di_un_no', 'esiste_chiede_con_head_e_legge_solo_le_intestazioni', 'scarica_se_ce_distingue_il_404_dagli_errori']],
     ['m4tr1x-feed', ['--test', 'media'], ['in_ogni_sezione_solo_schede_valide_dalla_piu_recente', 'schede_e_autorizzazioni_si_scrivono_solo_nella_forma_giusta']],
+    ['m4tr1x-feed', ['--test', 'pezzi'], ['fette_hash_e_forme_delle_schede', 'si_carica_a_pezzi_e_la_seconda_volta_si_saltano_quelli_che_il_nodo_ha_gia', 'un_no_del_nodo_ferma_il_caricamento_senza_ritentare', 'si_scarica_a_pezzi_dalle_fonti_in_ordine_e_si_ricompone_solo_il_file_giusto', 'un_nodo_che_sostituisce_o_accorcia_un_pezzo_non_passa']],
   ])) {
     const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(APP, 'Cargo.toml'), '-p', pacchetto, ...argomenti],
       { cwd: APP, encoding: 'utf8', timeout: 900000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })

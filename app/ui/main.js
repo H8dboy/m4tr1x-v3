@@ -146,8 +146,18 @@ function testoFase(a) {
     case 'scarico': return `nodo trovato, scarico i post… ${s} s`
     case 'invio': return `nodo trovato, invio… ${s} s`
     case 'attesa_ripresa': return `il nodo non risponde ancora, Tor continua a cercarlo: riprovo tra ${s} s`
+    case 'carico_pezzo': return pezzi(a, 'carico')
+    case 'scarico_pezzo': return pezzi(a, 'scarico')
     default: return ''
   }
+}
+
+/** "carico il pezzo 3 di 12… 41 s" (un pezzo = 4 MB; i pezzi già sul nodo si saltano). */
+function pezzi(/** @type {any} */ a, /** @type {string} */ verbo) {
+  const fatti = Number(a.pezzi_fatti), totali = Number(a.pezzi_totali), s = Number(a.secondi)
+  if (totali <= 1) return `${verbo} il file… ${s} s`
+  if (fatti >= totali) return `${verbo === 'carico' ? 'caricati' : 'scaricati'} ${totali} pezzi su ${totali} ✓`
+  return `${verbo} il pezzo ${fatti + 1} di ${totali}… ${s} s`
 }
 
 /** "adesso", "12 min", "3 h", poi la data. */
@@ -327,7 +337,7 @@ async function salvaProfilo() {
 // controllati (hash e tipo) e si mostra con un indirizzo blob: del tipo della scheda (elenco chiuso nel lato Rust).
 // Per pubblicare, i byte del file scelto vanno al lato Rust, che lo PULISCE prima di tutto il resto.
 
-/** @typedef {{sha256: string, mime: string, dimensione: number, sezione: string, titolo: string}} FileMedia */
+/** @typedef {{sha256: string, mime: string, dimensione: number, sezione: string, titolo: string, pezzi: string[]}} FileMedia */
 /** @typedef {{id: string, autore: string, nome: string|null, testo: string, creato: number, file: FileMedia}} Media */
 
 /** @type {typeof SEZIONI[keyof typeof SEZIONI]} */ let sezioneAperta = SEZIONI.reels
@@ -413,7 +423,8 @@ async function caricaMedia() {
 async function apriMedia(m) {
   await conFaseMedia(`scarico ${mega(Number(m.file.dimensione))} via Tor…`, async () => {
     /** @type {ArrayBuffer} */
-    const byte = await invoke('media_file', { sha256: m.file.sha256, mime: m.file.mime, dimensione: m.file.dimensione })
+    // i pezzi tornano al lato Rust così come sono arrivati dalla scheda verificata: lì si controllano hash e numero
+    const byte = await invoke('media_file', { sha256: m.file.sha256, mime: m.file.mime, dimensione: m.file.dimensione, pezzi: Array.isArray(m.file.pezzi) ? m.file.pezzi : [] })
     chiudiVisore()
     const tipo = String(m.file.mime)
     urlAperto = URL.createObjectURL(new Blob([byte], { type: tipo }))
@@ -441,7 +452,7 @@ async function sceltoFile() {
   if (pub) pub.disabled = true
   mostra('media-pulito', '')
   if (!f) return
-  if (f.size > 50 * 1024 * 1024) { mostra('media-pulito', 'file troppo grande (massimo 50 MB)'); return }
+  if (f.size > 1024 * 1024 * 1024) { mostra('media-pulito', 'file troppo grande (massimo 1 GB)'); return }
   mostra('media-pulito', 'pulisco il file sul tuo computer…')
   try {
     // solo il CONTENUTO: il nome del file e la cartella non vanno al lato Rust né al nodo
@@ -610,6 +621,25 @@ async function salvaNodo() {
   }
 }
 
+// Nodo dei file (hub): dove vanno reels, film e musica. Facoltativo: senza, i file stanno sul nodo.
+async function aggiornaNodoFile() {
+  const si = await invoke('nodo_file_impostato').catch(() => false)
+  mostra('nodo-file-attuale', si ? 'I file vanno a un nodo dei file separato. Puoi cambiarlo, o tornare al tuo nodo.' : 'I file (reels, film, musica) vanno al tuo nodo. Se c\'è un nodo dei file con più banda, scrivilo qui.')
+  nascondi('nodo-file-togli', !si)
+}
+
+async function salvaNodoFile(/** @type {boolean} */ togli) {
+  const c = campo('nodo-file-indirizzo')
+  try {
+    await invoke('nodo_file_imposta', { indirizzo: togli ? '' : c.value })
+    c.value = ''
+    mostra('nodo-file-stato', togli ? 'i file tornano al tuo nodo ✓' : 'nodo dei file impostato ✓')
+    await aggiornaNodoFile()
+  } catch (e) {
+    mostra('nodo-file-stato', String(e))
+  }
+}
+
 // ─── Messaggi privati ─────────────────────────────────────────────────────────
 // Le buste si aprono e si incartano nel lato Rust (m4tr1x-posta): qui arrivano testi già controllati e
 // chiavi PUBBLICHE. Una conversazione senza `identita` è di un mittente SCONOSCIUTO: nessun nome, nessuna
@@ -741,6 +771,9 @@ async function inviaMessaggio() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
+  document.getElementById('nodo-file-salva')?.addEventListener('click', () => salvaNodoFile(false))
+  document.getElementById('nodo-file-togli')?.addEventListener('click', () => salvaNodoFile(true))
+  aggiornaNodoFile()
   document.getElementById('media-aggiorna')?.addEventListener('click', caricaMedia)
   document.getElementById('media-nuovo')?.addEventListener('click', () => nascondi('media-scrivi', false))
   document.getElementById('media-annulla')?.addEventListener('click', () => nascondi('media-scrivi', true))

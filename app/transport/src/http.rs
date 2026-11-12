@@ -47,6 +47,12 @@ struct Risposta {
 
 /// Legge una risposta HTTP/1.1 con `Content-Length` ≤ `massimo`, entro `scadenza`.
 async fn leggi_risposta(f: &mut Stream, massimo: usize, scadenza: Instant) -> Result<Risposta> {
+    leggi_risposta_a(f, massimo, scadenza, true).await
+}
+
+/// Come sopra; con `con_corpo = false` (risposta a una `HEAD`) si leggono solo le intestazioni: il
+/// `Content-Length` dice quanto è grande il file ma il corpo non arriva.
+async fn leggi_risposta_a(f: &mut Stream, massimo: usize, scadenza: Instant, con_corpo: bool) -> Result<Risposta> {
     let mut testa = Vec::with_capacity(1024);
     let mut b = [0u8; 1];
     // byte per byte fino a CRLF CRLF: le intestazioni sono poche e corte, e così il corpo non si legge per sbaglio
@@ -87,13 +93,36 @@ async fn leggi_risposta(f: &mut Stream, massimo: usize, scadenza: Instant) -> Re
     if n > massimo {
         return Err(errore(format!("risposta troppo grande ({n} byte, massimo {massimo})")));
     }
+    if !con_corpo {
+        return Ok(Risposta { stato, corpo: vec![] });
+    }
     let mut corpo = vec![0u8; n];
     timeout_at(scadenza, f.read_exact(&mut corpo)).await.map_err(|_| errore("tempo massimo superato"))?.map_err(errore)?;
     Ok(Risposta { stato, corpo })
 }
 
 /// Scarica il file `sha256` dal nodo: al massimo `massimo` byte, e SOLO se l'hash torna (I-17).
-pub async fn scarica(mut f: Stream, host: &OnionV3, sha256: &str, massimo: usize) -> Result<Vec<u8>> {
+/// Un nodo che non ce l'ha, o che manda un altro file, è un errore come gli altri; per distinguerli c'è [`scarica_se_ce`].
+pub async fn scarica(f: Stream, host: &OnionV3, sha256: &str, massimo: usize) -> Result<Vec<u8>> {
+    match scarica_se_ce(f, host, sha256, massimo).await? {
+        Scaricato::File(b) => Ok(b),
+        Scaricato::NonCeLHa => Err(errore("il nodo non ha questo file")),
+        Scaricato::HashDiverso => Err(errore("il file ricevuto non è quello chiesto (hash diverso): scartato")),
+    }
+}
+
+/// Esito di [`scarica_se_ce`]: il file (con l'hash giusto), oppure una RISPOSTA del nodo che non è un guasto di rete
+/// e quindi non si ritenta: non ce l'ha (404), o ha mandato un altro file (mente: si passa a un'altra fonte).
+#[derive(Debug, PartialEq, Eq)]
+pub enum Scaricato {
+    File(Vec<u8>),
+    NonCeLHa,
+    HashDiverso,
+}
+
+/// Come [`scarica`], ma un 404 e un file con l'hash sbagliato tornano come esiti, non come errori: chi scarica a
+/// pezzi da più fonti passa alla prossima senza ritentare su questa. Il file si accetta SOLO con l'hash chiesto (I-17).
+pub async fn scarica_se_ce(mut f: Stream, host: &OnionV3, sha256: &str, massimo: usize) -> Result<Scaricato> {
     if !sha_valido(sha256) {
         return Err(errore("hash del file non valido"));
     }
@@ -104,13 +133,32 @@ pub async fn scarica(mut f: Stream, host: &OnionV3, sha256: &str, massimo: usize
     let _ = f.shutdown().await;
     match r.stato {
         200 => {}
-        404 => return Err(errore("il nodo non ha questo file")),
+        404 => return Ok(Scaricato::NonCeLHa),
         s => return Err(errore(format!("il nodo ha risposto {s}"))),
     }
     if sha256_hex(&r.corpo) != sha256 {
-        return Err(errore("il file ricevuto non è quello chiesto (hash diverso): scartato"));
+        return Ok(Scaricato::HashDiverso);
     }
-    Ok(r.corpo)
+    Ok(Scaricato::File(r.corpo))
+}
+
+/// Il nodo ha già il blob `sha256`? (`HEAD /blob/<sha>`: 200 sì, 404 no). Serve a riprendere un caricamento a
+/// pezzi da dove si era interrotto senza rimandare quello che c'è già. Non dice niente sul contenuto: chi scarica
+/// verifica comunque l'hash.
+pub async fn esiste(mut f: Stream, host: &OnionV3, sha256: &str) -> Result<bool> {
+    if !sha_valido(sha256) {
+        return Err(errore("hash del file non valido"));
+    }
+    let scadenza = Instant::now() + tempo_per(0);
+    let richiesta = format!("HEAD /blob/{sha256} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", host.host());
+    timeout_at(scadenza, f.write_all(richiesta.as_bytes())).await.map_err(|_| errore("tempo massimo superato"))?.map_err(errore)?;
+    let r = leggi_risposta_a(&mut f, usize::MAX, scadenza, false).await?;
+    let _ = f.shutdown().await;
+    match r.stato {
+        200 => Ok(true),
+        404 => Ok(false),
+        s => Err(errore(format!("il nodo ha risposto {s}"))),
+    }
 }
 
 /// L'intestazione `Authorization` di un caricamento: `Nostr <base64 dell'evento kind 24242 firmato>`.
@@ -235,6 +283,38 @@ mod tests {
         let (client, _server) = tokio::io::duplex(1024);
         let e = scarica(Box::pin(client), &host(), &sha256_hex(b"x"), 1024).await.unwrap_err().to_string();
         assert!(e.contains("tempo massimo"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn esiste_chiede_con_head_e_legge_solo_le_intestazioni() {
+        let sha = sha256_hex(b"pezzo");
+        // 200 con Content-Length ma SENZA corpo (è una HEAD): non si aspetta nessun byte
+        let (f, h) = nodo_finto(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Type: application/octet-stream\r\n\r\n".to_vec());
+        assert!(esiste(f, &host(), &sha).await.unwrap());
+        let richiesta = String::from_utf8(h.await.unwrap()).unwrap();
+        assert!(richiesta.starts_with(&format!("HEAD /blob/{sha} HTTP/1.1\r\nHost: {}\r\n", host().host())), "{richiesta}");
+        let (f, _) = nodo_finto(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec());
+        assert!(!esiste(f, &host(), &sha).await.unwrap());
+        let (f, _) = nodo_finto(b"HTTP/1.1 500 Boh\r\nContent-Length: 0\r\n\r\n".to_vec());
+        assert!(esiste(f, &host(), &sha).await.is_err());
+        let (f, _) = nodo_finto(vec![]);
+        assert!(esiste(f, &host(), "../x").await.is_err(), "hash non valido usato in un percorso");
+    }
+
+    #[tokio::test]
+    async fn scarica_se_ce_distingue_il_404_dagli_errori() {
+        let file = b"un pezzo".to_vec();
+        let sha = sha256_hex(&file);
+        let (f, _) = nodo_finto(ok(&file));
+        assert_eq!(scarica_se_ce(f, &host(), &sha, 1024).await.unwrap(), Scaricato::File(file));
+        let (f, _) = nodo_finto(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec());
+        assert_eq!(scarica_se_ce(f, &host(), &sha, 1024).await.unwrap(), Scaricato::NonCeLHa);
+        // un altro file al posto di quello chiesto: il nodo mente, i byte non si consegnano (I-17)
+        let (f, _) = nodo_finto(ok(b"altro"));
+        assert_eq!(scarica_se_ce(f, &host(), &sha, 1024).await.unwrap(), Scaricato::HashDiverso);
+        // un guasto (risposta non HTTP) resta un errore: quello sì si ritenta
+        let (f, _) = nodo_finto(b"SSH-2.0-OpenSSH\r\n\r\n".to_vec());
+        assert!(scarica_se_ce(f, &host(), &sha, 1024).await.is_err());
     }
 
     #[tokio::test]

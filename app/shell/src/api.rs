@@ -99,6 +99,8 @@ pub struct FileMedia {
     pub dimensione: u64,
     pub sezione: String,
     pub titolo: String,
+    /// hash dei pezzi in ordine (vuoto = un blob solo): l'interfaccia li ripassa a `media_file` così come sono
+    pub pezzi: Vec<String>,
 }
 
 impl From<m4tr1x_protocol::SchedaFile> for FileMedia {
@@ -108,7 +110,7 @@ impl From<m4tr1x_protocol::SchedaFile> for FileMedia {
             m4tr1x_protocol::Sezione::Film => "film",
             m4tr1x_protocol::Sezione::Musica => "musica",
         };
-        Self { sha256: f.sha256, mime: f.mime, dimensione: f.dimensione, sezione: sezione.into(), titolo: f.titolo }
+        Self { sha256: f.sha256, mime: f.mime, dimensione: f.dimensione, sezione: sezione.into(), titolo: f.titolo, pezzi: f.pezzi }
     }
 }
 
@@ -253,29 +255,34 @@ pub struct Avanzamento {
     pub fase: String,
     pub secondi: u64,
     pub tentativo: u32,
+    /// file a pezzi: quanti pezzi sono passati su quanti (0/0 fuori da un trasferimento a pezzi)
+    pub pezzi_fatti: u32,
+    pub pezzi_totali: u32,
 }
 
 impl Avanzamento {
     pub fn fermo() -> Self {
-        Self { fase: "fermo".into(), secondi: 0, tentativo: 0 }
+        Self { fase: "fermo".into(), secondi: 0, tentativo: 0, pezzi_fatti: 0, pezzi_totali: 0 }
     }
     pub fn tor(secondi: u64) -> Self {
-        Self { fase: "tor".into(), secondi, tentativo: 0 }
+        Self { fase: "tor".into(), secondi, tentativo: 0, pezzi_fatti: 0, pezzi_totali: 0 }
     }
 }
 
 impl From<&m4tr1x_feed::Fase> for Avanzamento {
     fn from(f: &m4tr1x_feed::Fase) -> Self {
         use m4tr1x_feed::Fase::*;
-        let (fase, secondi, tentativo) = match *f {
-            CercoIlNodo { secondi, tentativo } => ("cerco", secondi, tentativo),
-            Scarico { secondi, tentativo } => ("scarico", secondi, tentativo),
-            Invio { secondi, tentativo } => ("invio", secondi, tentativo),
-            Fatto { secondi, tentativo } => ("fatto", secondi, tentativo),
-            NonRaggiungibile { secondi, tentativo } => ("non_raggiungibile", secondi, tentativo),
-            AttesaRipresa { fra_secondi } => ("attesa_ripresa", fra_secondi, 0),
+        let (fase, secondi, tentativo, pezzi) = match *f {
+            CercoIlNodo { secondi, tentativo } => ("cerco", secondi, tentativo, (0, 0)),
+            Scarico { secondi, tentativo } => ("scarico", secondi, tentativo, (0, 0)),
+            Invio { secondi, tentativo } => ("invio", secondi, tentativo, (0, 0)),
+            Fatto { secondi, tentativo } => ("fatto", secondi, tentativo, (0, 0)),
+            NonRaggiungibile { secondi, tentativo } => ("non_raggiungibile", secondi, tentativo, (0, 0)),
+            AttesaRipresa { fra_secondi } => ("attesa_ripresa", fra_secondi, 0, (0, 0)),
+            Pezzo { fatti, totali, secondi, verso_il_nodo: true } => ("carico_pezzo", secondi, 0, (fatti, totali)),
+            Pezzo { fatti, totali, secondi, verso_il_nodo: false } => ("scarico_pezzo", secondi, 0, (fatti, totali)),
         };
-        Self { fase: fase.into(), secondi, tentativo }
+        Self { fase: fase.into(), secondi, tentativo, pezzi_fatti: pezzi.0, pezzi_totali: pezzi.1 }
     }
 }
 

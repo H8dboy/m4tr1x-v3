@@ -57,9 +57,9 @@ impl Transport for Nodo {
 
 fn eventi() -> Vec<Value> {
     let a = anna();
-    let buono_reel = firma(&a, KIND_FILE, "il mio primo reel", &tag_file(Sezione::Signal, &sha('a'), "video/mp4", 1000, "Primo reel").unwrap(), ORA + 10);
-    let buona_foto = firma(&a, KIND_FILE, "una foto", &tag_file(Sezione::Signal, &sha('b'), "image/jpeg", 500, "").unwrap(), ORA + 5);
-    let buon_brano = firma(&a, KIND_FILE, "un brano", &tag_file(Sezione::Musica, &sha('c'), "audio/mpeg", 3000, "Hajde").unwrap(), ORA);
+    let buono_reel = firma(&a, KIND_FILE, "il mio primo reel", &tag_file(Sezione::Signal, &sha('a'), "video/mp4", 1000, "Primo reel", &[]).unwrap(), ORA + 10);
+    let buona_foto = firma(&a, KIND_FILE, "una foto", &tag_file(Sezione::Signal, &sha('b'), "image/jpeg", 500, "", &[]).unwrap(), ORA + 5);
+    let buon_brano = firma(&a, KIND_FILE, "un brano", &tag_file(Sezione::Musica, &sha('c'), "audio/mpeg", 3000, "Hajde", &[]).unwrap(), ORA);
     let svg = firma(&a, KIND_FILE, "SVG", &[s(&["x", &sha('d')]), s(&["m", "image/svg+xml"]), s(&["size", "10"]), s(&["t", "m4tr1x-signal"])], ORA + 20);
     let html = firma(&a, KIND_FILE, "HTML", &[s(&["x", &sha('d')]), s(&["m", "text/html"]), s(&["size", "10"]), s(&["t", "m4tr1x-signal"])], ORA + 20);
     let due_hash = firma(&a, KIND_FILE, "DUE HASH", &[s(&["x", &sha('a')]), s(&["x", &sha('e')]), s(&["m", "video/mp4"]), s(&["size", "10"]), s(&["t", "m4tr1x-signal"])], ORA + 20);
@@ -91,21 +91,49 @@ async fn in_ogni_sezione_solo_schede_valide_dalla_piu_recente() {
 
 #[test]
 fn schede_e_autorizzazioni_si_scrivono_solo_nella_forma_giusta() {
-    assert!(tag_file(Sezione::Signal, "corto", "video/mp4", 10, "").is_err());
-    assert!(tag_file(Sezione::Signal, &sha('a'), "image/svg+xml", 10, "").is_err());
-    assert!(tag_file(Sezione::Film, &sha('a'), "image/jpeg", 10, "").is_err(), "una foto tra i film");
-    assert!(tag_file(Sezione::Musica, &sha('a'), "video/mp4", 10, "").is_err(), "un video nella musica");
-    assert!(tag_file(Sezione::Signal, &sha('a'), "video/mp4", 0, "").is_err());
-    assert!(tag_file(Sezione::Signal, &sha('a'), "video/mp4", MASSIMO_FILE + 1, "").is_err());
-    let t = tag_file(Sezione::Film, &sha('a'), "video/mp4", 10, "  Il\u{202E} film  ").unwrap();
+    assert!(tag_file(Sezione::Signal, "corto", "video/mp4", 10, "", &[]).is_err());
+    assert!(tag_file(Sezione::Signal, &sha('a'), "image/svg+xml", 10, "", &[]).is_err());
+    assert!(tag_file(Sezione::Film, &sha('a'), "image/jpeg", 10, "", &[]).is_err(), "una foto tra i film");
+    assert!(tag_file(Sezione::Musica, &sha('a'), "video/mp4", 10, "", &[]).is_err(), "un video nella musica");
+    assert!(tag_file(Sezione::Signal, &sha('a'), "video/mp4", 0, "", &[]).is_err());
+    assert!(tag_file(Sezione::Signal, &sha('a'), "video/mp4", MASSIMO_FILE + 1, "", &[]).is_err());
+    let t = tag_file(Sezione::Film, &sha('a'), "video/mp4", 10, "  Il\u{202E} film  ", &[]).unwrap();
     assert!(t.contains(&s(&["title", "Il film"])), "titolo non ripulito: {t:?}");
     assert!(tag_autorizzazione_file(&sha('a'), ORA, ORA).is_err());
     assert!(tag_autorizzazione_file(&sha('a'), ORA, ORA + 3601).is_err(), "autorizzazione più lunga di un'ora");
     assert!(tag_autorizzazione_file("x", ORA, ORA + 60).is_err());
     // l'url di una scheda esterna non conta: il file si cerca solo per hash sul nodo (la scheda non ha campi url)
     let a = anna();
-    let tags = [tag_file(Sezione::Signal, &sha('a'), "video/mp4", 10, "").unwrap(), vec![s(&["url", "https://esempio.invalid/x.mp4"])]].concat();
+    let tags = [tag_file(Sezione::Signal, &sha('a'), "video/mp4", 10, "", &[]).unwrap(), vec![s(&["url", "https://esempio.invalid/x.mp4"])]].concat();
     let e = m4tr1x_protocol::verifica(&firma(&a, KIND_FILE, "", &tags, ORA), RETE).unwrap();
     let f = file_da_evento(&e).expect("scheda valida anche con un url");
     assert_eq!(f.sha256, sha('a'));
+    assert!(f.pezzi.is_empty());
+
+    // file a pezzi (ADR-0005): i pezzi si scrivono e si leggono solo se tornano con la dimensione
+    let grande = m4tr1x_protocol::PEZZO * 2 + 1; // 3 pezzi
+    let tre = vec![sha('1'), sha('2'), sha('3')];
+    assert!(tag_file(Sezione::Film, &sha('a'), "video/mp4", grande, "", &[]).is_err(), "un file grande senza pezzi");
+    assert!(tag_file(Sezione::Film, &sha('a'), "video/mp4", grande, "", &tre[..2]).is_err(), "pezzi in meno");
+    assert!(tag_file(Sezione::Film, &sha('a'), "video/mp4", 10, "", &tre[..1]).is_err(), "pezzi per un file che sta in un blob");
+    assert!(tag_file(Sezione::Film, &sha('a'), "video/mp4", grande, "", &[sha('1'), sha('2'), "G".repeat(64)]).is_err(), "pezzo con hash non valido");
+    let t = tag_file(Sezione::Film, &sha('a'), "video/mp4", grande, "Un film", &tre).unwrap();
+    assert_eq!(t.iter().filter(|x| x[0] == "pezzo").map(|x| x[1].clone()).collect::<Vec<_>>(), tre, "pezzi nell'ordine dato");
+    let e = m4tr1x_protocol::verifica(&firma(&a, KIND_FILE, "", &t, ORA), RETE).unwrap();
+    let f = file_da_evento(&e).expect("scheda a pezzi valida");
+    assert_eq!((f.pezzi.clone(), f.dimensione), (tre.clone(), grande));
+    // dal nodo: un pezzo in meno, uno in più, uno storpiato, pezzi su un file piccolo → scheda ignorata
+    let base = |dim: u64| vec![s(&["x", &sha('a')]), s(&["m", "video/mp4"]), s(&["size", &dim.to_string()]), s(&["t", "m4tr1x-film"])];
+    let pezzo = |h: &str| s(&["pezzo", h]);
+    for (nome, tags) in [
+        ("uno in meno", [base(grande), vec![pezzo(&sha('1')), pezzo(&sha('2'))]].concat()),
+        ("uno in più", [base(grande), vec![pezzo(&sha('1')), pezzo(&sha('2')), pezzo(&sha('3')), pezzo(&sha('4'))]].concat()),
+        ("storpiato", [base(grande), vec![pezzo(&sha('1')), pezzo(&sha('2')), pezzo("non-un-hash")]].concat()),
+        ("senza hash", [base(grande), vec![pezzo(&sha('1')), pezzo(&sha('2')), vec!["pezzo".to_string()]]].concat()),
+        ("file piccolo con pezzi", [base(10), vec![pezzo(&sha('1'))]].concat()),
+        ("file grande senza pezzi", base(grande)),
+    ] {
+        let e = m4tr1x_protocol::verifica(&firma(&a, KIND_FILE, "", &tags, ORA), RETE).unwrap();
+        assert!(file_da_evento(&e).is_none(), "scheda accettata: {nome}");
+    }
 }

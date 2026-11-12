@@ -14,8 +14,9 @@
 //!   file non cambia: gli indici dei dati audio e video restano giusti senza riscriverli.
 //! - MP3: via ID3v2 in testa, ID3v1 (e la sua estensione) e APEv2 in coda.
 
-/// Dimensione massima di un file da pulire (come il massimo predefinito del nodo).
-pub const MASSIMO: usize = 50 * 1024 * 1024;
+/// Dimensione massima di un file da pulire (come `MASSIMO_FILE` della scheda: 1 GB, poi a pezzi da 4 MB verso il
+/// nodo). Limite dichiarato: la pulizia lavora sul file intero in memoria.
+pub const MASSIMO: usize = 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tipo {
@@ -42,7 +43,7 @@ impl Tipo {
 pub enum Errore {
     #[error("tipo di file non ammesso: si caricano solo foto JPEG o PNG, video MP4 o MOV, audio MP3 o M4A (le foto HEIC dell'iPhone: Impostazioni › Fotocamera › Formati › Più compatibile)")]
     TipoNonAmmesso,
-    #[error("file troppo grande (massimo 50 MB)")]
+    #[error("file troppo grande (massimo 1 GB)")]
     TroppoGrande,
     #[error("file rovinato o incompleto: {0}")]
     Rovinato(&'static str),

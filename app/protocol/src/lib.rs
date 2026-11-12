@@ -309,8 +309,28 @@ pub fn risposta_a(e: &Evento) -> Option<String> {
 pub const KIND_FILE: u16 = 1063;
 /// Kind dell'autorizzazione a caricare un file (BUD-02).
 pub const KIND_AUTORIZZAZIONE_FILE: u16 = 24242;
-/// File più grande ammesso in una scheda (come il massimo predefinito del nodo e della pulizia).
-pub const MASSIMO_FILE: u64 = 50 * 1024 * 1024;
+/// Un pezzo di file (ADR-0005): ogni blob del nodo è al massimo così grande. Un file più grande si carica a pezzi,
+/// ognuno un blob, e la scheda li elenca in ordine (tag `pezzo`). Su Tor un caricamento lungo cade spesso: a pezzi
+/// si riprende da dove si era arrivati, e un nodo piccolo non riceve mai un corpo più grande di questo.
+pub const PEZZO: u64 = 4 * 1024 * 1024;
+/// File più grande ammesso in una scheda (256 pezzi). Limite dichiarato: il file passa intero in memoria sul
+/// computer (pulizia e riproduzione); i film lunghi in streaming aspettano gli hub HLS.
+pub const MASSIMO_FILE: u64 = 1024 * 1024 * 1024;
+
+/// Quanti pezzi elenca la scheda di un file di `dimensione` byte: nessuno se sta in un blob solo.
+pub fn quanti_pezzi(dimensione: u64) -> usize {
+    if dimensione <= PEZZO {
+        0
+    } else {
+        usize::try_from(dimensione.div_ceil(PEZZO)).unwrap_or(usize::MAX)
+    }
+}
+
+/// I pezzi di una scheda sono nella forma giusta per un file di `dimensione` byte: tanti quanti ne servono
+/// (nessuno se il file sta in un blob solo), ognuno un hash valido.
+pub fn pezzi_validi(dimensione: u64, pezzi: &[String]) -> bool {
+    pezzi.len() == quanti_pezzi(dimensione) && pezzi.iter().all(|p| esadecimale_minuscolo(p, 64))
+}
 /// Tipi ammessi: gli stessi che la pulizia dei metadati sa trattare (app/media).
 pub const MIME_AMMESSI: [&str; 5] = ["image/jpeg", "image/png", "video/mp4", "audio/mp4", "audio/mpeg"];
 
@@ -356,10 +376,13 @@ pub struct SchedaFile {
     pub dimensione: u64,
     pub sezione: Sezione,
     pub titolo: String,
+    /// hash dei pezzi in ordine (ADR-0005); vuoto = il file è un blob solo (`sha256`)
+    pub pezzi: Vec<String>,
 }
 
 /// Tag della scheda di un file scritto dall'app. Errore se qualcosa non è nella forma giusta.
-pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, titolo: &str) -> Result<Vec<Vec<String>>, Rifiuto> {
+/// `sha256` è l'hash del file INTERO; `pezzi` gli hash dei blob in ordine se il file supera un pezzo.
+pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, titolo: &str, pezzi: &[String]) -> Result<Vec<Vec<String>>, Rifiuto> {
     if !esadecimale_minuscolo(sha256, 64) {
         return Err(Rifiuto::Forma("hash del file"));
     }
@@ -368,6 +391,9 @@ pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, tit
     }
     if dimensione == 0 || dimensione > MASSIMO_FILE {
         return Err(Rifiuto::Forma("dimensione del file"));
+    }
+    if !pezzi_validi(dimensione, pezzi) {
+        return Err(Rifiuto::Forma("pezzi del file"));
     }
     if titolo.chars().count() > MASSIMO_TITOLO {
         return Err(Rifiuto::Forma("titolo oltre il limite"));
@@ -378,6 +404,7 @@ pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, tit
         vec!["size".into(), dimensione.to_string()],
         vec!["t".into(), sezione.tag().into()],
     ];
+    t.extend(pezzi.iter().map(|p| vec!["pezzo".to_string(), p.clone()]));
     let titolo = pulisci_titolo(titolo);
     if !titolo.is_empty() {
         t.push(vec!["title".into(), titolo]);
@@ -386,7 +413,9 @@ pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, tit
 }
 
 /// La scheda di un file da un evento GIÀ verificato: Some solo se è un kind 1063 con UN hash valido, un tipo
-/// ammesso e adatto a UNA sezione, una dimensione entro il massimo. Tutto il resto (url esterni compresi) si ignora.
+/// ammesso e adatto a UNA sezione, una dimensione entro il massimo, e i pezzi giusti per quella dimensione
+/// (nessuno fino a un pezzo, altrimenti tanti quanti ne servono, tutti hash validi). Tutto il resto (url esterni
+/// compresi) si ignora.
 pub fn file_da_evento(e: &Evento) -> Option<SchedaFile> {
     if e.kind != KIND_FILE {
         return None;
@@ -408,8 +437,12 @@ pub fn file_da_evento(e: &Evento) -> Option<SchedaFile> {
     if !sezione.ammette(&mime) {
         return None;
     }
+    let pezzi: Vec<String> = e.tags.iter().filter(|t| t[0] == "pezzo").map(|t| t.get(1).cloned().unwrap_or_default()).collect();
+    if !pezzi_validi(dimensione, &pezzi) {
+        return None;
+    }
     let titolo = uno("title").map(|t| pulisci_titolo(t)).unwrap_or_default();
-    Some(SchedaFile { sha256, mime, dimensione, sezione: *sezione, titolo })
+    Some(SchedaFile { sha256, mime, dimensione, sezione: *sezione, titolo, pezzi })
 }
 
 /// Tag dell'autorizzazione a caricare il file `sha256` (BUD-02): vale fino a `scadenza` (al massimo un'ora dopo `ora`,
