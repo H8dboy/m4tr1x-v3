@@ -58,6 +58,19 @@ il codec no. Ogni cella si codifica con un formato che l'hardware sa già legger
 finezza); griglia adattiva, separazione colore/dettaglio e raffinamento progressivo stanno nel modo in cui si spezza,
 si spedisce e si ricompone. Il telefono usa il suo decoder; il risultato per la rete è lo stesso.
 
+## Scelta di metodo (fondatore, 12/11/2026): aritmetica semplice, niente formati nuovi e complicati
+
+Tornare alla base: un fotogramma è una matrice di numeri; medie, differenze e somme per cella le sa fare qualsiasi
+dispositivo, in poche centinaia di righe senza dipendenze (come `app/media` per la pulizia). Niente scatole nere,
+risultato verificabile ovunque allo stesso modo. Il confine è il **costo al secondo**: per foto, reel corti e anteprime
+basta; per un film lungo in alta definizione il calcolo sul processore scalda e consuma più del chip dedicato, e i
+formati esistenti stringono di più. Perciò, in ordine:
+
+1. **Foto e reel prima:** celle adattive, colore medio per cella, strati di dettaglio come differenze, aritmetica
+   intera, nel crate dei media, con prove su file veri.
+2. **Misurare:** byte per immagine rispetto al JPEG, tempo di calcolo su PC e telefono, resa a banda bassa.
+3. **Film dopo, con i numeri in mano:** se regge, bene; se no, le celle restano e dentro ci va il decoder del dispositivo.
+
 ## Domande aperte prima di progettarla
 
 - La misura di complessità che decide il numero di celle (energia dei bordi? varianza locale? movimento tra fotogrammi?) e quanti livelli di finezza per cella.
