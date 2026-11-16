@@ -4,7 +4,7 @@
 
 const BIT_PROB: u32 = 15;
 /// Due finestre di adattamento: una corta (~2^4 bit) che segue le zone, una lunga (~2^6) che tiene la statistica.
-/// Misurato il 13/11/2026: con 11 bit di precisione la finestra lunga non poteva superare il 94 % e peggiorava
+/// Misurato il 12/11/2026: con 11 bit di precisione la finestra lunga non poteva superare il 94 % e peggiorava
 /// tutto; con 15 bit le coppie 3/6, 4/6, 4/7 sono alla pari (−10 % di byte rispetto a una finestra sola da 2^5).
 const ADATTAMENTO_CORTO: u32 = 4;
 const ADATTAMENTO_LUNGO: u32 = 6;

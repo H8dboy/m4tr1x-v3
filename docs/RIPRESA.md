@@ -132,7 +132,7 @@
 
 ## Prossimo (dal 12/11/2026)
 
-**Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 13/11 in `app/celle/README.md`: foto a
+**Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 12/11 pomeriggio in `app/celle/README.md`: foto a
 0,29–0,70× i byte del JPEG a pari PSNR, dettaglio a pezzi. Prossimi passi lì: foto normali e telefono, pendenze più
 leggere, reel con previsione cella per cella, strati come blob a pezzi.
 

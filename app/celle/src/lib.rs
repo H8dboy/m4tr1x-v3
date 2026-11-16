@@ -44,9 +44,14 @@ const MAGIA: &[u8; 4] = b"M4CL";
 const S: i64 = 256;
 /// √3 · 256, arrotondato: passo orizzontale tra i centri = r · √3.
 const RAD3: i64 = 443;
-/// Raggio più piccolo e più grande ammessi (pixel).
+/// Raggio più piccolo e più grande ammessi dal formato (pixel).
 pub const RAGGIO_MIN: u16 = 3;
 pub const RAGGIO_MAX: u16 = 48;
+/// Raggio più piccolo scelto in automatico. Da quando il dettaglio passa per la trasformata (12/11 pomeriggio) le
+/// celle servono all'anteprima e alla media grossolana, non al dettaglio: celle piccole costano byte negli strati 0
+/// e 1 senza migliorare il risultato finale (foto rumorosa: 170 KB di celle con raggio 13, 3 KB con raggio 30, stessa
+/// qualità finale). Misurato il 12/11 su quattro immagini: sotto 30 si perde, tra 30 e 45 cambia poco.
+pub const RAGGIO_AUTO_MIN: u16 = 30;
 /// La pendenza (strato 1) si misura in 1/32 di livello per pixel.
 const SCALA_PENDENZA: i64 = 32;
 
@@ -57,11 +62,13 @@ pub struct Parametri {
     /// strato 2.
     pub passo_dettaglio: u8,
     /// Passo di quantizzazione del dettaglio dei colori (dimezzati). Metà di quello della luce rende meglio sul PSNR
-    /// in RGB (gli errori sui colori si amplificano passando a RGB); misurato il 13/11/2026.
+    /// in RGB (gli errori sui colori si amplificano passando a RGB); misurato il 12/11/2026.
     pub passo_croma: u8,
     /// Livelli della trasformata a onde (1–5): più livelli = più pezzi progressivi.
     pub livelli: u8,
-    /// Una cella si raffina (7 celle) se lo scarto medio assoluto della sua luce supera questa soglia.
+    /// Una cella si raffina (7 celle) se lo scarto medio assoluto della sua luce da colore + pendenza supera questa
+    /// soglia. 20: si raffinano solo le celle con un bordo netto dentro (con 10 il 10–13 % delle celle, +5 % di byte
+    /// in tutto per 0,5 dB in più nell'anteprima; misurato il 12/11). 255 = mai.
     pub soglia_raffinamento: u8,
     /// Forza un raggio invece di ricavarlo dalla complessità (0 = automatico).
     pub raggio: u16,
@@ -69,7 +76,7 @@ pub struct Parametri {
 
 impl Default for Parametri {
     fn default() -> Self {
-        Self { passo_dettaglio: 8, passo_croma: 4, livelli: 3, soglia_raffinamento: 10, raggio: 0 }
+        Self { passo_dettaglio: 8, passo_croma: 4, livelli: 3, soglia_raffinamento: 20, raggio: 0 }
     }
 }
 
@@ -150,8 +157,9 @@ pub fn complessita(luce: &[u8], larghezza: usize, altezza: usize) -> u32 {
     (somma / conta.max(1)) as u32
 }
 
-/// Il raggio delle celle dalla complessità: 16 pixel per una foto normale (complessità 8), più piccolo quando
-/// l'immagine è ricca, più grande quando è piatta. `raggio ≈ 45 / √complessità`, dentro i limiti.
+/// Il raggio delle celle dalla complessità: `raggio ≈ 45 / √complessità`, tra `RAGGIO_AUTO_MIN` e `RAGGIO_MAX`:
+/// un'immagine piatta ha celle da 45–48 pixel, una foto normale o ricca da 30. Il numero di celle segue poi la
+/// complessità zona per zona con il raffinamento.
 pub fn raggio_per(complessita: u32) -> u16 {
     // radice intera: il più grande n con n² ≤ complessità·16 (una cifra decimale in più di precisione)
     let c16 = (complessita.max(1) * 16) as u64;
@@ -161,7 +169,7 @@ pub fn raggio_per(complessita: u32) -> u16 {
     }
     // 45/√c = 45·4/√(16c) = 180/n
     let r = (180 + n / 2) / n;
-    (r as u16).clamp(RAGGIO_MIN, RAGGIO_MAX)
+    (r as u16).clamp(RAGGIO_AUTO_MIN, RAGGIO_MAX)
 }
 
 // ─── Griglia ─────────────────────────────────────────────────────────────────
@@ -726,10 +734,11 @@ mod tests {
     #[test]
     fn il_raggio_segue_la_complessita() {
         assert!(raggio_per(1) > raggio_per(8), "piatto → celle più grandi");
-        assert!(raggio_per(8) > raggio_per(40), "ricco → celle più piccole");
+        assert!(raggio_per(8) >= raggio_per(40), "ricco → celle non più grandi");
         assert_eq!(raggio_per(0), RAGGIO_MAX.min(raggio_per(1)));
-        assert!(raggio_per(10_000) >= RAGGIO_MIN);
-        assert!((14..=18).contains(&raggio_per(8)), "{}", raggio_per(8));
+        assert_eq!(raggio_per(10_000), RAGGIO_AUTO_MIN);
+        assert_eq!(raggio_per(8), RAGGIO_AUTO_MIN, "una foto normale sta al minimo automatico");
+        assert!((40..=48).contains(&raggio_per(1)), "{}", raggio_per(1));
     }
 
     #[test]

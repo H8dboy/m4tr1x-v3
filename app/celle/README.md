@@ -1,4 +1,4 @@
-# m4tr1x-celle — immagini a celle esagonali (foto; seconda versione, 13/11/2026)
+# m4tr1x-celle — immagini a celle esagonali (foto; seconda versione, 12/11/2026 pomeriggio)
 
 Idea del fondatore (vedi `docs/design/VIDEO_A_CELLE.md`): griglia a celle esagonali con il numero di celle che segue
 la complessità, colore e dettaglio separati per cella, strati che arrivano uno dopo l'altro. Regola: aritmetica
@@ -7,14 +7,15 @@ differenze, spostamenti di bit, qualche moltiplicazione e divisione intera.
 
 ## Cosa c'è
 
-- **Griglia** (`lib.rs`): centri su un reticolo triangolare (celle esagonali), raggio dalla complessità (`raggio_per`),
-  pixel → centro più vicino, **raffinamento 1→7** delle celle dove colore + pendenza non bastano. Il decodificatore
-  ricostruisce la griglia da raggio e bit delle celle raffinate: la geometria non viaggia.
+- **Griglia** (`lib.rs`): centri su un reticolo triangolare (celle esagonali), raggio dalla complessità (`raggio_per`,
+  30–48 px), pixel → centro più vicino, **raffinamento 1→7** delle celle con un bordo netto dentro (scarto da
+  colore + pendenza sopra la soglia, 20). Il decodificatore ricostruisce la griglia da raggio e bit delle celle
+  raffinate: la geometria non viaggia.
 - **Strato 0 colore** (Y, Cb, Cr medi per cella) e **strato 1 pendenza** (piano ai minimi quadrati di luce e colore,
-  sei numeri per cella, misurati dal baricentro dei pixel). Dal 13/11 i due strati sono **compressi** (`strati.rs`):
-  ogni cella è prevista dalla media di quella a sinistra e di quella sopra (le sei celle di una cella raffinata dal
-  loro centro) e il resto è scritto con la codifica aritmetica. 2,5–3 volte meno byte dei byte crudi.
-- **Strato 2 dettaglio** (`dettaglio.rs`), riscritto il 13/11:
+  sei numeri per cella, misurati dal baricentro dei pixel). Dal pomeriggio del 12/11 i due strati sono **compressi**
+  (`strati.rs`): ogni cella è prevista dalla media di quella a sinistra e di quella sopra (le sei celle di una cella
+  raffinata dal loro centro) e il resto è scritto con la codifica aritmetica. 2,5–3 volte meno byte dei byte crudi.
+- **Strato 2 dettaglio** (`dettaglio.rs`), riscritto nel pomeriggio del 12/11:
   - la luce (intera) e i colori (dimezzati 2×2) dell'immagine **vera** passano per una **trasformata a onde intera 5/3**
     (`onde.rs`: quella reversibile di JPEG 2000, due passi di sollevamento, 3 livelli);
   - la **media grossolana** (banda LL) è prevista dall'immagine ricostruita dagli strati 0 e 1: lo strato 2 porta solo
@@ -30,55 +31,51 @@ differenze, spostamenti di bit, qualche moltiplicazione e divisione intera.
 - Decodifica per strati (`Strati::Colore`, `ColoreEPendenza`, `Tutti`), byte rotti → errore o immagine sbagliata, mai
   panico. 18 prove (trasformata esatta anche con misure dispari, codifica aritmetica avanti/indietro, passo 1 quasi
   senza perdita, pezzi che migliorano uno dopo l'altro, troncature, byte a caso, strati 0/1 avanti e indietro).
-- `examples/misura.rs`: legge un BMP a 24 bit, codifica a più passi, confronta con i JPEG dello stesso file, stampa
-  la progressione pezzo per pezzo. BMP e JPEG di prova si fanno con PowerShell (System.Drawing) in `%TMP%/m4-celle`.
+- `examples/misura.rs`: legge un BMP a 24 bit, codifica a più passi (`-- passo,croma[,livelli,raggio,soglia] …`),
+  confronta con i JPEG dello stesso file, stampa la progressione pezzo per pezzo. BMP e JPEG di prova si fanno con
+  PowerShell (System.Drawing) in `%TMP%/m4-celle`.
 
-## Misure (13/11/2026, PC dell'officina, `--release`; PSNR su RGB, "luce" = solo Y)
+## Misure (12/11/2026 pomeriggio, PC dell'officina, `--release`, parametri predefiniti)
 
-Render 1400×900 (fondo piatto, complessità 0, raggio 45, 573 celle di cui 48 raffinate):
+PSNR su RGB. "Celle allo stesso PSNR" = byte di tutto (intestazione + 3 strati) interpolati tra i passi 32/16 … 4/2
+al PSNR di quel JPEG; il JPEG è quello di System.Drawing (Huffman, 4:2:0; un mozjpeg starebbe un 10–15 % sotto).
+Foto 1–3 sono foto di telefono ridotte a 1600 px.
 
-| codifica (passo luce/colori) | colore+pend. | dettaglio | totale | PSNR | luce | tempo cod./dec. |
-|---|---|---|---|---|---|---|
-| celle 24/12 | 1 863 | 5 704 | **7 619** | 41,8 dB | 42,6 | 475 / 196 ms |
-| celle 16/8 | 1 863 | 7 848 | **9 763** | 43,6 dB | 44,8 | |
-| celle 8/4 | 1 863 | 13 781 | **15 696** | 45,6 dB | 47,2 | |
-| celle 4/2 | 1 863 | 27 307 | **29 222** | 47,2 dB | 49,5 | |
-| JPEG q50 | | | 33 298 | 43,5 dB | 45,1 | |
-| JPEG q85 | | | 46 500 | 47,4 dB | 49,6 | |
+| immagine | celle (raff.) | strati 0+1 | JPEG q50 | celle allo stesso PSNR | JPEG q75 | celle allo stesso PSNR | cod./dec. |
+|---|---|---|---|---|---|---|---|
+| render 1400×900 (fondo piatto) | 477 (32), r 45 | 1,6 KB @ 25,6 dB | 33,3 KB @ 43,5 dB | 9,6 KB (**0,29×**) | 40,2 KB @ 46,5 dB | 20,3 KB (**0,51×**) | 291/141 ms |
+| foto di uno schermo 1200×1600 | 1837 (152), r 30 | 10,1 KB @ 23,8 dB | 110,0 KB @ 37,1 dB | 73,9 KB (**0,67×**) | 182,9 KB @ 39,5 dB | 126,4 KB (**0,69×**) | 456/225 ms |
+| foto 1 (interno, 1600×1200) | 1466 (95), r 30 | 9,7 KB @ 25,4 dB | 128,0 KB @ 34,6 dB | 80,6 KB (**0,63×**) | 217,2 KB @ 36,2 dB | 142,9 KB (**0,66×**) | 449/215 ms |
+| foto 3 (esterno, 1200×1600) | 1477 (92), r 30 | 8,7 KB @ 24,7 dB | 135,3 KB @ 35,6 dB | 94,4 KB (**0,70×**) | 226,5 KB @ 37,5 dB | 175,1 KB (**0,77×**) | 448/214 ms |
+| foto 2 (rumorosa, 1200×1600) | 3871 (491), r 30 | 26,2 KB @ 19,2 dB | 308,6 KB @ 29,0 dB | 219,4 KB (**0,71×**) | 479,2 KB @ 31,9 dB | 328,7 KB (**0,69×**) | 505/272 ms |
 
-Foto di un monitor 1200×1600 (complessità 3, raggio 30, 2 749 celle di cui 304 raffinate):
+**Progressione** (byte di tutto → PSNR; strati 0+1, poi i quattro pezzi dello strato 2 a passo 32/16):
 
-| codifica | colore+pend. | dettaglio | totale | PSNR | luce | tempo cod./dec. |
-|---|---|---|---|---|---|---|
-| celle 24/12 | 15 479 | 34 020 | **49 631** | 34,5 dB | 35,0 | 771 / 332 ms |
-| celle 16/8 | 15 479 | 53 165 | **68 776** | 36,5 dB | 37,3 | |
-| celle 12/6 | 15 479 | 71 826 | **87 437** | 37,8 dB | 38,6 | |
-| celle 8/4 | 15 479 | 111 561 | **127 172** | 39,5 dB | 40,3 | |
-| celle 6/3 | 15 479 | 162 396 | **178 007** | 40,8 dB | 41,8 | |
-| celle 4/2 | 15 479 | 260 868 | **276 479** | 42,8 dB | 43,7 | |
-| JPEG q30 | | | 79 587 | 35,1 dB | 36,2 | |
-| JPEG q50 | | | 109 972 | 37,1 dB | 38,0 | |
-| JPEG q75 | | | 182 947 | 39,5 dB | 40,4 | |
-| JPEG q85 | | | 286 509 | 41,4 dB | 42,3 | |
-
-**A pari PSNR, byte delle celle / byte del JPEG:** render 0,29 (43,5 dB) e 0,63 (47,2 dB); foto 0,70 (37,1 dB),
-0,69 (39,5 dB), 0,71 (41,4 dB). Ieri lo strato 2 costava 8–10 volte il JPEG.
-
-**Progressione** (foto, passo 24/12): strati 0+1 = 15 KB a 24,3 dB (immagine intera, riconoscibile); + pezzo 0 (medie)
-21 KB → 26,0 dB; + pezzo 1 30 KB → 28,8; + pezzo 2 42 KB → 32,8; + pezzo 3 50 KB → 34,5. Sul render: 1,9 KB → 3,4 →
-4,7 → 6,3 → 7,6 KB per 26 → 32 → 36 → 39 → 42 dB.
+- render: 1,6 KB 25,6 dB → 3,0 KB 31,5 → 4,0 KB 35,2 → 5,2 KB 38,6 → 6,2 KB 40,3
+- foto di uno schermo: 10,1 KB 23,8 → 15,1 KB 25,9 → 21,6 KB 28,5 → 31,2 KB 31,9 → 35,3 KB 32,8
+- foto 1: 9,7 KB 25,4 → 17,1 KB 29,4 → 22,7 KB 31,4 → 24,8 KB 31,7 → 25,3 KB 31,8
+- foto 3: 8,7 KB 24,7 → 14,4 KB 28,6 → 20,1 KB 30,6 → 25,9 KB 31,7 → 27,7 KB 32,0
+- foto 2: 26,2 KB 19,2 → 36,7 KB 20,4 → 58,2 KB 22,2 → 106,7 KB 24,7 → 152,6 KB 27,0
 
 **Lettura onesta.** L'obiettivo era "metà dei byte del JPEG q50 a pari PSNR, o dirlo con i numeri": sul render è
-molto sotto la metà (0,29), sulla foto siamo a 0,70. La foto è una foto di uno schermo (trama fitta): è il caso
-difficile; va misurato su foto normali (cielo, volti, strade) e su un telefono. Il PSNR è su RGB e il JPEG di
-System.Drawing è un JPEG qualsiasi (Huffman, 4:2:0): un JPEG ottimizzato (mozjpeg) starebbe un 10–15 % sotto. Il
-dettaglio arriva comunque **a pezzi** dentro la stessa struttura a celle: niente di tutto questo esiste in un JPEG.
+molto sotto la metà (0,29), sulle foto siamo a **0,63–0,71**, cioè un terzo in meno del JPEG, non la metà. È quello
+che fa un buon codificatore a onde con codifica aritmetica (JPEG 2000 sta lì): la parte "a celle" non toglie e non
+aggiunge byte, aggiunge la **struttura**: un'anteprima intera in 1,6–10 KB (foto 2, rumorosa, 26 KB) e il dettaglio
+che arriva a pezzi dentro la stessa scheda. La mattina stessa lo strato 2 costava 8–10 volte il JPEG.
 
-**Cose misurate e scartate il 13/11** (banco di prova con variabili d'ambiente, poi tolto): prevedere le bande alte
-dalla base (+30 % luce, +2 % colori); pesi uniformi delle bande (+20–35 %); 5 livelli invece di 3 (+10 % sulla
-foto); zona morta più stretta e ricostruzione a metà (pari); una sola finestra di adattamento (ogni scelta +3–15 %);
-probabilità a 11 bit (la finestra lunga non superava il 94 % e peggiorava tutto: con 15 bit è un guadagno); contesti
-con più vicini (pari). Passo dei colori = metà di quello della luce: −3 % sulla foto, pari sul render.
+**Decisione presa misurando (12/11 pomeriggio): con la trasformata le celle devono essere grandi.** Su foto 2
+(complessità 13) il raggio automatico di prima era 13 px: 24 144 celle, 170 KB solo di strati 0 e 1, e la qualità
+finale identica a quella con raggio 30 (3 KB di strati 0 e 1) o 45. Le celle servono all'anteprima e alla media
+grossolana; il dettaglio va da solo dove serve. Quindi: raggio automatico tra 30 e 48 (`RAGGIO_AUTO_MIN`), soglia di
+raffinamento 20 (con 10: +5 % di byte in tutto per +0,5 dB nell'anteprima; con 255, mai raffinare: −5 % di byte,
+−1,5 dB nell'anteprima). Il "numero di celle dalla complessità" resta: nel raggio e nel raffinamento zona per zona.
+
+**Cose misurate e scartate il 12/11 pomeriggio** (banco di prova con variabili d'ambiente, poi tolto): prevedere le
+bande alte dalla base (+30 % luce, +2 % colori); pesi uniformi delle bande (+20–35 %); 5 livelli invece di 3 (+10 %
+sulla foto); zona morta più stretta e ricostruzione a metà (pari); una sola finestra di adattamento (ogni scelta
++3–15 %); probabilità a 11 bit (la finestra lunga non superava il 94 % e peggiorava tutto: con 15 bit è un
+guadagno); contesti con più vicini (pari). Passo dei colori = metà di quello della luce: −3 % sulla foto, pari sul
+render.
 
 **Perché non c'è un passo per cella** ("più fine dove la cella è raffinata"): con la trasformata i coefficienti sono
 zero dove non c'è dettaglio e costano una frazione di bit; i byte vanno da soli nelle celle ricche, senza deciderlo a
@@ -87,10 +84,10 @@ si può aggiungere dopo come scelta percettiva, non per il PSNR.
 
 ## Prossimo
 
-1. Foto normali (3–4 scatti di telefono) e una misura su telefono/mini PC: tempo e memoria (oggi i piani sono i32:
-   ~23 MB per una foto da 2 MP; si può fare a strisce).
-2. Strato 1: le pendenze costano ancora 4 byte per cella (6 numeri); provare una scala più grossa per le celle grandi.
+1. Misura su telefono o mini PC: tempo e memoria (oggi i piani sono i32: ~23 MB per una foto da 2 MP; si può fare
+   a strisce). Un confronto a occhio (non solo PSNR) su un paio di foto.
+2. Strato 1: le pendenze costano ancora 3–4 byte per cella; provare una scala più grossa.
 3. Reel: stessa griglia e stessa trasformata; per ogni fotogramma si prevede dal precedente **cella per cella**
    (spostamento intero per cella, poi il resto come qui). È il pezzo che decide se l'idea regge sul video.
 4. Collegamento al trasporto: ogni strato (e ogni pezzo dello strato 2) un blob a pezzi (ADR-0005), scheda con gli
-   hash; chi guarda scarica prima i 2 KB, poi quello che la banda permette.
+   hash; chi guarda scarica prima i pochi KB dell'anteprima, poi quello che la banda permette.

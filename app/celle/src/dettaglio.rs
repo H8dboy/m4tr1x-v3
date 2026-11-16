@@ -379,7 +379,7 @@ fn trasforma(p: &Piani, livelli: u8) -> Piani {
 }
 
 /// La previsione di una banda: la media grossolana viene dalla base, le bande alte da zero. (Prevedere anche le
-/// bande alte dalla base costava il 30 % in più sulla luce e un po' di più sui colori: misurato il 13/11/2026.)
+/// bande alte dalla base costava il 30 % in più sulla luce e un po' di più sui colori: misurato il 12/11/2026.)
 #[inline]
 fn previsto(base_t: &Piano, b: &Banda, x: usize, y: usize) -> i32 {
     if b.orient == Orient::LL {
