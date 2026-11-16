@@ -138,6 +138,8 @@ Comando: `cargo run --release --example misura_reel -- <cartella con frame-NNN.b
 `cargo run --release -p m4tr1x-feed --example celle -- <onion> <dati> <foto.bmp>` contro il nodo di prova: foto 1600×1200,
 4 pezzi, 177.562 B; carico 26 s; scheda a celle pubblicata e riletta; riscarico pezzo per pezzo: anteprima 9.661 B
 dopo 1 s (PSNR 25,4 dB), 33,6 dB a 6 s, 35,9 dB a 10 s, completa a 14 s (36,8 dB). Pezzi identici.
+Reel (stesso esempio con la cartella dei fotogrammi): 24 fotogrammi 428×640, chiave ogni 12 → 2 pezzi, 207.292 B; carico
+30 s; il primo gruppo di 12 fotogrammi si guarda dopo 9 s, tutto dopo 22 s (38,6 dB). Via Tor ~10 KB/s: il collo è la rete.
 
 ## Pacchetto e app (16/11/2026): l'alveare arriva nel social
 
