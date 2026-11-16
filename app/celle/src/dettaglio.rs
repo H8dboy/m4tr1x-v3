@@ -455,11 +455,14 @@ fn trasforma(p: &Piani, livelli: u8) -> Piani {
     t
 }
 
-/// La previsione di una banda: la media grossolana viene dalla base, le bande alte da zero. (Prevedere anche le
-/// bande alte dalla base costava il 30 % in più sulla luce e un po' di più sui colori: misurato il 12/11/2026.)
+/// La previsione di una banda. Per le foto (`Base::SoloMedia`) la media grossolana viene dalla base e le bande alte
+/// da zero: prevedere anche le bande alte dalla base degli strati 0 e 1 costava il 30 % in più sulla luce (misurato
+/// il 12/11/2026). Per i fotogrammi previsti di un reel (`Base::Tutto`) la base è il fotogramma prima spostato
+/// cella per cella e si usa tutta.
 #[inline]
-fn previsto(base_t: &Piano, b: &Banda, x: usize, y: usize) -> i32 {
-    if b.orient == Orient::LL {
+fn previsto(base_t: &Piano, b: &Banda, x: usize, y: usize, modo: Base) -> i32 {
+    if modo == Base::Tutto || b.orient == Orient::LL {
+
         base_t.a(x, y)
     } else {
         0
@@ -541,9 +544,20 @@ impl Visita for Legge<'_> {
     }
 }
 
-/// Codifica lo strato 2. `orig` e `base` sono i piani dell'immagine vera e dell'immagine ricostruita dagli
-/// strati 0 e 1 (luce intera, colori dimezzati); `mappa` dice la cella di ogni pixel (`celle` in tutto).
-pub fn codifica(orig: &Piani, base: &Piani, passo: u8, passo_croma: u8, livelli: u8, mappa: &[u32], celle: usize) -> Vec<u8> {
+/// Che cosa della base fa da previsione per il dettaglio.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Base {
+    /// Solo la media grossolana (banda LL): per le foto, dove la base viene dagli strati 0 e 1 e ha i gradini ai
+    /// bordi delle celle.
+    SoloMedia,
+    /// Tutte le bande: per i fotogrammi di un reel, dove la base è il fotogramma prima spostato cella per cella e
+    /// somiglia davvero all'immagine, bande alte comprese.
+    Tutto,
+}
+
+/// Codifica lo strato 2. `orig` e `base` sono i piani dell'immagine vera e dell'immagine di base (luce intera,
+/// colori dimezzati); `mappa` dice la cella di ogni pixel (`celle` in tutto); `modo` quanto della base si usa.
+pub fn codifica(orig: &Piani, base: &Piani, passo: u8, passo_croma: u8, livelli: u8, mappa: &[u32], celle: usize, modo: Base) -> Vec<u8> {
     let livelli = livelli.clamp(1, LIVELLI_MAX);
     let (orig_t, base_t) = (trasforma(orig, livelli), trasforma(base, livelli));
     let geo = geometria(orig.y.w, orig.y.h, orig.cb.w, orig.cb.h, livelli, mappa, celle);
@@ -553,7 +567,7 @@ pub fn codifica(orig: &Piani, base: &Piani, passo: u8, passo_croma: u8, livelli:
             let px = passo_x64(passo, banda);
             for y in banda.y0..banda.y0 + banda.h {
                 for x in banda.x0..banda.x0 + banda.w {
-                    q.v[y * o.w + x] = quantizza(o.a(x, y) - previsto(b, banda, x, y), px);
+                    q.v[y * o.w + x] = quantizza(o.a(x, y) - previsto(b, banda, x, y, modo), px);
                 }
             }
         }
@@ -576,7 +590,7 @@ pub fn codifica(orig: &Piani, base: &Piani, passo: u8, passo_croma: u8, livelli:
 
 /// Decodifica lo strato 2 (anche a metà) sopra la base e restituisce i piani ricostruiti (luce intera, colori
 /// dimezzati). Pezzi mancanti o troncati: le loro bande restano come previste.
-pub fn decodifica(d: &[u8], base: &Piani, passo: u8, passo_croma: u8, livelli: u8, mappa: &[u32], celle: usize) -> Piani {
+pub fn decodifica(d: &[u8], base: &Piani, passo: u8, passo_croma: u8, livelli: u8, mappa: &[u32], celle: usize, modo: Base) -> Piani {
     let livelli = livelli.clamp(1, LIVELLI_MAX);
     let base_t = trasforma(base, livelli);
     let lc = livelli_croma(livelli);
@@ -597,7 +611,7 @@ pub fn decodifica(d: &[u8], base: &Piani, passo: u8, passo_croma: u8, livelli: u
             let px = passo_x64(passo, banda);
             for y in banda.y0..banda.y0 + banda.h {
                 for x in banda.x0..banda.x0 + banda.w {
-                    p.v[y * q.w + x] = previsto(b, banda, x, y).saturating_add(dequantizza(q.a(x, y), px));
+                    p.v[y * q.w + x] = previsto(b, banda, x, y, modo).saturating_add(dequantizza(q.a(x, y), px));
                 }
             }
         }
@@ -654,9 +668,9 @@ mod tests {
             let orig = piani_casuali(w, h, &mut stato, 40);
             let base = piatti(w, h, 128);
             let (mappa, celle) = mappa_prova(w, h);
-            let d = codifica(&orig, &base, 1, 1, l, &mappa, celle);
+            let d = codifica(&orig, &base, 1, 1, l, &mappa, celle, Base::SoloMedia);
             assert_eq!(pezzi_byte(&d).len(), 1 + GRUPPI * l as usize, "{w}x{h} livelli {l}");
-            let r = decodifica(&d, &base, 1, 1, l, &mappa, celle);
+            let r = decodifica(&d, &base, 1, 1, l, &mappa, celle, Base::SoloMedia);
             // passo 1 con zona morta: errore al massimo di un paio di livelli per coefficiente
             let max = orig.y.v.iter().zip(&r.y.v).map(|(a, b)| (a - b).abs()).max().unwrap();
             assert!(max <= 6, "{w}x{h} livelli {l}: errore massimo {max}");
@@ -669,10 +683,10 @@ mod tests {
     fn un_piano_uguale_alla_base_costa_pochi_byte() {
         let base = piatti(200, 150, 90);
         let (mappa, celle) = mappa_prova(200, 150);
-        let d = codifica(&base, &base, 8, 8, 3, &mappa, celle);
+        let d = codifica(&base, &base, 8, 8, 3, &mappa, celle, Base::SoloMedia);
         // il costo è il "riscaldamento" delle probabilità dei contesti e la chiusura di 25 pezzi
         assert!(d.len() <= 400, "{} byte", d.len());
-        let r = decodifica(&d, &base, 8, 8, 3, &mappa, celle);
+        let r = decodifica(&d, &base, 8, 8, 3, &mappa, celle, Base::SoloMedia);
         assert_eq!(r.y, base.y);
     }
 
@@ -682,21 +696,21 @@ mod tests {
         let orig = piani_casuali(64, 40, &mut stato, 60);
         let base = piatti(64, 40, 128);
         let (mappa, celle) = mappa_prova(64, 40);
-        let d = codifica(&orig, &base, 4, 4, 3, &mappa, celle);
+        let d = codifica(&orig, &base, 4, 4, 3, &mappa, celle, Base::SoloMedia);
         let fini = pezzi_byte(&d);
         assert_eq!(fini.len(), 1 + 3 * GRUPPI);
         let errore = |p: &Piani| orig.y.v.iter().zip(&p.y.v).map(|(a, b)| ((a - b) * (a - b)) as u64).sum::<u64>();
-        let mut prima = errore(&decodifica(&[], &base, 4, 4, 3, &mappa, celle));
+        let mut prima = errore(&decodifica(&[], &base, 4, 4, 3, &mappa, celle, Base::SoloMedia));
         for &f in &fini {
-            let e = errore(&decodifica(&d[..f], &base, 4, 4, 3, &mappa, celle));
+            let e = errore(&decodifica(&d[..f], &base, 4, 4, 3, &mappa, celle, Base::SoloMedia));
             assert!(e <= prima, "un pezzo in più non peggiora: {prima} → {e}");
             prima = e;
         }
         // troncato a metà di un pezzo: vale come il pezzo prima; byte a caso: nessun panico
-        let meta = decodifica(&d[..fini[1] + 3], &base, 4, 4, 3, &mappa, celle);
-        assert_eq!(meta.y, decodifica(&d[..fini[1]], &base, 4, 4, 3, &mappa, celle).y);
+        let meta = decodifica(&d[..fini[1] + 3], &base, 4, 4, 3, &mappa, celle, Base::SoloMedia);
+        assert_eq!(meta.y, decodifica(&d[..fini[1]], &base, 4, 4, 3, &mappa, celle, Base::SoloMedia).y);
         let spazzatura: Vec<u8> = (0..300).map(|_| caso(&mut stato) as u8).collect();
-        let _ = decodifica(&spazzatura, &base, 4, 4, 3, &mappa, celle);
+        let _ = decodifica(&spazzatura, &base, 4, 4, 3, &mappa, celle, Base::SoloMedia);
     }
 
     #[test]

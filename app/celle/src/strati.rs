@@ -9,7 +9,7 @@ use crate::dettaglio::{leggi_valore, scrivi_valore, secchio, Contesti, Dove};
 use crate::Griglia;
 
 /// Per ogni cella base in ordine di riga: (prima cella finale, cella a sinistra, cella sopra, quante celle: 1 o 7).
-fn ordine(g: &Griglia) -> Vec<(usize, Option<usize>, Option<usize>, usize)> {
+pub(crate) fn ordine(g: &Griglia) -> Vec<(usize, Option<usize>, Option<usize>, usize)> {
     let (colonne, righe) = (g.colonne as usize, g.righe as usize);
     let mut v = Vec::with_capacity(colonne * righe);
     for j in 0..righe {
@@ -26,7 +26,7 @@ fn ordine(g: &Griglia) -> Vec<(usize, Option<usize>, Option<usize>, usize)> {
 
 /// Scrive (o legge) `per_cella` valori per ogni cella, previsti dalle vicine. `valori` è `celle × per_cella`,
 /// in ordine di cella finale. Il contesto: canale (o), tipo di cella (l), grandezza dell'ultimo resto (vic).
-fn codifica_valori(g: &Griglia, valori: &[i32], per_cella: usize) -> Vec<u8> {
+pub(crate) fn codifica_valori(g: &Griglia, valori: &[i32], per_cella: usize) -> Vec<u8> {
     let mut sc = Scrittore::nuovo();
     let mut ctx = Contesti::nuovi();
     let mut ultimo = vec![0i64; per_cella];
@@ -50,7 +50,7 @@ fn codifica_valori(g: &Griglia, valori: &[i32], per_cella: usize) -> Vec<u8> {
     sc.chiudi()
 }
 
-fn decodifica_valori(g: &Griglia, b: &[u8], per_cella: usize, minimo: i32, massimo: i32) -> Vec<i32> {
+pub(crate) fn decodifica_valori(g: &Griglia, b: &[u8], per_cella: usize, minimo: i32, massimo: i32) -> Vec<i32> {
     let mut le = Lettore::nuovo(b);
     let mut ctx = Contesti::nuovi();
     let mut valori = vec![0i32; g.celle() * per_cella];
@@ -76,7 +76,8 @@ fn decodifica_valori(g: &Griglia, b: &[u8], per_cella: usize, minimo: i32, massi
 }
 
 #[inline]
-fn previsione(valori: &[i32], per_cella: usize, q: usize, sinistra: Option<usize>, sopra: Option<usize>) -> i32 {
+pub(crate) fn previsione(valori: &[i32], per_cella: usize, q: usize, sinistra: Option<usize>, sopra: Option<usize>) -> i32 {
+
     match (sinistra, sopra) {
         (Some(s), Some(u)) => (valori[s * per_cella + q] + valori[u * per_cella + q] + 1) >> 1,
         (Some(s), None) => valori[s * per_cella + q],

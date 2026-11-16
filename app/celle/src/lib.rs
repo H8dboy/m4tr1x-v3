@@ -22,8 +22,10 @@
 //! viaggiare come blob proprio (ADR-0005) e arrivare quando la banda c'è.
 
 pub mod aritmetica;
+pub mod bmp;
 pub mod dettaglio;
 pub mod onde;
+pub mod reel;
 mod strati;
 
 pub use dettaglio::pezzi_byte as pezzi_dettaglio;
@@ -465,7 +467,7 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
     if p.passo_dettaglio > 0 {
         let base = piani_base(&mappa, &bari, &colore, &pendenza, w, h);
         let orig = piani_di(img, &luce);
-        dettaglio = dettaglio::codifica(&orig, &base, p.passo_dettaglio, p.passo_croma, livelli, &mappa, n);
+        dettaglio = dettaglio::codifica(&orig, &base, p.passo_dettaglio, p.passo_croma, livelli, &mappa, n, dettaglio::Base::SoloMedia);
     }
 
     let colore = strati::codifica_colore(&griglia, &colore);
@@ -500,7 +502,7 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
 }
 
 /// I piani dell'immagine vera: luce intera, colori dimezzati.
-fn piani_di(img: &Immagine, luce: &[u8]) -> dettaglio::Piani {
+pub(crate) fn piani_di(img: &Immagine, luce: &[u8]) -> dettaglio::Piani {
     let (w, h) = (img.larghezza as usize, img.altezza as usize);
     let mut cb = dettaglio::Piano::nuovo(w, h);
     let mut cr = dettaglio::Piano::nuovo(w, h);
@@ -547,9 +549,17 @@ pub enum Strati {
     Tutti,
 }
 
-/// Decodifica. Gli strati mancanti (vuoti) si saltano: l'immagine esce intera, meno fine.
-pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
-    let t = &c.testa;
+/// Quello che dice l'intestazione di una `Codificata`, griglia compresa.
+pub(crate) struct Testa {
+    pub w: u32,
+    pub h: u32,
+    pub passo: u8,
+    pub passo_croma: u8,
+    pub livelli: u8,
+    pub griglia: Griglia,
+}
+
+pub(crate) fn leggi_testa(t: &[u8]) -> Result<Testa, Errore> {
     if t.len() < 14 || &t[0..4] != MAGIA {
         return Err(Errore::Formato("intestazione"));
     }
@@ -579,7 +589,44 @@ pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
         let byte = *t.get(i + k / 8).ok_or(Errore::Formato("bit delle celle raffinate troncati"))?;
         *r = byte & (1 << (k % 8)) != 0;
     }
-    let griglia = base.con_raffinate(raffinate);
+    Ok(Testa { w, h, passo, passo_croma, livelli, griglia: base.con_raffinate(raffinate) })
+}
+
+/// Da piani (luce intera, colori dimezzati) all'immagine RGB.
+pub(crate) fn piani_in_rgb(p: &dettaglio::Piani) -> Immagine {
+    let (w, h) = (p.y.w, p.y.h);
+    let (cb, cr) = (dettaglio::raddoppia(&p.cb, w, h), dettaglio::raddoppia(&p.cr, w, h));
+    let mut uscita = Vec::with_capacity(w * h * 3);
+    for k in 0..w * h {
+        let (r, g, b) = rgb(p.y.v[k].clamp(0, 255), cb.v[k].clamp(0, 255) as u8, cr.v[k].clamp(0, 255) as u8);
+        uscita.extend_from_slice(&[r, g, b]);
+    }
+    Immagine { larghezza: w as u32, altezza: h as u32, rgb: uscita }
+}
+
+/// Decodifica fino ai piani (luce intera, colori dimezzati): è quello che un reel tiene come riferimento per il
+/// fotogramma dopo. Senza dettaglio dà la base degli strati 0 e 1.
+pub(crate) fn decodifica_piani(c: &Codificata, strati: Strati) -> Result<(dettaglio::Piani, Griglia), Errore> {
+    let t = leggi_testa(&c.testa)?;
+    if c.colore.is_empty() {
+        return Err(Errore::Formato("strato del colore"));
+    }
+    let colore = strati::decodifica_colore(&t.griglia, &c.colore);
+    let con_pendenza = strati != Strati::Colore && !c.pendenza.is_empty();
+    let pendenza: Vec<u8> = if con_pendenza { strati::decodifica_pendenza(&t.griglia, &c.pendenza) } else { vec![] };
+    let mappa = t.griglia.mappa();
+    let bari = t.griglia.baricentri(&mappa);
+    let base = piani_base(&mappa, &bari, &colore, &pendenza, t.w as usize, t.h as usize);
+    if strati == Strati::Tutti && con_pendenza && !c.dettaglio.is_empty() && t.passo > 0 {
+        let fine = dettaglio::decodifica(&c.dettaglio, &base, t.passo, t.passo_croma, t.livelli, &mappa, t.griglia.celle(), dettaglio::Base::SoloMedia);
+        return Ok((fine, t.griglia));
+    }
+    Ok((base, t.griglia))
+}
+
+/// Decodifica. Gli strati mancanti (vuoti) si saltano: l'immagine esce intera, meno fine.
+pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
+    let Testa { w, h, passo, passo_croma, livelli, griglia } = leggi_testa(&c.testa)?;
     if c.colore.is_empty() {
         return Err(Errore::Formato("strato del colore"));
     }
@@ -593,14 +640,10 @@ pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
     // il dettaglio si applica solo sopra colore + pendenza: è stato previsto così da chi ha codificato
     if strati == Strati::Tutti && con_pendenza && !c.dettaglio.is_empty() && passo > 0 {
         let base = piani_base(&mappa, &bari, &colore, &pendenza, w, h);
-        let fine = dettaglio::decodifica(&c.dettaglio, &base, passo, passo_croma, livelli, &mappa, griglia.celle());
-        let (cb, cr) = (dettaglio::raddoppia(&fine.cb, w, h), dettaglio::raddoppia(&fine.cr, w, h));
-        for k in 0..w * h {
-            let (r, g, b) = rgb(fine.y.v[k].clamp(0, 255), cb.v[k].clamp(0, 255) as u8, cr.v[k].clamp(0, 255) as u8);
-            uscita.extend_from_slice(&[r, g, b]);
-        }
-        return Ok(Immagine { larghezza: w as u32, altezza: h as u32, rgb: uscita });
+        let fine = dettaglio::decodifica(&c.dettaglio, &base, passo, passo_croma, livelli, &mappa, griglia.celle(), dettaglio::Base::SoloMedia);
+        return Ok(piani_in_rgb(&fine));
     }
+
     // senza dettaglio: colore e pendenza per cella, pixel per pixel, a piena risoluzione anche nei colori
     for (k, &cel) in mappa.iter().enumerate() {
         let cel = cel as usize;
