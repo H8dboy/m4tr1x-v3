@@ -663,6 +663,12 @@ fn piramide(base: usize, l: u32, r: u32, profondita: u8, out: &mut Vec<Compito>)
 
 /// Codifica una sequenza di fotogrammi della stessa misura.
 pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, Errore> {
+    codifica_reel_con(fotogrammi, p, |_| {})
+}
+
+/// Come `codifica_reel`, con `avanza(fotogrammi codificati finora)` dopo ogni fotogramma (per chi mostra una
+/// barra: un reel di un minuto costa minuti di calcolo).
+pub fn codifica_reel_con(fotogrammi: &[Immagine], p: ParametriReel, mut avanza: impl FnMut(usize)) -> Result<Reel, Errore> {
     let primo = fotogrammi.first().ok_or(Errore::Immagine("nessun fotogramma"))?;
     let (w, h) = (primo.larghezza as usize, primo.altezza as usize);
     for img in fotogrammi {
@@ -770,8 +776,12 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
             out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, c, geo, sc.divisioni, va, vb, modi, passo, croma, livelli, cerca)));
         }
         ancora = i;
-        // prossima àncora: a distanza `gruppo`, oppure l'ultimo fotogramma
-        i = if i + gruppo < n_tot { i + gruppo } else if i < n_tot - 1 { n_tot - 1 } else { n_tot };
+        avanza(out.len());
+        // prossima àncora: a distanza `gruppo`, oppure la prossima chiave programmata se viene prima (così la
+        // chiave cade davvero ogni `chiave_ogni`, non alla prima àncora che la supera), oppure l'ultimo fotogramma
+        let prossima_chiave = if p.chiave_ogni > 0 { (base / p.chiave_ogni as usize + 1) * p.chiave_ogni as usize } else { usize::MAX };
+        let prossima = (i + gruppo).min(prossima_chiave);
+        i = if prossima < n_tot { prossima } else if i < n_tot - 1 { n_tot - 1 } else { n_tot };
     }
     Ok(Reel { fotogrammi: out, fps: p.fps })
 }
