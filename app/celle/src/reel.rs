@@ -19,11 +19,10 @@
 //! **Celle che seguono il moto** (13/11/2026, idea del fondatore: "celle intelligenti che predicono la dimensione in
 //! base a quando il moto cambia"): la griglia di un previsto non è più quella della chiave. Ogni cella base può
 //! essere intera o divisa in sette, e chi legge **prevede da solo** quali dividere dagli spostamenti del fotogramma
-//! prima (`raffinate_previste`): dove due celle vicine si muovono in modo diverso, o dentro una cella divisa i
-//! sette spostamenti non sono uguali, la cella resta piccola; dove il moto è uniforme torna grande. Zero byte. Chi
-//! scrive può contraddire la previsione con un bit adattivo per cella base (`divisioni`, quasi gratis quando la
-//! previsione è giusta): divide dove lo scarto per pixel è alto e la divisione paga, riunisce dove i sette
-//! spostamenti sono uguali.
+//! prima (`raffinate_previste`): finché dentro una cella divisa i sette spostamenti non sono uguali la cella resta
+//! piccola; quando il moto torna uniforme torna grande da sola. Zero byte. Le divisioni nuove le decide chi scrive
+//! con un bit adattivo per cella base (`divisioni`, nessun byte quando non cambia niente): divide dove lo scarto
+//! è alto e la divisione paga, riunisce dove dividere non paga più.
 //!
 //! L'alveare al lavoro sul video: dentro ogni fotogramma previsto il resto arriva a pezzi, cella per cella, con le
 //! celle in ordine di quanto la previsione ha sbagliato (`dettaglio::percorri`): prima quelle che si muovono o si
@@ -48,10 +47,13 @@ const RIFERIMENTI: usize = 12;
 const GROSSEZZA_B: u8 = 3;
 /// Due spostamenti distano "abbastanza" (mezzi pixel, |dx|+|dy|) perché la cella tra loro vada divisa.
 const SOGLIA_MOTO: i32 = 4;
-/// Una cella intera con scarto medio per pixel sopra `SOGLIA_SCARTO × passo` si prova a dividere…
-const SOGLIA_SCARTO: i64 = 1;
-/// …e si divide se lo scarto cala di più di `PENALE_DIVISIONE × passo` (sei spostamenti in più costano byte).
-const PENALE_DIVISIONE: i64 = 24;
+/// Una cella intera con scarto medio per pixel sopra `SOGLIA_SCARTO_OTTAVI/8 × passo` si prova a dividere (basso
+/// apposta: con celle grandi un soggetto piccolo che si muove alza poco la media; misurato il 13/11/2026, soglie
+/// 8/8 → 1/8: su un video con la camera ferma le celle non si dividevano mai)…
+const SOGLIA_SCARTO_OTTAVI: i64 = 1;
+/// …e si divide se lo scarto cala di più di `PENALE_DIVISIONE × passo` (sei spostamenti in più costano byte;
+/// misurato 24 → 12 → 6: 12 è il meglio su due video).
+const PENALE_DIVISIONE: i64 = 12;
 /// Sotto questi pixel una cella non si divide (ritagli ai bordi dell'immagine).
 const PIXEL_MIN_DIVISIONE: usize = 64;
 
@@ -475,7 +477,7 @@ fn scegli_griglia(st: &Stato, cur: &Piano, rif: &Piano, cerca: i32, passo: u8, c
             if unita - divisa <= PENALE_DIVISIONE * p {
                 prova[k] = false;
             }
-        } else if geo0.pixel[c0].len() >= PIXEL_MIN_DIVISIONE && s0[c0] > SOGLIA_SCARTO * p * geo0.pixel[c0].len() as i64 {
+        } else if geo0.pixel[c0].len() >= PIXEL_MIN_DIVISIONE && s0[c0] * 8 > SOGLIA_SCARTO_OTTAVI * p * geo0.pixel[c0].len() as i64 {
             prova[k] = true;
             da_decidere.push(k);
         }

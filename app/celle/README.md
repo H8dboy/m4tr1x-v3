@@ -110,6 +110,21 @@ fotogrammi buoni l'occhio non le nota.
 | reel1 428×640 (passeggiata, rumoroso) | passo 12: 5542 B/fotogr. 36,64 dB · 14: 4351 B 35,42 dB | passo 12: 3835 B 36,20 dB | **−24 %** | 3208 B 35,70 dB (−30 %) |
 | reel2 640×360 (fermo, poco rumore) | passo 16: 1444 B 37,50 dB · 20: 1082 B 36,27 dB | passo 16: 1029 B 37,46 dB | **−28 %** | 901 B 37,20 dB (−33 %) |
 
+**Celle che seguono il moto** (13/11 pomeriggio, idea del fondatore: "celle intelligenti che predicono la dimensione in
+base a quando il moto cambia"): la griglia non è più quella della chiave. Ogni cella base può essere intera o divisa
+in sette, fotogramma per fotogramma. Chi legge **prevede da solo** la griglia: una cella divisa resta divisa finché
+dentro i sette spostamenti non sono uniformi, poi torna intera (zero byte). Le divisioni nuove le dice chi scrive
+con un bit adattivo per cella base (nessun byte se non cambia niente): prova a dividere le celle con scarto medio per
+pixel sopra passo/8 e tiene la divisione se lo scarto cala di più di 12·passo; riunisce quelle che non pagano più.
+Misurato a pari passo (bidir 3): reel1 passo 12 → 3730 B/fotogramma e 36,28 dB contro 3868 B e 36,08 dB (−3,6 %,
++0,2 dB); reel2 passo 16 → 1010 B e 37,60 dB contro 1024 B e 37,31 dB (−1,4 %, +0,3 dB). A pari PSNR vale circa
+**−7/−8 %**. Celle per fotogramma: 423 contro 160 su reel1, 189 contro 96 su reel2; i bit di correzione costano 7–14 B
+a fotogramma. Lezioni misurate: prevedere la divisione quando due vicine intere si muovono diversamente sbaglia (il
+confine passa TRA le celle, non dentro) e costa un bit a ogni errore; con la soglia a 1·passo un video con la camera
+ferma non divideva mai (la media su una cella grande resta bassa anche con un soggetto che si muove); partire dalla
+griglia della chiave invece che da celle intere non cambia niente. Codifica ~0,6 s a fotogramma (fino a tre ricerche),
+decodifica ~60 ms.
+
 Confronto con i codec veri sugli stessi fotogrammi (ffmpeg, `baseline-x264.txt` nelle cartelle di prova): x264 medium
 crf 24 fa 2485 B a 36,16 dB su reel1 e 1067 B a 37,96 dB su reel2; a pari PSNR le celle stanno a **~1,5× x264 su
 reel1 e ~1,15× su reel2** (bidir 7), contro le 8–10× del codec ingenuo di due giorni fa. MJPEG q50 è a 26.000 B su
@@ -123,8 +138,8 @@ Comando: `cargo run --release --example misura_reel -- <cartella con frame-NNN.b
 1. Misura su telefono o mini PC: tempo e memoria (oggi i piani sono i32: ~23 MB per una foto da 2 MP; si può fare
    a strisce). Un confronto a occhio (non solo PSNR) su un paio di foto.
 2. Strato 1: le pendenze costano ancora 3–4 byte per cella; provare una scala più grossa.
-3. Reel: siamo a 1,15–1,5× x264 medium a pari PSNR (vedi sopra). Da provare: celle più piccole dove il movimento
-   non è uniforme (una cella grande con due oggetti che si muovono in modo diverso si prevede male), pesi diversi
-   da ½ nella media dei due riferimenti (dissolvenze), un passo più grosso anche sulle celle che l'occhio segue meno.
+3. Reel: siamo a ~1,1–1,4× x264 medium a pari PSNR (vedi sopra). Da provare: un secondo livello di divisione (7×7:
+   con il raggio automatico a 48 le celle divise sono ancora da 18 px), pesi diversi da ½ nella media dei due
+   riferimenti (dissolvenze), un passo più grosso sulle celle che l'occhio segue meno, meno ricerche per chi scrive.
 4. Collegamento al trasporto: ogni strato (e ogni pezzo dello strato 2) un blob a pezzi (ADR-0005), scheda con gli
    hash; chi guarda scarica prima i pochi KB dell'anteprima, poi quello che la banda permette.
