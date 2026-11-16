@@ -90,12 +90,41 @@ zero dove non c'è dettaglio e costano una frazione di bit; i byte vanno da soli
 mano. Un passo più fino dove c'è già molto dettaglio sposterebbe byte dove l'occhio nota meno (mascheramento):
 si può aggiungere dopo come scelta percettiva, non per il PSNR.
 
+## Reel (13/11/2026, `examples/misura_reel.rs`, due video del telefono di 60 fotogrammi)
+
+Stessa griglia e stessa trasformata della foto. Il primo fotogramma è una chiave; gli altri si prevedono **cella
+per cella** da fotogrammi già ricostruiti: uno spostamento `(dx, dy)` per cella a mezzo pixel (quarto sui colori
+dimezzati), bordi tra celle sfumati (media pesata, come l'OBMC di H.263), il resto a onde con la base intera
+(`Base::Tutto`), contesti aritmetici tenuti da un fotogramma all'altro, un bit "cella vuota" per livello. Il resto
+arriva cella per cella, prima le celle dove la previsione ha sbagliato di più.
+
+**Bidirezionali a piramide** (come i B di x264): tra un'àncora e l'altra (ogni 4 fotogrammi) il mezzo si prevede
+dall'àncora prima e da quella dopo, i quarti dal mezzo e da un'àncora; ogni cella sceglie passato, futuro o media.
+Misurato: la doppia previsione da sola rende il 2 % (i video del telefono sono rumorosi: a passo fino si codifica
+rumore, e la media di due riferimenti lo abbassa poco). **Il guadagno sta nel passo più grosso in fondo alla
+piramide** (+3/8 per livello: il mezzo ×1,375, i quarti ×1,75): le foglie non fanno da riferimento e tra due
+fotogrammi buoni l'occhio non le nota.
+
+| video | catena di previsti (bidir 0) | piramide (bidir 3) | pari PSNR | piramide lunga (bidir 7) |
+|---|---|---|---|---|
+| reel1 428×640 (passeggiata, rumoroso) | passo 12: 5542 B/fotogr. 36,64 dB · 14: 4351 B 35,42 dB | passo 12: 3835 B 36,20 dB | **−24 %** | 3208 B 35,70 dB (−30 %) |
+| reel2 640×360 (fermo, poco rumore) | passo 16: 1444 B 37,50 dB · 20: 1082 B 36,27 dB | passo 16: 1029 B 37,46 dB | **−28 %** | 901 B 37,20 dB (−33 %) |
+
+Confronto con i codec veri sugli stessi fotogrammi (ffmpeg, `baseline-x264.txt` nelle cartelle di prova): x264 medium
+crf 24 fa 2485 B a 36,16 dB su reel1 e 1067 B a 37,96 dB su reel2; a pari PSNR le celle stanno a **~1,5× x264 su
+reel1 e ~1,15× su reel2** (bidir 7), contro le 8–10× del codec ingenuo di due giorni fa. MJPEG q50 è a 26.000 B su
+reel1. Gli spostamenti costano 90–190 B per fotogramma. Tempo: ~250 ms per fotogramma a codificare (ricerca su due
+riferimenti), ~40 ms a decodificare, PC dell'officina senza ottimizzazioni.
+
+Comando: `cargo run --release --example misura_reel -- <cartella con frame-NNN.bmp> -- passo,croma,chiave_ogni,cerca,raggio,bidir …`.
+
 ## Prossimo
 
 1. Misura su telefono o mini PC: tempo e memoria (oggi i piani sono i32: ~23 MB per una foto da 2 MP; si può fare
    a strisce). Un confronto a occhio (non solo PSNR) su un paio di foto.
 2. Strato 1: le pendenze costano ancora 3–4 byte per cella; provare una scala più grossa.
-3. Reel: stessa griglia e stessa trasformata; per ogni fotogramma si prevede dal precedente **cella per cella**
-   (spostamento intero per cella, poi il resto come qui). È il pezzo che decide se l'idea regge sul video.
+3. Reel: siamo a 1,15–1,5× x264 medium a pari PSNR (vedi sopra). Da provare: celle più piccole dove il movimento
+   non è uniforme (una cella grande con due oggetti che si muovono in modo diverso si prevede male), pesi diversi
+   da ½ nella media dei due riferimenti (dissolvenze), un passo più grosso anche sulle celle che l'occhio segue meno.
 4. Collegamento al trasporto: ogni strato (e ogni pezzo dello strato 2) un blob a pezzi (ADR-0005), scheda con gli
    hash; chi guarda scarica prima i pochi KB dell'anteprima, poi quello che la banda permette.

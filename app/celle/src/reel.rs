@@ -12,7 +12,9 @@
 //! previsto) i fotogrammi in mezzo si prevedono da **due** riferimenti, uno prima e uno dopo; ogni cella sceglie
 //! da dove: dal passato, dal futuro o dalla media dei due (ferma il rumore, copre le zone che si scoprono). Il
 //! fotogramma di mezzo si codifica per primo e fa da riferimento ai due quarti. L'ordine dei byte è quello di
-//! decodifica; ogni fotogramma dice a che punto si mostra e quali riferimenti usa.
+//! decodifica; ogni fotogramma dice a che punto si mostra e quali riferimenti usa. **Il guadagno vero sta nel passo
+//! più grosso in fondo alla piramide** (`passo_a`): la doppia previsione da sola, su video rumorosi, rende il 2 %;
+//! con le foglie quantizzate più grosse si risparmia un quarto dei byte a pari PSNR (misure nel README).
 //!
 //! L'alveare al lavoro sul video: dentro ogni fotogramma previsto il resto arriva a pezzi, cella per cella, con le
 //! celle in ordine di quanto la previsione ha sbagliato (`dettaglio::percorri`): prima quelle che si muovono o si
@@ -33,6 +35,8 @@ const MAGIA_REEL: &[u8; 4] = b"M4RL";
 pub const CERCA_MAX: u8 = 32;
 /// Quanti fotogrammi ricostruiti si tengono come riferimento (bastano per una piramide tra àncore a distanza 8).
 const RIFERIMENTI: usize = 12;
+/// Di quanti ottavi cresce il passo a ogni livello della piramide dei bidirezionali (vedi `passo_a`).
+const GROSSEZZA_B: u8 = 3;
 
 /// Parametri di un reel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -437,17 +441,28 @@ struct Compito {
     mostra: u32,
     rif_a: u32,
     rif_b: Option<u32>,
+    /// 0 per un'àncora, 1 per il fotogramma di mezzo, 2 per i quarti…: più in fondo, più grosso il passo
+    profondita: u8,
+}
+
+/// Il passo di un fotogramma a una certa profondità della piramide: +3/8 per livello (×1,375 il mezzo, ×1,75 i
+/// quarti). I fotogrammi in fondo non fanno da riferimento a nessuno (o a pochi): si possono quantizzare più grossi
+/// senza che l'errore si propaghi, e tra due riferimenti buoni l'occhio non se ne accorge (x264 fa lo stesso con i
+/// B, `pbratio`). Misurato il 13/11/2026 su due video: è questo, non la doppia previsione in sé, che fa guadagnare
+/// (a pari PSNR −21/−30 % con grossezza 2/8–4/8; 3/8 è il mezzo scelto).
+fn passo_a(passo: u8, profondita: u8) -> u8 {
+    (passo as u32 + passo as u32 * profondita as u32 * GROSSEZZA_B as u32 / 8).min(255) as u8
 }
 
 /// L'ordine di codifica tra due àncore `l` e `r` (già codificate): il mezzo, poi i due lati (piramide).
-fn piramide(base: usize, l: u32, r: u32, out: &mut Vec<Compito>) {
+fn piramide(base: usize, l: u32, r: u32, profondita: u8, out: &mut Vec<Compito>) {
     if r <= l + 1 {
         return;
     }
     let m = (l + r) / 2;
-    out.push(Compito { indice: base + m as usize, mostra: m, rif_a: l, rif_b: Some(r) });
-    piramide(base, l, m, out);
-    piramide(base, m, r, out);
+    out.push(Compito { indice: base + m as usize, mostra: m, rif_a: l, rif_b: Some(r), profondita });
+    piramide(base, l, m, profondita + 1, out);
+    piramide(base, m, r, profondita + 1, out);
 }
 
 /// Codifica una sequenza di fotogrammi della stessa misura.
@@ -487,7 +502,7 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
             if p.soglia_chiave != 0 && tot / (w * h) as i64 > p.soglia_chiave as i64 {
                 chiave = true;
             } else {
-                out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, &Compito { indice: i, mostra, rif_a, rif_b: None }, v, vec![], vec![], passo, croma, livelli, cerca)));
+                out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, &Compito { indice: i, mostra, rif_a, rif_b: None, profondita: 0 }, v, vec![], vec![], passo, croma, livelli, cerca)));
             }
         }
         if chiave {
@@ -502,10 +517,10 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
         let st = stato.as_mut().expect("stato");
         let mut compiti = Vec::new();
         if !chiave {
-            piramide(base, (ancora - base) as u32, (i - base) as u32, &mut compiti);
+            piramide(base, (ancora - base) as u32, (i - base) as u32, 1, &mut compiti);
         } else {
             for j in ancora + 1..i {
-                compiti.push(Compito { indice: j, mostra: 0, rif_a: 0, rif_b: None });
+                compiti.push(Compito { indice: j, mostra: 0, rif_a: 0, rif_b: None, profondita: 0 });
             }
         }
         if chiave && !compiti.is_empty() {
@@ -523,6 +538,7 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
             let orig = piani(c.indice);
             let a = st.riferimento(c.rif_a).expect("riferimento a");
             let b = st.riferimento(c.rif_b.expect("riferimento b")).expect("riferimento b");
+            let (passo, croma) = (passo_a(passo, c.profondita), passo_a(croma, c.profondita));
             let (va, sa) = cerca_vettori(&orig.y, &a.y, st, cerca, passo);
             let (vb, sb) = cerca_vettori(&orig.y, &b.y, st, cerca, passo);
             // per cella: passato, futuro o media, quello con lo scarto minore
@@ -873,18 +889,9 @@ mod tests {
         let r = codifica_reel(&f, ParametriReel { bidirezionali: 3, ..par() }).unwrap();
         // chiave, àncora 4, poi 2, 1, 3; àncora 8, poi 6, 5, 7
         assert_eq!(tipi(&r), "CPBBBPBBB");
-        for (k, f) in r.fotogrammi.iter().enumerate() {
-            if let Fotogramma::Previsto(p) = f {
-                let t = leggi_testa_previsto(p).unwrap();
-                let m = r.modi(k).unwrap();
-                let conta = |v: u8| m.iter().filter(|&&x| x == v).count();
-                eprintln!("DBG {k}: mostra {} rif {}/{:?} testa {} modi {} va {} vb {} dett {} · modi 0/1/2 = {}/{}/{}", t.mostra, t.rif_a, t.rif_b, p.testa.len(), p.modi.len(), p.vettori.len(), p.vettori_b.len(), p.dettaglio.len(), conta(0), conta(1), conta(2));
-            }
-        }
-        let semplice0 = codifica_reel(&f, par()).unwrap();
-        for (k, f) in semplice0.fotogrammi.iter().enumerate() {
-            eprintln!("DBG semplice {k}: {} B", f.byte_totali());
-        }
+        // il mezzo e i quarti hanno il passo più grosso dell'àncora (3/8 e 6/8 in più)
+        let passo_di = |k: usize| if let Fotogramma::Previsto(p) = &r.fotogrammi[k] { p.testa[0] } else { 0 };
+        assert_eq!((passo_di(1), passo_di(2), passo_di(3), passo_di(4)), (8, 11, 14, 14));
         let d = decodifica_reel(&r).unwrap();
         assert_eq!(d.len(), 9);
         assert!(psnr_minimo(&f, &d) >= 2800, "PSNR {}", psnr_minimo(&f, &d));
