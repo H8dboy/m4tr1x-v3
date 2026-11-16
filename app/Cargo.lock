@@ -2183,6 +2183,7 @@ dependencies = [
 name = "m4tr1x-shell"
 version = "0.1.0"
 dependencies = [
+ "m4tr1x-celle",
  "m4tr1x-crash",
  "m4tr1x-feed",
  "m4tr1x-identity",

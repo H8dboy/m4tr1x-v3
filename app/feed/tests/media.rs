@@ -4,7 +4,7 @@
 
 use m4tr1x_feed::{leggi_media, BUDGET};
 use m4tr1x_identity::{deriva, seme_da_parole, ChiaveRuolo, Ruolo};
-use m4tr1x_protocol::{file_da_evento, firma_evento, tag_autorizzazione_file, tag_file, Rete, Sezione, KIND_FILE, MASSIMO_FILE};
+use m4tr1x_protocol::{file_da_evento, firma_evento, strati_validi, tag_autorizzazione_file, tag_file, tag_file_a_celle, Rete, Sezione, KIND_FILE, MASSIMO_FILE, MIME_CELLE_FOTO, MIME_CELLE_REEL, PEZZO};
 use m4tr1x_transport::prova::{relay_finto_che_ignora_il_filtro, relay_finto_condiviso};
 use m4tr1x_transport::{BootstrapInfo, Isolation, OnionV3, Stream, Transport, TransportStatus};
 use serde_json::{json, Value};
@@ -136,4 +136,47 @@ fn schede_e_autorizzazioni_si_scrivono_solo_nella_forma_giusta() {
         let e = m4tr1x_protocol::verifica(&firma(&a, KIND_FILE, "", &tags, ORA), RETE).unwrap();
         assert!(file_da_evento(&e).is_none(), "scheda accettata: {nome}");
     }
+}
+
+#[test]
+fn le_schede_a_celle_portano_hash_e_misura_di_ogni_pezzo() {
+    use m4tr1x_transport::http::sha256_hex;
+    let pezzi: Vec<Vec<u8>> = vec![vec![1u8; 300], vec![2u8; 5000], vec![3u8; 70]];
+    let hash: Vec<String> = pezzi.iter().map(|p| sha256_hex(p)).collect();
+    let misure: Vec<u64> = pezzi.iter().map(|p| p.len() as u64).collect();
+    let intero = pezzi.concat();
+    let (sha_intero, dim) = (sha256_hex(&intero), intero.len() as u64);
+    assert!(strati_validi(dim, &hash, &misure));
+    assert!(!strati_validi(dim + 1, &hash, &misure), "misure che non sommano alla dimensione");
+    assert!(!strati_validi(dim, &hash, &misure[..2]), "una misura in meno");
+    assert!(!strati_validi(dim, &[], &[]), "nessun pezzo");
+    assert!(!strati_validi(PEZZO + 1, &hash[..1], &[PEZZO + 1]), "un pezzo oltre il massimo");
+    assert!(!strati_validi(dim, &hash, &[0, 5000, 370]), "un pezzo vuoto");
+    // la scheda classica non accetta i tipi a celle, quella a celle non accetta gli altri
+    assert!(tag_file(Sezione::Signal, &sha_intero, MIME_CELLE_FOTO, dim, "", &[]).is_err());
+    assert!(tag_file_a_celle(Sezione::Signal, &sha_intero, "image/jpeg", dim, "", &hash, &misure).is_err());
+    assert!(tag_file_a_celle(Sezione::Film, &sha_intero, MIME_CELLE_REEL, dim, "", &hash, &misure).is_err(), "i reel a celle stanno nei reels, non tra i film");
+    assert!(tag_file_a_celle(Sezione::Signal, &sha_intero, MIME_CELLE_FOTO, dim, "", &hash, &misure[..2]).is_err());
+    let t = tag_file_a_celle(Sezione::Signal, &sha_intero, MIME_CELLE_FOTO, dim, "Una foto", &hash, &misure).unwrap();
+    let tag_pezzi: Vec<&Vec<String>> = t.iter().filter(|x| x[0] == "pezzo").collect();
+    assert_eq!(tag_pezzi.len(), 3);
+    assert_eq!(tag_pezzi[1], &vec!["pezzo".to_string(), hash[1].clone(), "5000".to_string()], "ogni pezzo con hash e misura");
+    // dalla scheda tornano pezzi e misure; una misura che manca o storpiata rende la scheda non valida
+    let a = anna();
+    let scheda = |tags: &[Vec<String>]| m4tr1x_protocol::verifica(&firma(&a, KIND_FILE, "", tags, ORA), RETE).ok().and_then(|e| file_da_evento(&e));
+    let f = scheda(&t).expect("scheda a celle valida");
+    assert!(f.a_celle());
+    assert_eq!((f.pezzi.clone(), f.misure.clone(), f.dimensione), (hash.clone(), misure.clone(), dim));
+    let mut senza = t.clone();
+    senza[5].truncate(2);
+    assert!(scheda(&senza).is_none(), "pezzo a celle senza misura");
+    let mut storpia = t.clone();
+    storpia[5][2] = "tanti".into();
+    assert!(scheda(&storpia).is_none(), "misura non numerica");
+    let mut sbagliata = t.clone();
+    sbagliata[5][2] = "5001".into();
+    assert!(scheda(&sbagliata).is_none(), "misure che non sommano alla dimensione");
+    // un tipo classico resta classico: niente misure, pezzi da PEZZO
+    let classica = scheda(&tag_file(Sezione::Signal, &sha_intero, "image/jpeg", dim, "", &[]).unwrap()).unwrap();
+    assert!(!classica.a_celle() && classica.misure.is_empty());
 }

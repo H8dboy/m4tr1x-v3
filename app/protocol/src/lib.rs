@@ -334,6 +334,32 @@ pub fn pezzi_validi(dimensione: u64, pezzi: &[String]) -> bool {
 /// Tipi ammessi: gli stessi che la pulizia dei metadati sa trattare (app/media).
 pub const MIME_AMMESSI: [&str; 5] = ["image/jpeg", "image/png", "video/mp4", "audio/mp4", "audio/mpeg"];
 
+// ─── File a celle (alveare, docs/design/VIDEO_A_CELLE.md) ────────────────────
+// Una foto o un reel codificati dall'app in celle esagonali (crate app/celle) viaggiano come pezzi di MISURA
+// DIVERSA: il primo è l'anteprima (pochi KB, l'immagine intera), i seguenti la affinano. La scheda elenca ogni
+// pezzo con hash E dimensione (`["pezzo", hash, byte]`), così chi guarda mostra il primo appena arriva e sa quanto
+// pesa il resto. Nessun metadato da ripulire: il formato è nostro e porta solo pixel.
+
+/// Una foto a celle (pezzo 0 `M4CF`).
+pub const MIME_CELLE_FOTO: &str = "image/vnd.m4tr1x.celle";
+/// Un reel a celle (ogni pezzo un gruppo di fotogrammi `M4RL`).
+pub const MIME_CELLE_REEL: &str = "video/vnd.m4tr1x.celle";
+/// I tipi a celle: pezzi di misura diversa elencati con la dimensione.
+pub const MIME_CELLE: [&str; 2] = [MIME_CELLE_FOTO, MIME_CELLE_REEL];
+/// Quanti pezzi può elencare una scheda a celle (reel lungo: un pezzo per gruppo di fotogrammi).
+pub const MASSIMO_PEZZI_CELLE: usize = 1024;
+
+/// I pezzi di una scheda a celle sono nella forma giusta: almeno uno, non più del massimo, hash validi, misure
+/// tutte tra 1 e `PEZZO` byte che sommate danno la dimensione del file.
+pub fn strati_validi(dimensione: u64, pezzi: &[String], misure: &[u64]) -> bool {
+    !pezzi.is_empty()
+        && pezzi.len() <= MASSIMO_PEZZI_CELLE
+        && pezzi.len() == misure.len()
+        && pezzi.iter().all(|p| esadecimale_minuscolo(p, 64))
+        && misure.iter().all(|&m| (1..=PEZZO).contains(&m))
+        && misure.iter().try_fold(0u64, |s, &m| s.checked_add(m)) == Some(dimensione)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum Sezione {
     /// reels e foto
@@ -361,7 +387,7 @@ impl Sezione {
     /// Che tipi di file ha senso trovare in ogni sezione.
     pub fn ammette(self, mime: &str) -> bool {
         match self {
-            Sezione::Signal => matches!(mime, "image/jpeg" | "image/png" | "video/mp4"),
+            Sezione::Signal => matches!(mime, "image/jpeg" | "image/png" | "video/mp4" | MIME_CELLE_FOTO | MIME_CELLE_REEL),
             Sezione::Film => mime == "video/mp4",
             Sezione::Musica => matches!(mime, "audio/mp4" | "audio/mpeg"),
         }
@@ -378,22 +404,52 @@ pub struct SchedaFile {
     pub titolo: String,
     /// hash dei pezzi in ordine (ADR-0005); vuoto = il file è un blob solo (`sha256`)
     pub pezzi: Vec<String>,
+    /// SOLO per i tipi a celle: la dimensione di ogni pezzo, nello stesso ordine; vuoto per gli altri tipi (lì i
+    /// pezzi sono tutti da `PEZZO` byte, l'ultimo più corto)
+    pub misure: Vec<u64>,
+}
+
+impl SchedaFile {
+    /// È una foto o un reel a celle (pezzi con la misura).
+    pub fn a_celle(&self) -> bool {
+        MIME_CELLE.contains(&self.mime.as_str())
+    }
 }
 
 /// Tag della scheda di un file scritto dall'app. Errore se qualcosa non è nella forma giusta.
 /// `sha256` è l'hash del file INTERO; `pezzi` gli hash dei blob in ordine se il file supera un pezzo.
 pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, titolo: &str, pezzi: &[String]) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !MIME_AMMESSI.contains(&mime) {
+        return Err(Rifiuto::Forma("tipo di file non adatto alla sezione"));
+    }
+    if !pezzi_validi(dimensione, pezzi) {
+        return Err(Rifiuto::Forma("pezzi del file"));
+    }
+    let misure: Vec<u64> = vec![];
+    tag_scheda(sezione, sha256, mime, dimensione, titolo, pezzi, &misure)
+}
+
+/// Tag della scheda di una foto o di un reel a celle: `pezzi` e `misure` (hash e byte di ogni pezzo, in ordine,
+/// il primo è l'anteprima); `sha256` e `dimensione` sono del file intero (i pezzi uno dopo l'altro).
+pub fn tag_file_a_celle(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, titolo: &str, pezzi: &[String], misure: &[u64]) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !MIME_CELLE.contains(&mime) {
+        return Err(Rifiuto::Forma("tipo di file non a celle"));
+    }
+    if !strati_validi(dimensione, pezzi, misure) {
+        return Err(Rifiuto::Forma("pezzi del file a celle"));
+    }
+    tag_scheda(sezione, sha256, mime, dimensione, titolo, pezzi, misure)
+}
+
+fn tag_scheda(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, titolo: &str, pezzi: &[String], misure: &[u64]) -> Result<Vec<Vec<String>>, Rifiuto> {
     if !esadecimale_minuscolo(sha256, 64) {
         return Err(Rifiuto::Forma("hash del file"));
     }
-    if !MIME_AMMESSI.contains(&mime) || !sezione.ammette(mime) {
+    if !sezione.ammette(mime) {
         return Err(Rifiuto::Forma("tipo di file non adatto alla sezione"));
     }
     if dimensione == 0 || dimensione > MASSIMO_FILE {
         return Err(Rifiuto::Forma("dimensione del file"));
-    }
-    if !pezzi_validi(dimensione, pezzi) {
-        return Err(Rifiuto::Forma("pezzi del file"));
     }
     if titolo.chars().count() > MASSIMO_TITOLO {
         return Err(Rifiuto::Forma("titolo oltre il limite"));
@@ -404,7 +460,11 @@ pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, tit
         vec!["size".into(), dimensione.to_string()],
         vec!["t".into(), sezione.tag().into()],
     ];
-    t.extend(pezzi.iter().map(|p| vec!["pezzo".to_string(), p.clone()]));
+    if misure.is_empty() {
+        t.extend(pezzi.iter().map(|p| vec!["pezzo".to_string(), p.clone()]));
+    } else {
+        t.extend(pezzi.iter().zip(misure).map(|(p, m)| vec!["pezzo".to_string(), p.clone(), m.to_string()]));
+    }
     let titolo = pulisci_titolo(titolo);
     if !titolo.is_empty() {
         t.push(vec!["title".into(), titolo]);
@@ -414,8 +474,8 @@ pub fn tag_file(sezione: Sezione, sha256: &str, mime: &str, dimensione: u64, tit
 
 /// La scheda di un file da un evento GIÀ verificato: Some solo se è un kind 1063 con UN hash valido, un tipo
 /// ammesso e adatto a UNA sezione, una dimensione entro il massimo, e i pezzi giusti per quella dimensione
-/// (nessuno fino a un pezzo, altrimenti tanti quanti ne servono, tutti hash validi). Tutto il resto (url esterni
-/// compresi) si ignora.
+/// (nessuno fino a un pezzo, altrimenti tanti quanti ne servono, tutti hash validi; per i tipi a celle ogni pezzo
+/// con la sua misura, sommate alla dimensione). Tutto il resto (url esterni compresi) si ignora.
 pub fn file_da_evento(e: &Evento) -> Option<SchedaFile> {
     if e.kind != KIND_FILE {
         return None;
@@ -437,12 +497,24 @@ pub fn file_da_evento(e: &Evento) -> Option<SchedaFile> {
     if !sezione.ammette(&mime) {
         return None;
     }
-    let pezzi: Vec<String> = e.tags.iter().filter(|t| t[0] == "pezzo").map(|t| t.get(1).cloned().unwrap_or_default()).collect();
-    if !pezzi_validi(dimensione, &pezzi) {
-        return None;
-    }
+    let tag_pezzi = || e.tags.iter().filter(|t| t[0] == "pezzo");
+    let pezzi: Vec<String> = tag_pezzi().map(|t| t.get(1).cloned().unwrap_or_default()).collect();
+    let misure: Vec<u64> = if MIME_CELLE.contains(&mime.as_str()) {
+        // ogni pezzo a celle porta la misura: una che manca o non è un numero rende la scheda non valida
+        let m: Option<Vec<u64>> = tag_pezzi().map(|t| t.get(2)?.parse().ok()).collect();
+        let m = m?;
+        if !strati_validi(dimensione, &pezzi, &m) {
+            return None;
+        }
+        m
+    } else {
+        if !pezzi_validi(dimensione, &pezzi) {
+            return None;
+        }
+        vec![]
+    };
     let titolo = uno("title").map(|t| pulisci_titolo(t)).unwrap_or_default();
-    Some(SchedaFile { sha256, mime, dimensione, sezione: *sezione, titolo, pezzi })
+    Some(SchedaFile { sha256, mime, dimensione, sezione: *sezione, titolo, pezzi, misure })
 }
 
 /// Tag dell'autorizzazione a caricare il file `sha256` (BUD-02): vale fino a `scadenza` (al massimo un'ora dopo `ora`,

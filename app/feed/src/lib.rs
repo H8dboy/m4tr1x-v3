@@ -547,8 +547,13 @@ pub enum ErroreCarico {
 /// (ripresa di un caricamento interrotto); altrimenti `autorizza(sha_del_pezzo)` firma l'intestazione per QUEL
 /// pezzo (una chiave letta solo quando serve) e il pezzo parte. Un "no" del nodo ferma tutto.
 pub async fn carica_file_a_pezzi<T: Transport>(t: &T, nodo: &OnionV3, file: &[u8], autorizza: impl Fn(&str) -> Result<String, String>, avanza: impl Fn(Fase)) -> Result<(), ErroreCarico> {
+    carica_pezzi(t, nodo, &fette(file), autorizza, avanza).await
+}
+
+/// Carica pezzi GIÀ tagliati (ognuno al massimo `PEZZO` byte: i pezzi di una foto o di un reel a celle hanno
+/// misure diverse), con le stesse regole di `carica_file_a_pezzi`.
+pub async fn carica_pezzi<T: Transport>(t: &T, nodo: &OnionV3, fette: &[&[u8]], autorizza: impl Fn(&str) -> Result<String, String>, avanza: impl Fn(Fase)) -> Result<(), ErroreCarico> {
     let avanza = &avanza;
-    let fette = fette(file);
     let totali = u32::try_from(fette.len()).unwrap_or(u32::MAX);
     let t0 = Instant::now();
     for (i, fetta) in fette.iter().enumerate() {
@@ -602,11 +607,24 @@ pub enum ErroreScarico {
 /// budget si lascia perdere per i pezzi dopo. Ogni pezzo si accetta solo con il suo hash; il file ricomposto solo
 /// con l'hash e la dimensione della scheda (I-17).
 pub async fn scarica_file_a_pezzi<T: Transport>(t: &T, fonti: &[OnionV3], sha256: &str, dimensione: u64, pezzi: &[String], avanza: impl Fn(Fase)) -> Result<Vec<u8>, ErroreScarico> {
-    let avanza = &avanza;
     let attesi = pezzi_attesi(sha256, dimensione, pezzi).ok_or(ErroreScarico::Scheda)?;
+    let mut file: Vec<u8> = Vec::with_capacity(usize::try_from(dimensione).unwrap_or(0));
+    scarica_pezzi(t, fonti, &attesi, &avanza, |_, b| file.extend_from_slice(b)).await?;
+    if file.len() as u64 != dimensione || m4tr1x_transport::http::sha256_hex(&file) != sha256 {
+        return Err(ErroreScarico::NonCorrisponde);
+    }
+    Ok(file)
+}
+
+/// Scarica i pezzi `attesi` (hash e byte di ognuno, in ordine) dalle `fonti` e consegna ogni pezzo appena arriva
+/// a `arrivato(indice, byte)`: così una foto a celle si mostra dal primo pezzo mentre gli altri scendono. Ogni
+/// pezzo si accetta solo con il suo hash e la sua misura (I-17); una fonte che non ha il pezzo si salta, una che
+/// non risponde entro il budget o che manda un pezzo diverso si lascia perdere per i pezzi dopo. Chi scarica un
+/// file intero ricontrolla poi hash e dimensione dell'insieme (`scarica_file_a_pezzi`); per i pezzi a celle la
+/// scheda firma già hash e misura di ognuno.
+pub async fn scarica_pezzi<T: Transport>(t: &T, fonti: &[OnionV3], attesi: &[(String, usize)], avanza: &impl Fn(Fase), mut arrivato: impl FnMut(usize, &[u8])) -> Result<(), ErroreScarico> {
     let totali = u32::try_from(attesi.len()).unwrap_or(u32::MAX);
     let mut vive: Vec<&OnionV3> = fonti.iter().collect();
-    let mut file: Vec<u8> = Vec::with_capacity(usize::try_from(dimensione).unwrap_or(0));
     let t0 = Instant::now();
     for (i, (sha, quanto)) in attesi.iter().enumerate() {
         avanza(Fase::Pezzo { fatti: u32::try_from(i).unwrap_or(u32::MAX), totali, secondi: t0.elapsed().as_secs(), verso_il_nodo: false });
@@ -650,11 +668,8 @@ pub async fn scarica_file_a_pezzi<T: Transport>(t: &T, fonti: &[OnionV3], sha256
         if b.len() != quanto {
             return Err(ErroreScarico::NonCorrisponde);
         }
-        file.extend_from_slice(&b);
-    }
-    if file.len() as u64 != dimensione || m4tr1x_transport::http::sha256_hex(&file) != sha256 {
-        return Err(ErroreScarico::NonCorrisponde);
+        arrivato(i, &b);
     }
     avanza(Fase::Pezzo { fatti: totali, totali, secondi: t0.elapsed().as_secs(), verso_il_nodo: false });
-    Ok(file)
+    Ok(())
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-celle-pubblica"
+description = "Enables the celle_pubblica command without any pre-configured scope."
+commands.allow = ["celle_pubblica"]
+
+[[permission]]
+identifier = "deny-celle-pubblica"
+description = "Denies the celle_pubblica command without any pre-configured scope."
+commands.deny = ["celle_pubblica"]

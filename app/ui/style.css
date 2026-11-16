@@ -192,7 +192,9 @@ button, input, textarea { font: inherit; color: inherit; }
 .galleria .t { font: 600 14px var(--font-body); color: var(--text); overflow-wrap: anywhere; }
 .galleria .m { font: 11px var(--font-mono); color: var(--text-muted); }
 .visore .schermo { display: grid; place-items: center; min-height: 120px; margin-bottom: 12px; border-radius: 12px; background: #000; overflow: hidden; }
-.visore .schermo img, .visore .schermo video { display: block; max-width: 100%; max-height: 70vh; }
+.visore .schermo img, .visore .schermo video, .visore .schermo canvas { display: block; max-width: 100%; max-height: 70vh; }
+.spunta { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; cursor: pointer; }
+.spunta input { margin-top: 3px; accent-color: var(--green-border); }
 .visore .schermo audio { width: 100%; margin: 24px 16px; }
 .visore .testo { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 

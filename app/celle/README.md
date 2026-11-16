@@ -133,6 +133,30 @@ riferimenti), ~40 ms a decodificare, PC dell'officina senza ottimizzazioni.
 
 Comando: `cargo run --release --example misura_reel -- <cartella con frame-NNN.bmp> -- passo,croma,chiave_ogni,cerca,raggio,bidir …`.
 
+## Pacchetto e app (16/11/2026): l'alveare arriva nel social
+
+`pacchetto.rs` è il formato di viaggio (ADR-0005: ogni pezzo un blob con il suo hash):
+
+- **foto:** pezzo 0 = `M4CF` + intestazione + strato 0 + strato 1 (l'anteprima: l'immagine intera in pochi KB),
+  poi un pezzo per livello di finezza dello strato 2 (le medie con il più grossolano). I pezzi del dettaglio sono un
+  prefisso dello strato intero: con quelli che ci sono si decodifica, il resto resta "come previsto";
+- **reel:** un pezzo per gruppo di fotogrammi da una chiave alla successiva, ognuno un reel completo (`M4RL`) che si
+  legge da solo; `fps` è scritto nel formato (VERSIONE_REEL 4). Per renderlo possibile l'encoder codifica i
+  fotogrammi tra l'ultima àncora e una chiave programmata in catena PRIMA della chiave (fino al 16/11 una chiave
+  programmata con fotogrammi in mezzo faceva ricodificare TUTTO il reel senza bidirezionali) e la chiave cade davvero
+  ogni `chiave_ogni` fotogrammi (prima solo sulle àncore multiple di 4). Misurato su reel1: una chiave ogni 30 costa
+  +7 % rispetto a una chiave sola (239.698 contro 223.824 byte), contro il +54 % della catena di prima.
+
+Nell'app (`app/shell`, comandi `celle_*`; `app/protocol`: tipi `image/vnd.m4tr1x.celle` e `video/vnd.m4tr1x.celle`,
+scheda con `["pezzo", hash, byte]` per ogni pezzo, `strati_validi`; `app/feed`: `carica_pezzi`, `scarica_pezzi` con
+un richiamo a ogni pezzo arrivato): l'interfaccia legge i pixel del file scelto con il decodificatore del browser
+(foto ridotta a 1600 px di lato; video a 480 px, 12 fotogrammi al secondo, 30 s al massimo) e li manda grezzi al
+lato Rust, che codifica (`celle_prepara`), pubblica i pezzi con un'autorizzazione firmata per pezzo e la scheda
+firmata (`celle_pubblica`), e all'apertura scarica i pezzi uno per uno via Tor decodificando man mano in un filo a
+parte (`celle_apri`, `celle_stato`, `celle_quadro`): chi guarda vede la foto intera dal primo pezzo e la vede
+affinarsi; un reel parte dal primo gruppo. Nessun hub ricodifica niente, nessun metadato da ripulire (il formato
+porta solo pixel), e al JavaScript non arriva mai un file: solo pixel.
+
 ## Prossimo
 
 1. Misura su telefono o mini PC: tempo e memoria (oggi i piani sono i32: ~23 MB per una foto da 2 MP; si può fare
@@ -141,5 +165,6 @@ Comando: `cargo run --release --example misura_reel -- <cartella con frame-NNN.b
 3. Reel: siamo a ~1,1–1,4× x264 medium a pari PSNR (vedi sopra). Da provare: un secondo livello di divisione (7×7:
    con il raggio automatico a 48 le celle divise sono ancora da 18 px), pesi diversi da ½ nella media dei due
    riferimenti (dissolvenze), un passo più grosso sulle celle che l'occhio segue meno, meno ricerche per chi scrive.
-4. Collegamento al trasporto: ogni strato (e ogni pezzo dello strato 2) un blob a pezzi (ADR-0005), scheda con gli
-   hash; chi guarda scarica prima i pochi KB dell'anteprima, poi quello che la banda permette.
+4. Collegamento al trasporto: FATTO il 16/11 (`pacchetto.rs`, comandi `celle_*`). Da provare sul nodo Oracle via Tor
+   con una foto e un reel veri; poi: più fotogrammi al secondo e più lato per i reel (oggi la codifica costa ~0,3 s a
+   fotogramma a 480 px), audio nei reel (oggi solo immagini), le schede a celle anche tra i Film.
