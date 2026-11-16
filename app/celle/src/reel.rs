@@ -263,7 +263,6 @@ fn cerca_vettori(cur: &Piano, rif: &Piano, st: &Stato, cerca: i32, passo: u8) ->
 /// delle due (come l'OBMC di H.263): niente gradini artificiali, che costerebbero byte nel resto.
 fn prevedi(rif: &Piani, st: &Stato, v: &[(i32, i32)]) -> Piani {
     let mappa = &st.mappa;
-    let sfuma = !std::env::var("M4_SFUMA").map(|s| s == "0").unwrap_or(false);
     let (w, h) = (rif.y.w, rif.y.h);
     let mut y = Piano::nuovo(w, h);
     for k in 0..w * h {
@@ -272,7 +271,7 @@ fn prevedi(rif: &Piani, st: &Stato, v: &[(i32, i32)]) -> Piani {
         let a = campione(&rif.y, x, yy, hx, hy);
         let (vx, vy) = v[st.vicina[k] as usize];
         let p = st.peso[k] as i32;
-        y.v[k] = if sfuma && p > 0 && (vx, vy) != (hx, hy) { ((8 - p) * a + p * campione(&rif.y, x, yy, vx, vy) + 4) >> 3 } else { a };
+        y.v[k] = if p > 0 && (vx, vy) != (hx, hy) { ((8 - p) * a + p * campione(&rif.y, x, yy, vx, vy) + 4) >> 3 } else { a };
     }
     let (wc, hc) = (rif.cb.w, rif.cb.h);
     let mut cb = Piano::nuovo(wc, hc);
@@ -285,7 +284,7 @@ fn prevedi(rif: &Piani, st: &Stato, v: &[(i32, i32)]) -> Piani {
             let p = st.peso[k] as i32;
             let (xc, yc) = (xc as i32, yc as i32);
             let (a, b) = (campione_quarto(&rif.cb, xc, yc, hx, hy), campione_quarto(&rif.cr, xc, yc, hx, hy));
-            let (a, b) = if sfuma && p > 0 && (vx, vy) != (hx, hy) { (((8 - p) * a + p * campione_quarto(&rif.cb, xc, yc, vx, vy) + 4) >> 3, ((8 - p) * b + p * campione_quarto(&rif.cr, xc, yc, vx, vy) + 4) >> 3) } else { (a, b) };
+            let (a, b) = if p > 0 && (vx, vy) != (hx, hy) { (((8 - p) * a + p * campione_quarto(&rif.cb, xc, yc, vx, vy) + 4) >> 3, ((8 - p) * b + p * campione_quarto(&rif.cr, xc, yc, vx, vy) + 4) >> 3) } else { (a, b) };
             cb.v[yc as usize * wc + xc as usize] = a;
             cr.v[yc as usize * wc + xc as usize] = b;
         }

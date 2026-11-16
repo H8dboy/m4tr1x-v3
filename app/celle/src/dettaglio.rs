@@ -20,6 +20,8 @@ pub const LIVELLI_MAX: u8 = 5;
 /// Un coefficiente quantizzato `q` si ricostruisce a `(|q| + RIC/8)·passo`: un po' sotto la metà dell'intervallo,
 /// perché i valori piccoli sono più frequenti dei grandi.
 const RIC: i64 = 3;
+/// Per i resti di un reel (`Base::Tutto`) un po' più in basso: 2/8 (misurato il 13/11: −0,6 % di byte, +0,05 dB).
+const RIC_RESTO: i64 = 2;
 
 /// Un piano di interi, righe dall'alto.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,11 +108,12 @@ fn quantizza(v: i32, px64: i64) -> i32 {
 }
 
 #[inline]
-fn dequantizza(q: i32, px64: i64) -> i32 {
+fn dequantizza(q: i32, px64: i64, modo: Base) -> i32 {
     if q == 0 {
         return 0;
     }
-    let a = ((q.unsigned_abs() as i64 * px64 + px64 * RIC / 8 + 32) / 64).min(1 << 20) as i32;
+    let ric = if modo == Base::Tutto { RIC_RESTO } else { RIC };
+    let a = ((q.unsigned_abs() as i64 * px64 + px64 * ric / 8 + 32) / 64).min(1 << 20) as i32;
     if q < 0 {
         -a
     } else {
@@ -135,6 +138,8 @@ pub struct Contesti {
     gt2: Vec<Prob>,
     segno: Vec<Prob>,
     pref: Vec<Prob>,
+    /// "questa cella a questo livello è tutta zero": per livello e per quanto c'era al livello prima
+    vuota: Vec<Prob>,
 }
 
 impl Contesti {
@@ -145,6 +150,7 @@ impl Contesti {
             gt2: vec![Prob::NUOVA; ORIENT * LIV * VIC * GEN],
             segno: vec![Prob::NUOVA; ORIENT * 9],
             pref: vec![Prob::NUOVA; ORIENT * LIV * PREF],
+            vuota: vec![Prob::NUOVA; LIV * 4 * 2],
         }
     }
 }
@@ -383,6 +389,10 @@ trait Visita {
     fn coeff(&mut self, piano: u8, banda: usize, idx: u32);
     /// |q| della luce in `idx`, per com'è dalla parte di chi legge (già scritto o zero).
     fn assoluto_y(&self, idx: u32) -> i64;
+    /// Prima dei coefficienti di una cella a un livello: vero = la cella è tutta zero e si salta (il "blocco non
+    /// codificato" dei codec a pixel: un bit al posto di centinaia di zeri). Chi scrive lo decide guardando i
+    /// coefficienti (`y`: indici della luce per banda, `c`: dei colori) e lo scrive; chi legge lo legge.
+    fn cella_vuota(&mut self, ctx: usize, y: &[&[u32]], c: &[&[u32]]) -> bool;
 }
 
 fn percorri(geo: &Geometria, v: &mut dyn Visita) {
@@ -400,24 +410,31 @@ fn percorri(geo: &Geometria, v: &mut dyn Visita) {
         return;
     }
     let mut prima: Vec<Vec<u32>> = geo.ll_y.clone();
-    for liv in &geo.livelli {
+    for (l, liv) in geo.livelli.iter().enumerate() {
         // celle in ordine di dettaglio mostrato al livello prima (stabile: a parità, ordine di cella)
-        let mut en: Vec<(i64, usize)> = (0..geo.celle).map(|c| (-prima[c].iter().map(|&i| v.assoluto_y(i)).sum::<i64>(), c)).collect();
+        let energia: Vec<i64> = (0..geo.celle).map(|c| prima[c].iter().map(|&i| v.assoluto_y(i)).sum::<i64>()).collect();
+        let mut en: Vec<(i64, usize)> = (0..geo.celle).map(|c| (-energia[c], c)).collect();
         en.sort();
         let ordine: Vec<usize> = en.into_iter().map(|e| e.1).collect();
+        let mut vuota_prima = false;
         for g in 0..GRUPPI {
             let (da, a) = (g * geo.celle / GRUPPI, (g + 1) * geo.celle / GRUPPI);
             v.inizio_pezzo();
-            for (bi, pc) in &liv.bande_y {
-                for &c in &ordine[da..a] {
+            for &c in &ordine[da..a] {
+                let iy: Vec<&[u32]> = liv.bande_y.iter().map(|(_, pc)| pc[c].as_slice()).collect();
+                let ic: Vec<&[u32]> = liv.bande_c.iter().map(|(_, pc)| pc[c].as_slice()).collect();
+                let ctx = (l.min(LIV - 1) * 4 + secchio(energia[c])) * 2 + vuota_prima as usize;
+                vuota_prima = v.cella_vuota(ctx, &iy, &ic);
+                if vuota_prima {
+                    continue;
+                }
+                for (bi, pc) in &liv.bande_y {
                     for &idx in &pc[c] {
                         v.coeff(0, *bi, idx);
                     }
                 }
-            }
-            for (bi, pc) in &liv.bande_c {
-                for piano in [1u8, 2] {
-                    for &c in &ordine[da..a] {
+                for (bi, pc) in &liv.bande_c {
+                    for piano in [1u8, 2] {
                         for &idx in &pc[c] {
                             v.coeff(piano, *bi, idx);
                         }
@@ -505,6 +522,11 @@ impl Visita for Scrive<'_> {
     fn assoluto_y(&self, idx: u32) -> i64 {
         self.visto[0].v[idx as usize].unsigned_abs() as i64
     }
+    fn cella_vuota(&mut self, ctx: usize, y: &[&[u32]], c: &[&[u32]]) -> bool {
+        let vuota = y.iter().all(|b| b.iter().all(|&i| self.q[0].v[i as usize] == 0)) && c.iter().all(|b| b.iter().all(|&i| self.q[1].v[i as usize] == 0 && self.q[2].v[i as usize] == 0));
+        self.sc.as_mut().expect("pezzo aperto").bit(&mut self.ctx[0].vuota[ctx], vuota);
+        vuota
+    }
 }
 
 /// Chi legge: riempie i piani quantizzati pezzo per pezzo, finché ci sono byte.
@@ -543,6 +565,12 @@ impl Visita for Legge<'_> {
     }
     fn assoluto_y(&self, idx: u32) -> i64 {
         self.q[0].v[idx as usize].unsigned_abs() as i64
+    }
+    fn cella_vuota(&mut self, ctx: usize, _y: &[&[u32]], _c: &[&[u32]]) -> bool {
+        match self.le.as_mut() {
+            Some(le) => le.bit(&mut self.ctx[0].vuota[ctx]),
+            None => true,
+        }
     }
 }
 
@@ -613,7 +641,7 @@ pub fn decodifica(d: &[u8], base: &Piani, passo: u8, passo_croma: u8, livelli: u
             let px = passo_x64(passo, banda);
             for y in banda.y0..banda.y0 + banda.h {
                 for x in banda.x0..banda.x0 + banda.w {
-                    p.v[y * q.w + x] = previsto(b, banda, x, y, modo).saturating_add(dequantizza(q.a(x, y), px));
+                    p.v[y * q.w + x] = previsto(b, banda, x, y, modo).saturating_add(dequantizza(q.a(x, y), px, modo));
                 }
             }
         }

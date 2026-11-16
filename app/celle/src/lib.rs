@@ -40,7 +40,7 @@ pub struct Immagine {
 }
 
 /// Versione del formato: cambia se cambia il modo di leggere i byte.
-pub const VERSIONE: u8 = 2;
+pub const VERSIONE: u8 = 3;
 const MAGIA: &[u8; 4] = b"M4CL";
 /// Scala dei numeri a virgola fissa per le coordinate dei centri (1 pixel = 256).
 const S: i64 = 256;

@@ -16,16 +16,16 @@ fn main() {
     let sep = args.iter().position(|a| a == "--").unwrap_or(args.len());
     let cartella = args.first().expect("cartella dei fotogrammi");
     let scrivi = args[..sep].iter().find_map(|a| a.strip_prefix("scrivi="));
-    let insiemi: Vec<(u8, u8, u16, u8)> = if sep < args.len() {
+    let insiemi: Vec<(u8, u8, u16, u8, u16)> = if sep < args.len() {
         args[sep + 1..]
             .iter()
             .map(|s| {
                 let v: Vec<u32> = s.split(',').map(|x| x.parse().expect("numero")).collect();
-                (v[0] as u8, *v.get(1).unwrap_or(&(v[0] / 2)) as u8, *v.get(2).unwrap_or(&60) as u16, *v.get(3).unwrap_or(&16) as u8)
+                (v[0] as u8, *v.get(1).unwrap_or(&(v[0] / 2)) as u8, *v.get(2).unwrap_or(&60) as u16, *v.get(3).unwrap_or(&16) as u8, *v.get(4).unwrap_or(&0) as u16)
             })
             .collect()
     } else {
-        vec![(8, 4, 60, 16), (8, 4, 60, 0), (8, 4, 1, 16), (12, 6, 60, 16), (16, 8, 60, 16)]
+        vec![(8, 4, 60, 16, 0), (8, 4, 60, 0, 0), (8, 4, 1, 16, 0), (12, 6, 60, 16, 0), (16, 8, 60, 16, 0)]
     };
 
     let mut nomi: Vec<_> = std::fs::read_dir(cartella).expect("cartella").filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with("frame-") && n.ends_with(".bmp")).unwrap_or(false)).collect();
@@ -35,9 +35,9 @@ fn main() {
     assert!(n > 0, "nessun frame-NNN.bmp in {cartella}");
     let (w, h) = (fotogrammi[0].larghezza, fotogrammi[0].altezza);
     println!("{n} fotogrammi {w}x{h} · grezzo {} byte/fotogramma", w * h * 3);
-    println!("{:<22} {:>6} {:>9} {:>8} {:>8} {:>8} {:>8} {:>7} {:>7} {:>6} {:>9}", "passo,croma,chiave,cerca", "chiavi", "totale", "B/fotog.", "B chiave", "B prev.", "vett.", "PSNR m", "min", "mosse", "ms c/d");
-    for (i, &(passo, croma, chiave_ogni, cerca)) in insiemi.iter().enumerate() {
-        let p = ParametriReel { foto: Parametri { passo_dettaglio: passo, passo_croma: croma, ..Parametri::default() }, chiave_ogni, cerca, soglia_chiave: 24 };
+    println!("{:<22} {:>6} {:>9} {:>8} {:>8} {:>8} {:>8} {:>7} {:>7} {:>6} {:>9}", "passo,croma,chiave,cerca,r", "chiavi", "totale", "B/fotog.", "B chiave", "B prev.", "vett.", "PSNR m", "min", "mosse", "ms c/d");
+    for (i, &(passo, croma, chiave_ogni, cerca, raggio)) in insiemi.iter().enumerate() {
+        let p = ParametriReel { foto: Parametri { passo_dettaglio: passo, passo_croma: croma, raggio, ..Parametri::default() }, chiave_ogni, cerca, soglia_chiave: 24 };
         let t0 = Instant::now();
         let r = codifica_reel(&fotogrammi, p).unwrap();
         let tc = t0.elapsed().as_millis();
@@ -65,7 +65,7 @@ fn main() {
         let totale = r.in_byte().len();
         println!(
             "{:<22} {:>6} {:>9} {:>8} {:>8} {:>8} {:>8} {:>7} {:>7} {:>5}% {:>4}/{:<4}",
-            format!("{passo},{croma},{chiave_ogni},{cerca}"),
+            format!("{passo},{croma},{chiave_ogni},{cerca},{raggio}"),
             chiavi,
             totale,
             totale / n,
