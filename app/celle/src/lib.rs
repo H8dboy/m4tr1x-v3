@@ -25,6 +25,7 @@ pub mod aritmetica;
 pub mod bmp;
 pub mod dettaglio;
 pub mod onde;
+pub mod pacchetto;
 pub mod reel;
 mod strati;
 

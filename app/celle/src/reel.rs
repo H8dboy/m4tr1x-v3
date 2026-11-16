@@ -37,7 +37,7 @@ use crate::dettaglio::{self, Base, Contesti, Piani, Piano, LIVELLI_MAX};
 use crate::{codifica, contesti_nuovi, decodifica_piani, leggi_varint, piani_di, piani_in_rgb, scrivi_varint, strati, ycbcr, Codificata, Errore, Griglia, Immagine, Parametri, Strati, S};
 
 /// Versione del formato del reel.
-pub const VERSIONE_REEL: u8 = 3;
+pub const VERSIONE_REEL: u8 = 4;
 const MAGIA_REEL: &[u8; 4] = b"M4RL";
 /// Spostamento massimo per cella che il formato sa scrivere (pixel).
 pub const CERCA_MAX: u8 = 32;
@@ -73,11 +73,13 @@ pub struct ParametriReel {
     pub bidirezionali: u8,
     /// Le celle seguono il moto (si dividono dove non è uniforme). Solo chi scrive decide: chi legge segue i bit.
     pub celle_mobili: bool,
+    /// Fotogrammi al secondo di chi guarda (1–255): scritto nel reel, non cambia la codifica.
+    pub fps: u8,
 }
 
 impl Default for ParametriReel {
     fn default() -> Self {
-        Self { foto: Parametri::default(), chiave_ogni: 60, cerca: 16, soglia_chiave: 24, bidirezionali: 3, celle_mobili: true }
+        Self { foto: Parametri::default(), chiave_ogni: 60, cerca: 16, soglia_chiave: 24, bidirezionali: 3, celle_mobili: true, fps: 24 }
     }
 }
 
@@ -127,6 +129,8 @@ impl Fotogramma {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Reel {
     pub fotogrammi: Vec<Fotogramma>,
+    /// fotogrammi al secondo (dalla VERSIONE 4; 0 nei reel vecchi non esiste: si rifiuta)
+    pub fps: u8,
 }
 
 /// La geometria di una griglia: quello che serve per prevedere e codificare un fotogramma su di essa.
@@ -686,6 +690,7 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
         // questa è un'àncora: chiave programmata, o previsto dall'àncora prima (o chiave se la scena cambia)
         let orig = piani(i);
         let mut chiave = stato.is_none() || (p.chiave_ogni > 0 && i % p.chiave_ogni as usize == 0);
+        let mut scelta: Option<(Scelta, u32, u32)> = None;
         if !chiave {
             let st = stato.as_mut().expect("stato");
             let (mostra, rif_a) = ((i - base) as u32, (ancora - base) as u32);
@@ -694,37 +699,37 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
             if p.soglia_chiave != 0 && tot / (w * h) as i64 > p.soglia_chiave as i64 {
                 chiave = true;
             } else {
-                out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, &Compito { indice: i, mostra, rif_a, rif_b: None, profondita: 0 }, sc.geo, sc.divisioni, sc.va, vec![], vec![], passo, croma, livelli, cerca)));
+                scelta = Some((sc, mostra, rif_a));
             }
         }
         if chiave {
+            // i fotogrammi tra l'àncora prima e questa chiave (chiave programmata o cambio di scena) si codificano
+            // PRIMA della chiave, in catena dall'àncora vecchia, uno dal precedente: così ogni gruppo che parte da
+            // una chiave si legge da solo (un pezzo per la rete, `pacchetto`) e la piramide resta sul resto del reel.
+            // Fino al 16/11 qui si ricodificava TUTTO il reel senza bidirezionali (anche per la chiave ogni 60).
+            if let Some(st) = stato.as_mut() {
+                for j in ancora + 1..i {
+                    let orig_j = piani(j);
+                    let (mostra, rif_a) = ((j - base) as u32, (j - 1 - base) as u32);
+                    let sc = scegli_griglia(st, &orig_j.y, &st.riferimento(rif_a).expect("riferimento").y, cerca, passo, p.celle_mobili);
+                    out.push(Fotogramma::Previsto(codifica_previsto(st, &orig_j, &Compito { indice: j, mostra, rif_a, rif_b: None, profondita: 0 }, sc.geo, sc.divisioni, sc.va, vec![], vec![], passo, croma, livelli, cerca)));
+                }
+            }
             let (cod, griglia) = codifica(&fotogrammi[i], p.foto)?;
             let (rif, _) = decodifica_piani(&cod, Strati::Tutti)?;
             stato = Some(Stato::nuovo(griglia, rif));
             base = i;
             out.push(Fotogramma::Chiave(cod));
+        } else if let Some((sc, mostra, rif_a)) = scelta {
+            let st = stato.as_mut().expect("stato");
+            out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, &Compito { indice: i, mostra, rif_a, rif_b: None, profondita: 0 }, sc.geo, sc.divisioni, sc.va, vec![], vec![], passo, croma, livelli, cerca)));
         }
-        // i bidirezionali tra l'àncora prima e questa, in ordine di piramide (non se questa è una chiave nuova: i
-        // fotogrammi in mezzo si prevedono allora dall'àncora prima, uno dopo l'altro)
+        // i bidirezionali tra l'àncora prima e questa, in ordine di piramide (nessuno se questa è una chiave: i
+        // fotogrammi in mezzo sono già usciti in catena)
         let st = stato.as_mut().expect("stato");
         let mut compiti = Vec::new();
         if !chiave {
             piramide(base, (ancora - base) as u32, (i - base) as u32, 1, &mut compiti);
-        } else {
-            for j in ancora + 1..i {
-                compiti.push(Compito { indice: j, mostra: 0, rif_a: 0, rif_b: None, profondita: 0 });
-            }
-        }
-        if chiave && !compiti.is_empty() {
-            // la scena è cambiata su questa àncora: i fotogrammi in mezzo vanno codificati PRIMA della chiave nuova,
-            // in catena dall'àncora vecchia. Si rimedia rifacendo il tratto con la chiave tolta.
-            out.pop();
-            let vecchio = stato.take();
-            let mut st_vecchio = vecchio.expect("stato precedente");
-            // lo stato vecchio è stato sostituito: serve quello di prima della chiave. Si ricostruisce dalla
-            // ricodifica del tratto: più semplice, si ricodifica il tratto come catena di previsti.
-            let _ = &mut st_vecchio;
-            return codifica_reel_in_catena(fotogrammi, p);
         }
         for c in &compiti {
             let orig = piani(c.indice);
@@ -768,14 +773,7 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
         // prossima àncora: a distanza `gruppo`, oppure l'ultimo fotogramma
         i = if i + gruppo < n_tot { i + gruppo } else if i < n_tot - 1 { n_tot - 1 } else { n_tot };
     }
-    Ok(Reel { fotogrammi: out })
-}
-
-/// Lo stesso reel senza bidirezionali: ogni fotogramma previsto dal precedente. Si usa quando un cambio di scena
-/// cade su un'àncora con fotogrammi in mezzo (caso raro: si rinuncia alla piramide su tutto il reel, semplice e
-/// giusto; da raffinare se capita spesso).
-fn codifica_reel_in_catena(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, Errore> {
-    codifica_reel(fotogrammi, ParametriReel { bidirezionali: 0, ..p })
+    Ok(Reel { fotogrammi: out, fps: p.fps })
 }
 
 /// Codifica un previsto (semplice o bidirezionale) dato lo stato, l'originale, i riferimenti e gli spostamenti;
@@ -946,12 +944,13 @@ impl Reel {
         Ok(self.ripercorri(i)?.2)
     }
 
-    /// Tutto il reel in un elenco di byte: magia, versione, numero di fotogrammi, poi per ognuno il tipo e i suoi
-    /// pezzi con la lunghezza davanti.
+    /// Tutto il reel in un elenco di byte: magia, versione, fotogrammi al secondo, numero di fotogrammi, poi per
+    /// ognuno il tipo e i suoi pezzi con la lunghezza davanti.
     pub fn in_byte(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(self.byte_totali() + 16 * self.fotogrammi.len());
         b.extend_from_slice(MAGIA_REEL);
         b.push(VERSIONE_REEL);
+        b.push(self.fps.max(1));
         scrivi_varint(&mut b, self.fotogrammi.len() as u64);
         let pezzo = |b: &mut Vec<u8>, p: &[u8]| {
             scrivi_varint(b, p.len() as u64);
@@ -977,13 +976,17 @@ impl Reel {
     }
 
     pub fn da_byte(b: &[u8]) -> Result<Reel, Errore> {
-        if b.len() < 6 || &b[0..4] != MAGIA_REEL {
+        if b.len() < 7 || &b[0..4] != MAGIA_REEL {
             return Err(Errore::Formato("intestazione del reel"));
         }
         if b[4] != VERSIONE_REEL {
             return Err(Errore::Formato("versione del reel sconosciuta"));
         }
-        let mut i = 5;
+        let fps = b[5];
+        if fps == 0 {
+            return Err(Errore::Formato("fotogrammi al secondo"));
+        }
+        let mut i = 6;
         let n = leggi_varint(b, &mut i)? as usize;
         if n > 1 << 20 {
             return Err(Errore::Formato("troppi fotogrammi"));
@@ -1011,18 +1014,18 @@ impl Reel {
                 _ => return Err(Errore::Formato("tipo di fotogramma sconosciuto")),
             }
         }
-        Ok(Reel { fotogrammi })
+        Ok(Reel { fotogrammi, fps })
     }
 }
 
+/// Scene sintetiche per le prove (anche di `pacchetto`).
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::psnr_x100;
+pub(crate) mod prova {
+    use crate::Immagine;
 
     /// Una scena con texture (scacchi da 16 pixel con una trama fine sopra, colori che cambiano piano) vista da
     /// `(sx, sy)`: spostare la finestra è come muovere la camera.
-    fn scena(w: u32, h: u32, sx: i32, sy: i32, fase: i32) -> Immagine {
+    pub fn scena(w: u32, h: u32, sx: i32, sy: i32, fase: i32) -> Immagine {
         let mut rgb = Vec::with_capacity((w * h * 3) as usize);
         for y in 0..h as i32 {
             for x in 0..w as i32 {
@@ -1038,6 +1041,13 @@ mod tests {
         }
         Immagine { larghezza: w, altezza: h, rgb }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prova::scena;
+    use super::*;
+    use crate::psnr_x100;
 
     /// Tutt'altra scena: quasi buia, con un gradiente leggero. (Un gradiente pieno da 0 a 255 sta a 45 livelli di
     /// scarto medio dalla scacchiera da fermo, ma la ricerca degli spostamenti lo porta a 24: cella per cella trova
@@ -1058,7 +1068,7 @@ mod tests {
     }
 
     fn par() -> ParametriReel {
-        ParametriReel { foto: Parametri { raggio: 12, ..Parametri::default() }, chiave_ogni: 0, cerca: 8, soglia_chiave: 40, bidirezionali: 0, celle_mobili: true }
+        ParametriReel { foto: Parametri { raggio: 12, ..Parametri::default() }, chiave_ogni: 0, cerca: 8, soglia_chiave: 40, bidirezionali: 0, celle_mobili: true, fps: 24 }
     }
 
     fn tipi(r: &Reel) -> String {
@@ -1192,7 +1202,7 @@ mod tests {
         // chiave forzata ogni 2
         let r2 = codifica_reel(&f, ParametriReel { chiave_ogni: 2, soglia_chiave: 0, ..par() }).unwrap();
         assert_eq!(tipi(&r2), "CPCP");
-        // con i bidirezionali un cambio di scena su un'àncora con fotogrammi in mezzo: si torna alla catena
+        // con i bidirezionali un cambio di scena su un àncora con fotogrammi in mezzo: quelli in mezzo escono in catena PRIMA della chiave (dal 16/11; prima si rifaceva tutto il reel senza bidirezionali)
         let f = vec![scena(160, 96, 0, 0, 0), scena(160, 96, 1, 0, 0), scena(160, 96, 2, 0, 0), scena(160, 96, 3, 0, 0), gradiente(160, 96), gradiente(160, 96)];
         let r3 = codifica_reel(&f, ParametriReel { soglia_chiave: 24, bidirezionali: 3, ..par() }).unwrap();
         assert_eq!(tipi(&r3), "CPPPCP");
@@ -1234,9 +1244,9 @@ mod tests {
         }
         let _ = decodifica_reel(&rotto);
         // un previsto senza chiave prima è un errore; un riferimento che non c'è pure
-        let orfano = Reel { fotogrammi: vec![r.fotogrammi[1].clone()] };
+        let orfano = Reel { fotogrammi: vec![r.fotogrammi[1].clone()], fps: 24 };
         assert!(decodifica_reel(&orfano).is_err());
-        let senza_ancora = Reel { fotogrammi: vec![r.fotogrammi[0].clone(), r.fotogrammi[2].clone()] };
+        let senza_ancora = Reel { fotogrammi: vec![r.fotogrammi[0].clone(), r.fotogrammi[2].clone()], fps: 24 };
         assert!(decodifica_reel(&senza_ancora).is_err());
     }
 }

@@ -37,7 +37,7 @@ fn main() {
     println!("{n} fotogrammi {w}x{h} · grezzo {} byte/fotogramma", w * h * 3);
     println!("{:<24} {:>6} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>6} {:>6} {:>7} {:>7} {:>6} {:>9}", "passo,croma,chiave,cerca,r,b,m", "chiavi", "totale", "B/fotog.", "B chiave", "B prev.", "B bidir", "vett.", "celle", "div.B", "PSNR m", "min", "mosse", "ms c/d");
     for (i, &(passo, croma, chiave_ogni, cerca, raggio, bidir, mobili)) in insiemi.iter().enumerate() {
-        let p = ParametriReel { foto: Parametri { passo_dettaglio: passo, passo_croma: croma, raggio, ..Parametri::default() }, chiave_ogni, cerca, soglia_chiave: 24, bidirezionali: bidir, celle_mobili: mobili != 0 };
+        let p = ParametriReel { foto: Parametri { passo_dettaglio: passo, passo_croma: croma, raggio, ..Parametri::default() }, chiave_ogni, cerca, soglia_chiave: 24, bidirezionali: bidir, celle_mobili: mobili != 0, fps: 24 };
         let t0 = Instant::now();
         let r = codifica_reel(&fotogrammi, p).unwrap();
         let tc = t0.elapsed().as_millis();
