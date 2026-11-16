@@ -585,7 +585,7 @@ fn media_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
 
 /// Pixel al massimo di una foto o di un fotogramma (l'interfaccia riduce prima: una foto da 2 MP costa ~25 MB di
 /// memoria in codifica).
-const CELLE_PIXEL_MAX: u64 = 2560 * 2560;
+const CELLE_PIXEL_MAX: u64 = m4tr1x_celle::PIXEL_MAX;
 /// Fotogrammi al massimo di un reel (30 s a 20 fotogrammi al secondo): stanno in memoria come pixel grezzi.
 const CELLE_FOTOGRAMMI_MAX: u32 = 600;
 /// Pixel al massimo di un fotogramma di reel.
@@ -733,28 +733,42 @@ fn decodifica_pezzi_arrivati(visto: &Mutex<Visto>, generazione: u32) -> bool {
         }
         (v.mime.clone(), v.pezzi.clone(), v.decodificati)
     };
-    let esito: Result<(Vec<Vec<u8>>, u32, u32, u8, bool), String> = if mime == m4tr1x_protocol::MIME_CELLE_FOTO {
-        let viste: Vec<&[u8]> = pezzi.iter().map(|p| p.as_slice()).collect();
-        m4tr1x_celle::pacchetto::apri_foto(&viste).map(|img| (vec![rgba_da_rgb(&img.rgb)], img.larghezza, img.altezza, 0, true)).map_err(|e| e.to_string())
-    } else {
-        let mut nuovi = Vec::new();
-        let mut misura = (0, 0, 0);
-        let mut r = Ok(());
-        for p in &pezzi[da..] {
-            match m4tr1x_celle::pacchetto::apri_reel(p) {
-                Ok((fotogrammi, fps)) => {
-                    for f in fotogrammi {
-                        misura = (f.larghezza, f.altezza, fps);
-                        nuovi.push(rgba_da_rgb(&f.rgb));
+    // i pezzi arrivano dalla rete firmati da chiunque: un decodificatore che va in panico non deve portarsi via
+    // l'app né lasciare l'interfaccia ad aspettare per sempre; e quello che si tiene in memoria ha gli stessi
+    // limiti di quello che si codifica (misura della foto, numero di fotogrammi)
+    let gia = { visto.lock().unwrap().fotogrammi.len() };
+    let decodifica = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(Vec<Vec<u8>>, u32, u32, u8, bool), String> {
+        if mime == m4tr1x_protocol::MIME_CELLE_FOTO {
+            let viste: Vec<&[u8]> = pezzi.iter().map(|p| p.as_slice()).collect();
+            m4tr1x_celle::pacchetto::apri_foto(&viste).map(|img| (vec![rgba_da_rgb(&img.rgb)], img.larghezza, img.altezza, 0, true)).map_err(|e| e.to_string())
+        } else {
+            let mut nuovi = Vec::new();
+            let mut misura = (0, 0, 0);
+            let mut r = Ok(());
+            for p in &pezzi[da..] {
+                match m4tr1x_celle::pacchetto::apri_reel(p) {
+                    Ok((fotogrammi, fps)) => {
+                        for f in fotogrammi {
+                            if (gia + nuovi.len()) as u32 >= CELLE_FOTOGRAMMI_MAX || f.larghezza as u64 * f.altezza as u64 > CELLE_PIXEL_FOTOGRAMMA_MAX {
+                                r = Err("reel troppo lungo o troppo grande".to_string());
+                                break;
+                            }
+                            misura = (f.larghezza, f.altezza, fps);
+                            nuovi.push(rgba_da_rgb(&f.rgb));
+                        }
                     }
+                    Err(e) => r = Err(e.to_string()),
                 }
-                Err(e) => {
-                    r = Err(e.to_string());
+                if r.is_err() {
                     break;
                 }
             }
+            r.map(|_| (nuovi, misura.0, misura.1, misura.2, false))
         }
-        r.map(|_| (nuovi, misura.0, misura.1, misura.2, false))
+    }));
+    let esito: Result<(Vec<Vec<u8>>, u32, u32, u8, bool), String> = match decodifica {
+        Ok(r) => r,
+        Err(_) => Err("decodifica interrotta".to_string()),
     };
     let mut v = visto.lock().unwrap();
     if v.generazione != generazione {

@@ -48,6 +48,9 @@ pub(crate) const S: i64 = 256;
 /// √3 · 256, arrotondato: passo orizzontale tra i centri = r · √3.
 const RAD3: i64 = 443;
 /// Raggio più piccolo e più grande ammessi dal formato (pixel).
+/// Pixel al massimo per immagine, in codifica e in decodifica: un'intestazione che dichiara di più viene rifiutata
+/// PRIMA di allocare (i pezzi arrivano dalla rete firmati da chiunque: 65535×65535 vorrebbe 17 GB solo di mappa).
+pub const PIXEL_MAX: u64 = 2560 * 2560;
 pub const RAGGIO_MIN: u16 = 3;
 pub const RAGGIO_MAX: u16 = 48;
 /// Raggio più piccolo scelto in automatico. Da quando il dettaglio passa per la trasformata (12/11 pomeriggio) le
@@ -469,7 +472,7 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
     if w == 0 || h == 0 || img.rgb.len() != w * h * 3 {
         return Err(Errore::Immagine("dimensioni e byte non tornano"));
     }
-    if w > 65535 || h > 65535 {
+    if w > 65535 || h > 65535 || (w as u64) * (h as u64) > PIXEL_MAX {
         return Err(Errore::Immagine("troppo grande"));
     }
     let luce = luce_di(img);
@@ -627,6 +630,9 @@ pub(crate) fn leggi_testa(t: &[u8]) -> Result<Testa, Errore> {
     let livelli = t[13];
     if w == 0 || h == 0 || !(RAGGIO_MIN..=RAGGIO_MAX).contains(&raggio) {
         return Err(Errore::Formato("dimensioni o raggio"));
+    }
+    if (w as u64) * (h as u64) > PIXEL_MAX {
+        return Err(Errore::Formato("troppo grande"));
     }
     if !(1..=dettaglio::LIVELLI_MAX).contains(&livelli) {
         return Err(Errore::Formato("livelli"));
@@ -909,6 +915,13 @@ mod tests {
         let mut t = c.clone();
         t.testa[0] = b'X';
         assert_eq!(decodifica(&t, Strati::Tutti).unwrap_err(), Errore::Formato("intestazione"));
+        // intestazione ben formata ma con misure enormi: rifiutata prima di allocare la mappa dei pixel
+        let mut enorme = MAGIA.to_vec();
+        enorme.extend_from_slice(&[VERSIONE, 0xff, 0xff, 0xff, 0xff, 48, 0, 8, 8, 2]);
+        enorme.extend_from_slice(&[0; 64]);
+        let t = Codificata { testa: enorme, colore: vec![1, 2, 3], pendenza: vec![], dettaglio: vec![] };
+        assert_eq!(decodifica(&t, Strati::Tutti).unwrap_err(), Errore::Formato("troppo grande"));
+        assert!(codifica(&Immagine { larghezza: 4000, altezza: 2000, rgb: vec![0; 4000 * 2000 * 3] }, Parametri::default()).is_err());
         let mut v = c.clone();
         v.testa[4] = 9;
         assert!(decodifica(&v, Strati::Tutti).is_err());

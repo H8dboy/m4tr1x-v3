@@ -194,3 +194,76 @@ mod tests {
         assert!(apri_reel(b"M4CF").is_err());
     }
 }
+
+#[cfg(test)]
+mod robustezza {
+    //! Pezzi corrotti, troncati o inventati: chi guarda non deve mai andare in panico (i pezzi arrivano dalla rete,
+    //! firmati da chiunque). Un errore pulito sì, un crash dell'app no.
+    use super::*;
+    use crate::reel::prova::scena;
+    use crate::reel::{codifica_reel, ParametriReel};
+    use crate::{codifica, Parametri};
+
+    fn caso(s: &mut u64) -> u64 {
+        *s ^= *s << 13;
+        *s ^= *s >> 7;
+        *s ^= *s << 17;
+        *s
+    }
+
+    fn senza_panico(nome: &str, pezzi: &[Vec<u8>], reel: bool) {
+        let p: Vec<&[u8]> = pezzi.iter().map(|p| p.as_slice()).collect();
+        let r = std::panic::catch_unwind(|| if reel { pezzi.iter().for_each(|p| { let _ = apri_reel(p); }) } else { let _ = apri_foto(&p); });
+        assert!(r.is_ok(), "panico con {nome}");
+    }
+
+    #[test]
+    fn pezzi_corrotti_troncati_o_inventati_non_fanno_panico() {
+        let img = scena(48, 40, 0, 0, 0);
+        let (c, _) = codifica(&img, Parametri { passo_dettaglio: 6, ..Parametri::default() }).unwrap();
+        let foto = pezzi_foto(&c);
+        let fotogrammi: Vec<_> = (0..5).map(|i| scena(48, 40, 2 * i, i, 0)).collect();
+        let r = codifica_reel(&fotogrammi, ParametriReel { chiave_ogni: 4, bidirezionali: 1, ..ParametriReel::default() }).unwrap();
+        let reel = pezzi_reel(&r);
+        let mut s = 0x9e3779b97f4a7c15u64;
+        for (nome, pezzi, e_reel) in [("foto", &foto, false), ("reel", &reel, true)] {
+            senza_panico(nome, pezzi, e_reel);
+            for giro in 0..400u32 {
+                let mut m = pezzi.clone();
+                let k = (caso(&mut s) as usize) % m.len();
+                match giro % 4 {
+                    0 => {
+                        // un byte cambiato
+                        let i = (caso(&mut s) as usize) % m[k].len();
+                        m[k][i] ^= 1 << (caso(&mut s) % 8);
+                    }
+                    1 => {
+                        // troncato
+                        let l = (caso(&mut s) as usize) % m[k].len();
+                        m[k].truncate(l);
+                    }
+                    2 => {
+                        // dieci byte a caso dentro
+                        for _ in 0..10 {
+                            let i = (caso(&mut s) as usize) % m[k].len();
+                            m[k][i] = caso(&mut s) as u8;
+                        }
+                    }
+                    _ => {
+                        // intestazione con misure enormi (solo nel primo pezzo): deve essere rifiutata senza allocare
+                        if m[k].len() > 12 {
+                            m[k][5] = 0xff;
+                            m[k][6] = 0xff;
+                            m[k][7] = 0xff;
+                            m[k][8] = 0xff;
+                        }
+                    }
+                }
+                senza_panico(&format!("{nome} giro {giro}"), &m, e_reel);
+            }
+            // byte del tutto inventati
+            let spazzatura: Vec<Vec<u8>> = (0..3).map(|_| (0..200).map(|_| caso(&mut s) as u8).collect()).collect();
+            senza_panico(&format!("{nome} spazzatura"), &spazzatura, e_reel);
+        }
+    }
+}
