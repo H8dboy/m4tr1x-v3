@@ -3,7 +3,7 @@
   "version": "3.0.0-dev",
   "private": true,
   "description": "M4TR1X v3 — social federato, privacy-first, tutto via Tor",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": "22.23.3"
   },

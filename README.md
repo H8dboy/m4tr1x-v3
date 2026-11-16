@@ -2,7 +2,7 @@
 
 Social federato e privacy-first per la diaspora e le comunità censurate. Tutto passa da Tor.
 
-**Stato:** fase F0 (fondamenta). Repo privato fino al lancio.
+**Stato:** repo pubblico dal 16/11/2026. Licenza AGPL-3.0-only (file `LICENSE`): il codec a celle vive anche in [m4tr1x-hive](https://github.com/H8dboy/m4tr1x-hive).
 
 - Progetto: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Cosa proteggiamo e cosa non promettiamo: [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
