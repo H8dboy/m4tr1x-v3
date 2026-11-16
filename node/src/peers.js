@@ -4,8 +4,8 @@
  * Sincronizzazione con i peer configurati (F2: elenco statico; dalla F3 dalla directory).
  * - Solo peer .onion via Tor; il loopback esiste solo nei test.
  * - Ogni evento ricevuto passa da relay.ingest (stessa verifica dei client).
- * - I file citati negli eventi (tag "x") si scaricano dal peer e si accettano
- *   solo se l'hash corrisponde (I-17).
+ * - I file citati negli eventi si scaricano dal peer e si accettano solo se l'hash
+ *   corrisponde (I-17): i pezzi (tag "pezzo", ADR-0005) se ci sono, altrimenti il file intero (tag "x").
  */
 const fs = require('fs')
 const WebSocket = require('ws')
@@ -45,11 +45,15 @@ function startPeers(ctx) {
 
   /** @param {string} peer @param {any} ev @param {{base: string, loop: boolean, hostHeader: string}} target */
   async function replicateBlobs(peer, ev, target) {
-    for (const t of ev.tags) {
-      if (t[0] !== 'x' || !blobs.SHA_RE.test(t[1] || '')) continue
-      if (fs.existsSync(blobs.blobPath(cfg.dataDir, t[1])) || inCorso.has(t[1])) continue
-      inCorso.add(t[1])
-      try { await scaricaConTentativi(t[1], ev.pubkey, target) } finally { inCorso.delete(t[1]) }
+    // un file a pezzi (ADR-0005, tag `pezzo`: anche le foto e i reel a celle, che portano la misura in più) viaggia
+    // come blob separati: si replicano i pezzi, uno dopo l'altro. L'hash intero `x` è un blob solo quando non ci
+    // sono pezzi (fino al 16/11 si chiedeva sempre e solo `x`: i file a pezzi non si replicavano mai).
+    const pezzi = ev.tags.filter((/** @type {string[]} */ t) => t[0] === 'pezzo' && blobs.SHA_RE.test(t[1] || '')).map((/** @type {string[]} */ t) => t[1])
+    const interi = ev.tags.filter((/** @type {string[]} */ t) => t[0] === 'x' && blobs.SHA_RE.test(t[1] || '')).map((/** @type {string[]} */ t) => t[1])
+    for (const sha of pezzi.length ? pezzi : interi) {
+      if (fs.existsSync(blobs.blobPath(cfg.dataDir, sha)) || inCorso.has(sha)) continue
+      inCorso.add(sha)
+      try { await scaricaConTentativi(sha, ev.pubkey, target) } finally { inCorso.delete(sha) }
     }
   }
 

@@ -107,5 +107,11 @@ install -o root -g root -m 0644 "$SORGENTE/deploy/m4tr1x-node.service" /etc/syst
 systemctl daemon-reload
 systemctl enable m4tr1x-node >/dev/null
 systemctl restart m4tr1x-node
+# Macchine piccole (il nodo Oracle ha 500 MB): la cache dei pacchetti di dnf prende 300 MB ogni ora, manda il
+# sistema in swap e il nodo sparisce dalla rete per minuti (16/11/2026: dnf ucciso per memoria finita, carico 34).
+# Gli aggiornamenti si fanno a mano; la cache non serve a un nodo.
+if systemctl list-unit-files dnf-makecache.timer >/dev/null 2>&1 && [ "$(awk '/MemTotal/ {print $2}' /proc/meminfo)" -lt 2000000 ]; then
+  systemctl disable --now dnf-makecache.timer >/dev/null 2>&1 || true
+fi
 echo "fatto. Stato: systemctl status m4tr1x-node · registro: journalctl -u m4tr1x-node -f"
 echo "l'indirizzo onion compare in $DATI/onion (solo root e il nodo lo leggono) quando tor l'ha pubblicato"
