@@ -20,6 +20,8 @@ m4tr1x-transport = { path = "../transport", features = ["prova"] }
 m4tr1x-identity = { path = "../identity" }
 # examples/file.rs: pulizia del file prima del caricamento di prova
 m4tr1x-media = { path = "../media" }
+# examples/celle.rs: una foto a celle (alveare) caricata e riscaricata pezzo per pezzo
+m4tr1x-celle = { path = "../celle" }
 tokio = { version = "=1.53.3", default-features = false, features = ["time", "io-util", "rt-multi-thread", "macros", "test-util"] }
 
 # examples/misura.rs: prova di fine corsa con un nodo vero via Tor (solo prove)
@@ -37,3 +39,7 @@ name = "forum"
 # examples/file.rs: caricamento e riscaricamento di un file su un nodo vero via Tor (solo prove)
 [[example]]
 name = "file"
+
+# examples/celle.rs: foto a celle su un nodo vero via Tor, riscaricata pezzo per pezzo (solo prove)
+[[example]]
+name = "celle"

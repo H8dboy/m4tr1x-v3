@@ -2122,6 +2122,7 @@ dependencies = [
 name = "m4tr1x-feed"
 version = "0.1.0"
 dependencies = [
+ "m4tr1x-celle",
  "m4tr1x-identity",
  "m4tr1x-media",
  "m4tr1x-protocol",
