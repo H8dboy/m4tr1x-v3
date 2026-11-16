@@ -299,53 +299,135 @@ pub(crate) fn leggi_valore(le: &mut Lettore, c: &mut Contesti, d: &Dove) -> i32 
     }
 }
 
-fn genitore<'a>(bande: &'a [Banda], b: &Banda) -> Option<&'a Banda> {
-    if b.orient == Orient::LL {
-        return None;
-    }
-    bande.iter().find(|g| g.orient == b.orient && g.livello == b.livello + 1)
-}
+// ─── Pezzi: per livello, e dentro il livello cella per cella ────────────────
 
-fn scrivi_banda(sc: &mut Scrittore, c: &mut Contesti, q: &Piano, bande: &[Banda], b: &Banda) {
-    let gen = genitore(bande, b);
-    for y in 0..b.h {
-        for x in 0..b.w {
-            let d = contesto(q, b, gen, x, y);
-            scrivi_valore(sc, c, &d, q.a(b.x0 + x, b.y0 + y));
-        }
-    }
-}
-
-fn leggi_banda(le: &mut Lettore, c: &mut Contesti, q: &mut Piano, bande: &[Banda], b: &Banda) {
-    let gen = genitore(bande, b);
-    for y in 0..b.h {
-        for x in 0..b.w {
-            let d = contesto(q, b, gen, x, y);
-            let v = leggi_valore(le, c, &d);
-            q.v[(b.y0 + y) * q.w + b.x0 + x] = v;
-        }
-    }
-}
-
-// ─── Pezzi ──────────────────────────────────────────────────────────────────
+/// Quanti gruppi di celle per livello: ogni gruppo è un pezzo che si può troncare. Le celle vanno in ordine di
+/// quanto dettaglio hanno mostrato al livello prima (o nella media, per il primo), così i primi pezzi portano il
+/// dettaglio dove c'è; l'ordine lo ricava anche il decodificatore, senza byte in più.
+pub const GRUPPI: usize = 8;
 
 /// Quanti livelli hanno i colori dimezzati: uno in meno della luce (stessa scala sull'immagine).
 fn livelli_croma(livelli: u8) -> u8 {
     livelli.saturating_sub(1)
 }
 
-/// I pezzi: il primo ha le medie (LL) dei tre piani, poi uno per livello della luce (dal più grossolano) con le
-/// bande dei colori della stessa scala. Ogni voce: (indici di bande della luce, indici di bande dei colori).
-fn pezzi(livelli: u8) -> Vec<(Vec<usize>, Vec<usize>)> {
-    let lc = livelli_croma(livelli);
-    let mut v = vec![(vec![0], vec![0])];
-    for l in (1..=livelli).rev() {
-        let i = 1 + 3 * (livelli - l) as usize;
-        let y: Vec<usize> = (i..i + 3).collect();
-        let c: Vec<usize> = if l >= 2 && l - 1 <= lc { (i..i + 3).collect() } else { vec![] };
-        v.push((y, c));
+/// I coefficienti di una banda raggruppati per cella (indici lineari nel piano), dalla mappa pixel → cella:
+/// il coefficiente `(x, y)` di una banda a scala `scala` sta al pixel `(x·scala + scala/2, y·scala + scala/2)`.
+fn per_cella(b: &Banda, stride: usize, scala: usize, mappa: &[u32], w: usize, h: usize, celle: usize) -> Vec<Vec<u32>> {
+    let mut v = vec![Vec::new(); celle];
+    for y in 0..b.h {
+        let py = (y * scala + scala / 2).min(h - 1);
+        for x in 0..b.w {
+            let px = (x * scala + scala / 2).min(w - 1);
+            v[mappa[py * w + px] as usize].push(((b.y0 + y) * stride + b.x0 + x) as u32);
+        }
     }
     v
+}
+
+/// Un livello della luce con le bande dei colori alla stessa scala: (indice di banda, coefficienti per cella).
+struct Livello {
+    bande_y: Vec<(usize, Vec<Vec<u32>>)>,
+    bande_c: Vec<(usize, Vec<Vec<u32>>)>,
+}
+
+/// Tutto quello che serve per percorrere i coefficienti nello stesso ordine da una parte e dall'altra.
+struct Geometria {
+    bande_y: Vec<Banda>,
+    bande_c: Vec<Banda>,
+    gen_y: Vec<Option<Banda>>,
+    gen_c: Vec<Option<Banda>>,
+    /// la media della luce, per cella
+    ll_y: Vec<Vec<u32>>,
+    livelli: Vec<Livello>,
+    celle: usize,
+    /// larghezza del piano della luce e di quelli dei colori
+    w: usize,
+    wc: usize,
+}
+
+fn genitore(bande: &[Banda], b: &Banda) -> Option<Banda> {
+    if b.orient == Orient::LL {
+        return None;
+    }
+    bande.iter().find(|g| g.orient == b.orient && g.livello == b.livello + 1).copied()
+}
+
+fn geometria(w: usize, h: usize, wc: usize, hc: usize, livelli: u8, mappa: &[u32], celle: usize) -> Geometria {
+    let lc = livelli_croma(livelli);
+    let bande_y = onde::bande(w, h, livelli);
+    let bande_c = onde::bande(wc, hc, lc);
+    let gen_y = bande_y.iter().map(|b| genitore(&bande_y, b)).collect();
+    let gen_c = bande_c.iter().map(|b| genitore(&bande_c, b)).collect();
+    let ll_y = per_cella(&bande_y[0], w, 1 << livelli, mappa, w, h, celle);
+    let mut liv = Vec::new();
+    for l in (1..=livelli).rev() {
+        let i = 1 + 3 * (livelli - l) as usize;
+        let scala = 1usize << l;
+        let by = (i..i + 3).map(|k| (k, per_cella(&bande_y[k], w, scala, mappa, w, h, celle))).collect();
+        // la banda dei colori al livello l−1 (piano dimezzato) sta alla stessa scala sull'immagine
+        let bc = if l >= 2 && l - 1 <= lc { (i..i + 3).map(|k| (k, per_cella(&bande_c[k], wc, scala, mappa, w, h, celle))).collect() } else { vec![] };
+        liv.push(Livello { bande_y: by, bande_c: bc });
+    }
+    Geometria { bande_y, bande_c, gen_y, gen_c, ll_y, livelli: liv, celle, w, wc }
+}
+
+/// Chi percorre i coefficienti: chi scrive e chi legge fanno le stesse mosse.
+trait Visita {
+    fn inizio_pezzo(&mut self);
+    /// Falso = fermarsi (chi legge non ha più byte).
+    fn fine_pezzo(&mut self) -> bool;
+    /// Un coefficiente del piano (0 luce, 1 Cb, 2 Cr), banda `banda`, indice lineare `idx`.
+    fn coeff(&mut self, piano: u8, banda: usize, idx: u32);
+    /// |q| della luce in `idx`, per com'è dalla parte di chi legge (già scritto o zero).
+    fn assoluto_y(&self, idx: u32) -> i64;
+}
+
+fn percorri(geo: &Geometria, v: &mut dyn Visita) {
+    // pezzo 0: le medie, in ordine di riga
+    v.inizio_pezzo();
+    for (piano, b) in [(0u8, &geo.bande_y[0]), (1, &geo.bande_c[0]), (2, &geo.bande_c[0])] {
+        let stride = if piano == 0 { geo.w } else { geo.wc };
+        for y in 0..b.h {
+            for x in 0..b.w {
+                v.coeff(piano, 0, ((b.y0 + y) * stride + b.x0 + x) as u32);
+            }
+        }
+    }
+    if !v.fine_pezzo() {
+        return;
+    }
+    let mut prima: Vec<Vec<u32>> = geo.ll_y.clone();
+    for liv in &geo.livelli {
+        // celle in ordine di dettaglio mostrato al livello prima (stabile: a parità, ordine di cella)
+        let mut en: Vec<(i64, usize)> = (0..geo.celle).map(|c| (-prima[c].iter().map(|&i| v.assoluto_y(i)).sum::<i64>(), c)).collect();
+        en.sort();
+        let ordine: Vec<usize> = en.into_iter().map(|e| e.1).collect();
+        for g in 0..GRUPPI {
+            let (da, a) = (g * geo.celle / GRUPPI, (g + 1) * geo.celle / GRUPPI);
+            v.inizio_pezzo();
+            for (bi, pc) in &liv.bande_y {
+                for &c in &ordine[da..a] {
+                    for &idx in &pc[c] {
+                        v.coeff(0, *bi, idx);
+                    }
+                }
+            }
+            for (bi, pc) in &liv.bande_c {
+                for piano in [1u8, 2] {
+                    for &c in &ordine[da..a] {
+                        for &idx in &pc[c] {
+                            v.coeff(piano, *bi, idx);
+                        }
+                    }
+                }
+            }
+            if !v.fine_pezzo() {
+                return;
+            }
+        }
+        prima = (0..geo.celle).map(|c| liv.bande_y.iter().flat_map(|(_, pc)| pc[c].iter().copied()).collect()).collect();
+    }
 }
 
 /// Posizioni (fine, in byte) dei pezzi interi presenti in `d`.
@@ -362,11 +444,6 @@ pub fn pezzi_byte(d: &[u8]) -> Vec<usize> {
         i = fine;
     }
     out
-}
-
-struct Trasformati {
-    orig: Piani,
-    base: Piani,
 }
 
 fn trasforma(p: &Piani, livelli: u8) -> Piani {
@@ -389,15 +466,87 @@ fn previsto(base_t: &Piano, b: &Banda, x: usize, y: usize) -> i32 {
     }
 }
 
+/// Chi scrive: legge i contesti da `visto` (quello che chi legge ha già), non dal piano intero.
+struct Scrive<'a> {
+    geo: &'a Geometria,
+    q: [&'a Piano; 3],
+    visto: [Piano; 3],
+    ctx: [Contesti; 2],
+    sc: Option<Scrittore>,
+    out: Vec<u8>,
+}
+
+impl Visita for Scrive<'_> {
+    fn inizio_pezzo(&mut self) {
+        self.sc = Some(Scrittore::nuovo());
+    }
+    fn fine_pezzo(&mut self) -> bool {
+        let b = self.sc.take().expect("pezzo aperto").chiudi();
+        scrivi_varint(&mut self.out, b.len() as u64);
+        self.out.extend_from_slice(&b);
+        true
+    }
+    fn coeff(&mut self, piano: u8, banda: usize, idx: u32) {
+        let p = piano as usize;
+        let (bande, gen) = if p == 0 { (&self.geo.bande_y, &self.geo.gen_y) } else { (&self.geo.bande_c, &self.geo.gen_c) };
+        let b = &bande[banda];
+        let idx = idx as usize;
+        let (x, y) = (idx % self.q[p].w - b.x0, idx / self.q[p].w - b.y0);
+        let d = contesto(&self.visto[p], b, gen[banda].as_ref(), x, y);
+        let v = self.q[p].v[idx];
+        scrivi_valore(self.sc.as_mut().expect("pezzo aperto"), &mut self.ctx[p.min(1)], &d, v);
+        self.visto[p].v[idx] = v;
+    }
+    fn assoluto_y(&self, idx: u32) -> i64 {
+        self.visto[0].v[idx as usize].unsigned_abs() as i64
+    }
+}
+
+/// Chi legge: riempie i piani quantizzati pezzo per pezzo, finché ci sono byte.
+struct Legge<'a> {
+    geo: &'a Geometria,
+    q: [Piano; 3],
+    ctx: [Contesti; 2],
+    d: &'a [u8],
+    i: usize,
+    le: Option<Lettore<'a>>,
+}
+
+impl Visita for Legge<'_> {
+    fn inizio_pezzo(&mut self) {
+        self.le = None;
+        let Ok(n) = leggi_varint(self.d, &mut self.i) else { return };
+        let fine = self.i + n as usize;
+        if fine > self.d.len() {
+            return;
+        }
+        self.le = Some(Lettore::nuovo(&self.d[self.i..fine]));
+        self.i = fine;
+    }
+    fn fine_pezzo(&mut self) -> bool {
+        self.le.is_some()
+    }
+    fn coeff(&mut self, piano: u8, banda: usize, idx: u32) {
+        let Some(le) = self.le.as_mut() else { return };
+        let p = piano as usize;
+        let (bande, gen) = if p == 0 { (&self.geo.bande_y, &self.geo.gen_y) } else { (&self.geo.bande_c, &self.geo.gen_c) };
+        let b = &bande[banda];
+        let idx = idx as usize;
+        let (x, y) = (idx % self.q[p].w - b.x0, idx / self.q[p].w - b.y0);
+        let d = contesto(&self.q[p], b, gen[banda].as_ref(), x, y);
+        self.q[p].v[idx] = leggi_valore(le, &mut self.ctx[p.min(1)], &d);
+    }
+    fn assoluto_y(&self, idx: u32) -> i64 {
+        self.q[0].v[idx as usize].unsigned_abs() as i64
+    }
+}
+
 /// Codifica lo strato 2. `orig` e `base` sono i piani dell'immagine vera e dell'immagine ricostruita dagli
-/// strati 0 e 1 (luce intera, colori dimezzati).
-pub fn codifica(orig: &Piani, base: &Piani, passo: u8, passo_croma: u8, livelli: u8) -> Vec<u8> {
+/// strati 0 e 1 (luce intera, colori dimezzati); `mappa` dice la cella di ogni pixel (`celle` in tutto).
+pub fn codifica(orig: &Piani, base: &Piani, passo: u8, passo_croma: u8, livelli: u8, mappa: &[u32], celle: usize) -> Vec<u8> {
     let livelli = livelli.clamp(1, LIVELLI_MAX);
-    let t = Trasformati { orig: trasforma(orig, livelli), base: trasforma(base, livelli) };
-    let lc = livelli_croma(livelli);
-    let bande_y = onde::bande(orig.y.w, orig.y.h, livelli);
-    let bande_c = onde::bande(orig.cb.w, orig.cb.h, lc);
-    // quantizzazione di tutti i piani
+    let (orig_t, base_t) = (trasforma(orig, livelli), trasforma(base, livelli));
+    let geo = geometria(orig.y.w, orig.y.h, orig.cb.w, orig.cb.h, livelli, mappa, celle);
     let quantizza_piano = |o: &Piano, b: &Piano, bande: &[Banda], passo: u8| {
         let mut q = Piano::nuovo(o.w, o.h);
         for banda in bande {
@@ -410,59 +559,38 @@ pub fn codifica(orig: &Piani, base: &Piani, passo: u8, passo_croma: u8, livelli:
         }
         q
     };
-    let qy = quantizza_piano(&t.orig.y, &t.base.y, &bande_y, passo);
-    let qcb = quantizza_piano(&t.orig.cb, &t.base.cb, &bande_c, passo_croma);
-    let qcr = quantizza_piano(&t.orig.cr, &t.base.cr, &bande_c, passo_croma);
-    // pezzi
-    let mut out = Vec::new();
-    let mut cy = Contesti::nuovi();
-    let mut cc = Contesti::nuovi();
-    for (iy, ic) in pezzi(livelli) {
-        let mut sc = Scrittore::nuovo();
-        for i in iy {
-            scrivi_banda(&mut sc, &mut cy, &qy, &bande_y, &bande_y[i]);
-        }
-        for i in ic {
-            scrivi_banda(&mut sc, &mut cc, &qcb, &bande_c, &bande_c[i]);
-            scrivi_banda(&mut sc, &mut cc, &qcr, &bande_c, &bande_c[i]);
-        }
-        let b = sc.chiudi();
-        scrivi_varint(&mut out, b.len() as u64);
-        out.extend_from_slice(&b);
-    }
-    out
+    let qy = quantizza_piano(&orig_t.y, &base_t.y, &geo.bande_y, passo);
+    let qcb = quantizza_piano(&orig_t.cb, &base_t.cb, &geo.bande_c, passo_croma);
+    let qcr = quantizza_piano(&orig_t.cr, &base_t.cr, &geo.bande_c, passo_croma);
+    let mut s = Scrive {
+        geo: &geo,
+        q: [&qy, &qcb, &qcr],
+        visto: [Piano::nuovo(qy.w, qy.h), Piano::nuovo(qcb.w, qcb.h), Piano::nuovo(qcr.w, qcr.h)],
+        ctx: [Contesti::nuovi(), Contesti::nuovi()],
+        sc: None,
+        out: Vec::new(),
+    };
+    percorri(&geo, &mut s);
+    s.out
 }
 
 /// Decodifica lo strato 2 (anche a metà) sopra la base e restituisce i piani ricostruiti (luce intera, colori
 /// dimezzati). Pezzi mancanti o troncati: le loro bande restano come previste.
-pub fn decodifica(d: &[u8], base: &Piani, passo: u8, passo_croma: u8, livelli: u8) -> Piani {
+pub fn decodifica(d: &[u8], base: &Piani, passo: u8, passo_croma: u8, livelli: u8, mappa: &[u32], celle: usize) -> Piani {
     let livelli = livelli.clamp(1, LIVELLI_MAX);
     let base_t = trasforma(base, livelli);
     let lc = livelli_croma(livelli);
-    let bande_y = onde::bande(base.y.w, base.y.h, livelli);
-    let bande_c = onde::bande(base.cb.w, base.cb.h, lc);
-    let mut qy = Piano::nuovo(base.y.w, base.y.h);
-    let mut qcb = Piano::nuovo(base.cb.w, base.cb.h);
-    let mut qcr = Piano::nuovo(base.cb.w, base.cb.h);
-    let mut cy = Contesti::nuovi();
-    let mut cc = Contesti::nuovi();
-    let mut i = 0usize;
-    for (iy, ic) in pezzi(livelli) {
-        let Ok(n) = leggi_varint(d, &mut i) else { break };
-        let fine = i + n as usize;
-        if fine > d.len() {
-            break;
-        }
-        let mut le = Lettore::nuovo(&d[i..fine]);
-        for k in iy {
-            leggi_banda(&mut le, &mut cy, &mut qy, &bande_y, &bande_y[k]);
-        }
-        for k in ic {
-            leggi_banda(&mut le, &mut cc, &mut qcb, &bande_c, &bande_c[k]);
-            leggi_banda(&mut le, &mut cc, &mut qcr, &bande_c, &bande_c[k]);
-        }
-        i = fine;
-    }
+    let geo = geometria(base.y.w, base.y.h, base.cb.w, base.cb.h, livelli, mappa, celle);
+    let mut l = Legge {
+        geo: &geo,
+        q: [Piano::nuovo(base.y.w, base.y.h), Piano::nuovo(base.cb.w, base.cb.h), Piano::nuovo(base.cb.w, base.cb.h)],
+        ctx: [Contesti::nuovi(), Contesti::nuovi()],
+        d,
+        i: 0,
+        le: None,
+    };
+    percorri(&geo, &mut l);
+    let [qy, qcb, qcr] = l.q;
     let ricostruisci = |q: &Piano, b: &Piano, bande: &[Banda], passo: u8, liv: u8| {
         let mut p = Piano::nuovo(q.w, q.h);
         for banda in bande {
@@ -477,9 +605,9 @@ pub fn decodifica(d: &[u8], base: &Piani, passo: u8, passo_croma: u8, livelli: u
         p
     };
     Piani {
-        y: ricostruisci(&qy, &base_t.y, &bande_y, passo, livelli),
-        cb: ricostruisci(&qcb, &base_t.cb, &bande_c, passo_croma, lc),
-        cr: ricostruisci(&qcr, &base_t.cr, &bande_c, passo_croma, lc),
+        y: ricostruisci(&qy, &base_t.y, &geo.bande_y, passo, livelli),
+        cb: ricostruisci(&qcb, &base_t.cb, &geo.bande_c, passo_croma, lc),
+        cr: ricostruisci(&qcr, &base_t.cr, &geo.bande_c, passo_croma, lc),
     }
 }
 
@@ -506,6 +634,11 @@ mod tests {
         Piani { y, cb: c.clone(), cr: c }
     }
 
+    /// Tre celle: colonne di sinistra, centro, destra.
+    fn mappa_prova(w: usize, h: usize) -> (Vec<u32>, usize) {
+        ((0..w * h).map(|k| ((k % w) * 3 / w) as u32).collect(), 3)
+    }
+
     fn piatti(w: usize, h: usize, v: i32) -> Piani {
         let mut y = Piano::nuovo(w, h);
         y.v.iter_mut().for_each(|p| *p = v);
@@ -520,9 +653,10 @@ mod tests {
         for &(w, h, l) in &[(37usize, 23usize, 3u8), (8, 8, 1), (64, 48, 5), (5, 3, 2)] {
             let orig = piani_casuali(w, h, &mut stato, 40);
             let base = piatti(w, h, 128);
-            let d = codifica(&orig, &base, 1, 1, l);
-            assert_eq!(pezzi_byte(&d).len(), 1 + l as usize, "{w}x{h} livelli {l}");
-            let r = decodifica(&d, &base, 1, 1, l);
+            let (mappa, celle) = mappa_prova(w, h);
+            let d = codifica(&orig, &base, 1, 1, l, &mappa, celle);
+            assert_eq!(pezzi_byte(&d).len(), 1 + GRUPPI * l as usize, "{w}x{h} livelli {l}");
+            let r = decodifica(&d, &base, 1, 1, l, &mappa, celle);
             // passo 1 con zona morta: errore al massimo di un paio di livelli per coefficiente
             let max = orig.y.v.iter().zip(&r.y.v).map(|(a, b)| (a - b).abs()).max().unwrap();
             assert!(max <= 6, "{w}x{h} livelli {l}: errore massimo {max}");
@@ -534,10 +668,11 @@ mod tests {
     #[test]
     fn un_piano_uguale_alla_base_costa_pochi_byte() {
         let base = piatti(200, 150, 90);
-        let d = codifica(&base, &base, 8, 8, 3);
-        // il costo è solo il "riscaldamento" delle probabilità dei contesti (poche centinaia di bit)
-        assert!(d.len() <= 256, "{} byte", d.len());
-        let r = decodifica(&d, &base, 8, 8, 3);
+        let (mappa, celle) = mappa_prova(200, 150);
+        let d = codifica(&base, &base, 8, 8, 3, &mappa, celle);
+        // il costo è il "riscaldamento" delle probabilità dei contesti e la chiusura di 25 pezzi
+        assert!(d.len() <= 400, "{} byte", d.len());
+        let r = decodifica(&d, &base, 8, 8, 3, &mappa, celle);
         assert_eq!(r.y, base.y);
     }
 
@@ -546,21 +681,22 @@ mod tests {
         let mut stato = 99u64;
         let orig = piani_casuali(64, 40, &mut stato, 60);
         let base = piatti(64, 40, 128);
-        let d = codifica(&orig, &base, 4, 4, 3);
+        let (mappa, celle) = mappa_prova(64, 40);
+        let d = codifica(&orig, &base, 4, 4, 3, &mappa, celle);
         let fini = pezzi_byte(&d);
-        assert_eq!(fini.len(), 4);
+        assert_eq!(fini.len(), 1 + 3 * GRUPPI);
         let errore = |p: &Piani| orig.y.v.iter().zip(&p.y.v).map(|(a, b)| ((a - b) * (a - b)) as u64).sum::<u64>();
-        let mut prima = errore(&decodifica(&[], &base, 4, 4, 3));
+        let mut prima = errore(&decodifica(&[], &base, 4, 4, 3, &mappa, celle));
         for &f in &fini {
-            let e = errore(&decodifica(&d[..f], &base, 4, 4, 3));
+            let e = errore(&decodifica(&d[..f], &base, 4, 4, 3, &mappa, celle));
             assert!(e <= prima, "un pezzo in più non peggiora: {prima} → {e}");
             prima = e;
         }
         // troncato a metà di un pezzo: vale come il pezzo prima; byte a caso: nessun panico
-        let meta = decodifica(&d[..fini[1] + 3], &base, 4, 4, 3);
-        assert_eq!(meta.y, decodifica(&d[..fini[1]], &base, 4, 4, 3).y);
+        let meta = decodifica(&d[..fini[1] + 3], &base, 4, 4, 3, &mappa, celle);
+        assert_eq!(meta.y, decodifica(&d[..fini[1]], &base, 4, 4, 3, &mappa, celle).y);
         let spazzatura: Vec<u8> = (0..300).map(|_| caso(&mut stato) as u8).collect();
-        let _ = decodifica(&spazzatura, &base, 4, 4, 3);
+        let _ = decodifica(&spazzatura, &base, 4, 4, 3, &mappa, celle);
     }
 
     #[test]

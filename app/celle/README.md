@@ -26,8 +26,10 @@ differenze, spostamenti di bit, qualche moltiplicazione e divisione intera.
   - **codifica aritmetica binaria adattiva** (`aritmetica.rs`: range coder alla LZMA, probabilità a 15 bit con due
     finestre di adattamento, corta e lunga) con contesti da orientamento, livello, quanto c'è intorno tra i
     coefficienti già scritti e intorno al coefficiente "genitore" del livello sopra;
-  - scritto **a pezzi** dalla banda più grossolana alla più fine, ogni pezzo con la sua lunghezza davanti: uno strato
-    troncato dà le bande intere che ci sono; i pezzi dopo restano "come previsto". Ogni pezzo può essere un blob.
+  - scritto **a pezzi, cella per cella**: prima le medie, poi per ogni livello di finezza le celle in ordine di
+    quanto dettaglio hanno mostrato al livello prima, in 8 gruppi (`GRUPPI`), ognuno con la sua lunghezza davanti.
+    L'ordine delle celle lo ricava anche chi legge, senza byte in più. Uno strato troncato dà i gruppi interi che ci
+    sono; il resto resta "come previsto". Ogni pezzo può essere un blob.
 - Decodifica per strati (`Strati::Colore`, `ColoreEPendenza`, `Tutti`), byte rotti → errore o immagine sbagliata, mai
   panico. 18 prove (trasformata esatta anche con misure dispari, codifica aritmetica avanti/indietro, passo 1 quasi
   senza perdita, pezzi che migliorano uno dopo l'altro, troncature, byte a caso, strati 0/1 avanti e indietro).
@@ -43,25 +45,31 @@ Foto 1–3 sono foto di telefono ridotte a 1600 px.
 
 | immagine | celle (raff.) | strati 0+1 | JPEG q50 | celle allo stesso PSNR | JPEG q75 | celle allo stesso PSNR | cod./dec. |
 |---|---|---|---|---|---|---|---|
-| render 1400×900 (fondo piatto) | 477 (32), r 45 | 1,6 KB @ 25,6 dB | 33,3 KB @ 43,5 dB | 9,6 KB (**0,29×**) | 40,2 KB @ 46,5 dB | 20,3 KB (**0,51×**) | 291/141 ms |
-| foto di uno schermo 1200×1600 | 1837 (152), r 30 | 10,1 KB @ 23,8 dB | 110,0 KB @ 37,1 dB | 73,9 KB (**0,67×**) | 182,9 KB @ 39,5 dB | 126,4 KB (**0,69×**) | 456/225 ms |
-| foto 1 (interno, 1600×1200) | 1466 (95), r 30 | 9,7 KB @ 25,4 dB | 128,0 KB @ 34,6 dB | 80,6 KB (**0,63×**) | 217,2 KB @ 36,2 dB | 142,9 KB (**0,66×**) | 449/215 ms |
-| foto 3 (esterno, 1200×1600) | 1477 (92), r 30 | 8,7 KB @ 24,7 dB | 135,3 KB @ 35,6 dB | 94,4 KB (**0,70×**) | 226,5 KB @ 37,5 dB | 175,1 KB (**0,77×**) | 448/214 ms |
-| foto 2 (rumorosa, 1200×1600) | 3871 (491), r 30 | 26,2 KB @ 19,2 dB | 308,6 KB @ 29,0 dB | 219,4 KB (**0,71×**) | 479,2 KB @ 31,9 dB | 328,7 KB (**0,69×**) | 505/272 ms |
+| render 1400×900 (fondo piatto) | 477 (32), r 45 | 1,6 KB @ 25,6 dB | 33,3 KB @ 43,5 dB | 9,8 KB (**0,29×**) | 40,2 KB @ 46,5 dB | 20,6 KB (**0,51×**) | 294/143 ms |
+| foto di uno schermo 1200×1600 | 1837 (152), r 30 | 10,1 KB @ 23,8 dB | 110,0 KB @ 37,1 dB | 76,6 KB (**0,70×**) | 182,9 KB @ 39,5 dB | 130,8 KB (**0,71×**) | 461/223 ms |
+| foto 1 (interno, 1600×1200) | 1466 (95), r 30 | 9,7 KB @ 25,4 dB | 128,0 KB @ 34,6 dB | 81,7 KB (**0,64×**) | 217,2 KB @ 36,2 dB | 144,4 KB (**0,66×**) | 451/214 ms |
+| foto 3 (esterno, 1200×1600) | 1477 (92), r 30 | 8,7 KB @ 24,7 dB | 135,3 KB @ 35,6 dB | 94,6 KB (**0,70×**) | 226,5 KB @ 37,5 dB | 175,0 KB (**0,77×**) | 453/214 ms |
+| foto 2 (rumorosa, 1200×1600) | 3871 (491), r 30 | 26,2 KB @ 19,2 dB | 308,6 KB @ 29,0 dB | 222,3 KB (**0,72×**) | 479,2 KB @ 31,9 dB | 332,8 KB (**0,69×**) | 510/273 ms |
 
-**Progressione** (byte di tutto → PSNR; strati 0+1, poi i quattro pezzi dello strato 2 a passo 32/16):
+**Progressione** (byte di tutto → PSNR, passo 32/16): strati 0+1, poi le medie, poi per ogni livello di finezza
+il primo gruppo di celle (quelle con più dettaglio) e la fine del livello:
 
-- render: 1,6 KB 25,6 dB → 3,0 KB 31,5 → 4,0 KB 35,2 → 5,2 KB 38,6 → 6,2 KB 40,3
-- foto di uno schermo: 10,1 KB 23,8 → 15,1 KB 25,9 → 21,6 KB 28,5 → 31,2 KB 31,9 → 35,3 KB 32,8
-- foto 1: 9,7 KB 25,4 → 17,1 KB 29,4 → 22,7 KB 31,4 → 24,8 KB 31,7 → 25,3 KB 31,8
-- foto 3: 8,7 KB 24,7 → 14,4 KB 28,6 → 20,1 KB 30,6 → 25,9 KB 31,7 → 27,7 KB 32,0
-- foto 2: 26,2 KB 19,2 → 36,7 KB 20,4 → 58,2 KB 22,2 → 106,7 KB 24,7 → 152,6 KB 27,0
+- render: 1,6 KB 25,6 dB → medie 3,0 KB 31,5 → liv. 3: 3,5 KB 33,5 … 4,1 KB 35,2 → liv. 2: 4,7 KB 37,2 … 5,3 KB 38,6 → liv. 1: 5,8 KB 39,8 … 6,3 KB 40,3
+- foto di uno schermo: 10,1 KB 23,8 → 15,1 KB 25,9 → 17,5 KB 26,6 … 22,2 KB 28,5 → 27,5 KB 30,2 … 32,1 KB 31,9 → 34,8 KB 32,5 … 36,3 KB 32,8
+- foto 1: 9,7 KB 25,4 → 17,1 KB 29,4 → 19,1 KB 30,0 … 23,0 KB 31,4 → 23,8 KB 31,5 … 25,2 KB 31,7 → 25,5 KB 31,8 … 25,9 KB 31,8
+- foto 3: 8,7 KB 24,7 → 14,4 KB 28,6 → 16,3 KB 29,2 … 20,1 KB 30,6 → 22,6 KB 31,2 … 26,0 KB 31,7 → 27,1 KB 31,9 … 27,8 KB 32,0
+- foto 2: 26,2 KB 19,2 → 36,7 KB 20,4 → 41,5 KB 20,7 … 59,1 KB 22,2 → 70,8 KB 22,8 … 108,4 KB 24,7 → 122,7 KB 25,4 … 154,7 KB 27,0
+
+Si vede l'alveare al lavoro: sul render il primo ottavo delle celle di ogni livello porta quasi tutto il guadagno
+(3,0 → 3,5 KB = +2 dB, i sette ottavi dopo +1,7 dB in tutto); sulle foto il primo gruppo vale sempre più dei
+successivi. **Costo dell'ordine per cella** rispetto all'ordine di riga, misurato: +0,2–3,6 % di byte (contesti
+meno continui ai bordi delle celle e 25 pezzi invece di 4). Vale il prezzo: è l'idea.
 
 **Lettura onesta.** L'obiettivo era "metà dei byte del JPEG q50 a pari PSNR, o dirlo con i numeri": sul render è
-molto sotto la metà (0,29), sulle foto siamo a **0,63–0,71**, cioè un terzo in meno del JPEG, non la metà. È quello
+molto sotto la metà (0,29), sulle foto siamo a **0,64–0,72**, cioè un terzo in meno del JPEG, non la metà. È quello
 che fa un buon codificatore a onde con codifica aritmetica (JPEG 2000 sta lì): la parte "a celle" non toglie e non
 aggiunge byte, aggiunge la **struttura**: un'anteprima intera in 1,6–10 KB (foto 2, rumorosa, 26 KB) e il dettaglio
-che arriva a pezzi dentro la stessa scheda. La mattina stessa lo strato 2 costava 8–10 volte il JPEG.
+che arriva a pezzi, cella per cella, dentro la stessa scheda. La mattina stessa lo strato 2 costava 8–10 volte il JPEG.
 
 **Decisione presa misurando (12/11 pomeriggio): con la trasformata le celle devono essere grandi.** Su foto 2
 (complessità 13) il raggio automatico di prima era 13 px: 24 144 celle, 170 KB solo di strati 0 e 1, e la qualità

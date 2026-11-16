@@ -465,7 +465,7 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
     if p.passo_dettaglio > 0 {
         let base = piani_base(&mappa, &bari, &colore, &pendenza, w, h);
         let orig = piani_di(img, &luce);
-        dettaglio = dettaglio::codifica(&orig, &base, p.passo_dettaglio, p.passo_croma, livelli);
+        dettaglio = dettaglio::codifica(&orig, &base, p.passo_dettaglio, p.passo_croma, livelli, &mappa, n);
     }
 
     let colore = strati::codifica_colore(&griglia, &colore);
@@ -593,7 +593,7 @@ pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
     // il dettaglio si applica solo sopra colore + pendenza: è stato previsto così da chi ha codificato
     if strati == Strati::Tutti && con_pendenza && !c.dettaglio.is_empty() && passo > 0 {
         let base = piani_base(&mappa, &bari, &colore, &pendenza, w, h);
-        let fine = dettaglio::decodifica(&c.dettaglio, &base, passo, passo_croma, livelli);
+        let fine = dettaglio::decodifica(&c.dettaglio, &base, passo, passo_croma, livelli, &mappa, griglia.celle());
         let (cb, cr) = (dettaglio::raddoppia(&fine.cb, w, h), dettaglio::raddoppia(&fine.cr, w, h));
         for k in 0..w * h {
             let (r, g, b) = rgb(fine.y.v[k].clamp(0, 255), cb.v[k].clamp(0, 255) as u8, cr.v[k].clamp(0, 255) as u8);
