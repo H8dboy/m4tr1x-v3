@@ -62,7 +62,7 @@ test('guscio: si pulisce prima di tutto, si tiene e si carica solo il file pulit
   const apri_celle = corpo(lib, 'celle_apri')
   assert.match(apri_celle, /!m4tr1x_protocol::strati_validi\(dimensione, &pezzi, &misure\)/, 'celle_apri non controlla la forma dei pezzi a celle')
   assert.match(apri_celle, /scarica_pezzi\(&\*tor, &fonti, &attesi, &avanza,/, 'celle_apri non scarica dalle fonti con scarica_pezzi')
-  assert.ok(!/std::fs|PathBuf|read_to/.test(prepara_celle + pubblica_celle + apri_celle), 'l'alveare legge file dal disco')
+  assert.ok(!/std::fs|PathBuf|read_to/.test(prepara_celle + pubblica_celle + apri_celle), "l'alveare legge file dal disco")
   const conf = JSON.parse(fs.readFileSync(path.join(APP, 'shell', 'tauri.conf.json'), 'utf8')).app.security.csp
   assert.equal(conf['img-src'], "'self' blob:")
   assert.equal(conf['media-src'], "'self' blob:")
