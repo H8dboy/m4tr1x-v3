@@ -1,6 +1,8 @@
 # Video a celle esagonali (idea del fondatore, ripresa il 12/11/2026)
 
-> Stato: idea, non progettata né misurata. Scritta qui perché una prima versione era andata persa. Si riprende
+> **Priorità (fondatore, 12/11/2026): questo viene prima del resto del social.** "Se vinciamo sulla banda abbiamo vinto su tutto: a quel punto M4TR1X è realtà, il resto può aspettare." Codice: `app/celle` (PR #14), misure nel suo README.
+>
+> Stato: prima versione per le foto scritta e misurata il 12/11 (strati base 5–25 KB per un'immagine intera; dettaglio ancora 8–10× il JPEG). Scritta qui perché una prima versione era andata persa. Si riprende
 > quando si fanno gli hub (ADR-0006, F6). Non cambia il trasporto a pezzi (ADR-0005), lo completa.
 
 ## Il problema che risolve
