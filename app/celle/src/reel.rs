@@ -16,8 +16,8 @@
 //! Chi codifica tiene come riferimento la **propria ricostruzione** (quella che vede chi legge con tutti i pezzi):
 //! chi legge un reel a pezzi troncati si allontana un po' a ogni fotogramma, fino alla chiave dopo.
 
-use crate::dettaglio::{self, Base, Piani, Piano, LIVELLI_MAX};
-use crate::{codifica, decodifica_piani, leggi_varint, piani_di, piani_in_rgb, scrivi_varint, strati, ycbcr, Codificata, Errore, Griglia, Immagine, Parametri, Strati};
+use crate::dettaglio::{self, Base, Contesti, Piani, Piano, LIVELLI_MAX};
+use crate::{codifica, contesti_nuovi, decodifica_piani, leggi_varint, piani_di, piani_in_rgb, scrivi_varint, strati, ycbcr, Codificata, Errore, Griglia, Immagine, Parametri, Strati};
 
 /// Versione del formato del reel.
 pub const VERSIONE_REEL: u8 = 1;
@@ -92,6 +92,8 @@ struct Stato {
     rif: Piani,
     /// gli spostamenti del fotogramma prima, per cella
     vettori: Vec<(i32, i32)>,
+    /// le probabilità della codifica aritmetica del resto, tenute da un fotogramma all'altro (da zero a ogni chiave)
+    ctx: [Contesti; 2],
 }
 
 impl Stato {
@@ -102,7 +104,7 @@ impl Stato {
         for (k, &c) in mappa.iter().enumerate() {
             pixel[c as usize].push(k as u32);
         }
-        Stato { griglia, mappa, pixel, rif, vettori: vec![(0, 0); n] }
+        Stato { griglia, mappa, pixel, rif, vettori: vec![(0, 0); n], ctx: contesti_nuovi() }
     }
 }
 
@@ -306,9 +308,11 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
                 let st = stato.as_mut().expect("stato");
                 let n = st.griglia.celle();
                 let pred = prevedi(&st.rif, &st.mappa, &v);
-                let dettaglio = if passo > 0 { dettaglio::codifica(&orig, &pred, passo, p.foto.passo_croma, livelli, &st.mappa, n, Base::Tutto) } else { vec![] };
+                // chi legge parte dagli stessi contesti: si codifica con una copia e si rilegge con l'altra
+                let mut ctx_lettura = st.ctx.clone();
+                let dettaglio = if passo > 0 { dettaglio::codifica(&orig, &pred, passo, p.foto.passo_croma, livelli, &st.mappa, n, Base::Tutto, &mut st.ctx) } else { vec![] };
                 // il riferimento per il fotogramma dopo è quello che vede chi legge, non l'originale
-                let fine = if passo > 0 { dettaglio::decodifica(&dettaglio, &pred, passo, p.foto.passo_croma, livelli, &st.mappa, n, Base::Tutto) } else { pred };
+                let fine = if passo > 0 { dettaglio::decodifica(&dettaglio, &pred, passo, p.foto.passo_croma, livelli, &st.mappa, n, Base::Tutto, &mut ctx_lettura) } else { pred };
                 let piatti: Vec<i32> = v.iter().flat_map(|&(a, b)| [a, b]).collect();
                 let vettori = strati::codifica_valori(&st.griglia, &piatti, 2);
                 st.rif = fine;
@@ -354,7 +358,7 @@ pub fn decodifica_reel(r: &Reel) -> Result<Vec<Immagine>, Errore> {
                 let st = stato.as_mut().ok_or(Errore::Formato("fotogramma previsto senza una chiave prima"))?;
                 let (passo, croma, livelli, v) = leggi_vettori(st, p)?;
                 let pred = prevedi(&st.rif, &st.mappa, &v);
-                let fine = if passo > 0 && !p.dettaglio.is_empty() { dettaglio::decodifica(&p.dettaglio, &pred, passo, croma, livelli, &st.mappa, st.griglia.celle(), Base::Tutto) } else { pred };
+                let fine = if passo > 0 && !p.dettaglio.is_empty() { dettaglio::decodifica(&p.dettaglio, &pred, passo, croma, livelli, &st.mappa, st.griglia.celle(), Base::Tutto, &mut st.ctx) } else { pred };
                 out.push(piani_in_rgb(&fine));
                 st.rif = fine;
                 st.vettori = v;
@@ -375,7 +379,7 @@ impl Reel {
         let Fotogramma::Previsto(p) = f else { return Ok(vec![]) };
         let chiave = self.fotogrammi[..i].iter().rev().find_map(|f| if let Fotogramma::Chiave(c) = f { Some(c) } else { None }).ok_or(Errore::Formato("fotogramma previsto senza una chiave prima"))?;
         let t = crate::leggi_testa(&chiave.testa)?;
-        let st = Stato { mappa: vec![], pixel: vec![], rif: Piani { y: Piano::nuovo(0, 0), cb: Piano::nuovo(0, 0), cr: Piano::nuovo(0, 0) }, vettori: vec![], griglia: t.griglia };
+        let st = Stato { mappa: vec![], pixel: vec![], rif: Piani { y: Piano::nuovo(0, 0), cb: Piano::nuovo(0, 0), cr: Piano::nuovo(0, 0) }, vettori: vec![], griglia: t.griglia, ctx: contesti_nuovi() };
         Ok(leggi_vettori(&st, p)?.3)
     }
 

@@ -467,7 +467,7 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
     if p.passo_dettaglio > 0 {
         let base = piani_base(&mappa, &bari, &colore, &pendenza, w, h);
         let orig = piani_di(img, &luce);
-        dettaglio = dettaglio::codifica(&orig, &base, p.passo_dettaglio, p.passo_croma, livelli, &mappa, n, dettaglio::Base::SoloMedia);
+        dettaglio = dettaglio::codifica(&orig, &base, p.passo_dettaglio, p.passo_croma, livelli, &mappa, n, dettaglio::Base::SoloMedia, &mut contesti_nuovi());
     }
 
     let colore = strati::codifica_colore(&griglia, &colore);
@@ -499,6 +499,11 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
         testa.push(byte);
     }
     Ok((Codificata { testa, colore, pendenza, dettaglio }, griglia))
+}
+
+/// Contesti della codifica aritmetica del dettaglio partendo da zero (una foto parte sempre da zero).
+pub(crate) fn contesti_nuovi() -> [dettaglio::Contesti; 2] {
+    [dettaglio::Contesti::nuovi(), dettaglio::Contesti::nuovi()]
 }
 
 /// I piani dell'immagine vera: luce intera, colori dimezzati.
@@ -618,7 +623,7 @@ pub(crate) fn decodifica_piani(c: &Codificata, strati: Strati) -> Result<(dettag
     let bari = t.griglia.baricentri(&mappa);
     let base = piani_base(&mappa, &bari, &colore, &pendenza, t.w as usize, t.h as usize);
     if strati == Strati::Tutti && con_pendenza && !c.dettaglio.is_empty() && t.passo > 0 {
-        let fine = dettaglio::decodifica(&c.dettaglio, &base, t.passo, t.passo_croma, t.livelli, &mappa, t.griglia.celle(), dettaglio::Base::SoloMedia);
+        let fine = dettaglio::decodifica(&c.dettaglio, &base, t.passo, t.passo_croma, t.livelli, &mappa, t.griglia.celle(), dettaglio::Base::SoloMedia, &mut contesti_nuovi());
         return Ok((fine, t.griglia));
     }
     Ok((base, t.griglia))
@@ -640,7 +645,7 @@ pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
     // il dettaglio si applica solo sopra colore + pendenza: è stato previsto così da chi ha codificato
     if strati == Strati::Tutti && con_pendenza && !c.dettaglio.is_empty() && passo > 0 {
         let base = piani_base(&mappa, &bari, &colore, &pendenza, w, h);
-        let fine = dettaglio::decodifica(&c.dettaglio, &base, passo, passo_croma, livelli, &mappa, griglia.celle(), dettaglio::Base::SoloMedia);
+        let fine = dettaglio::decodifica(&c.dettaglio, &base, passo, passo_croma, livelli, &mappa, griglia.celle(), dettaglio::Base::SoloMedia, &mut contesti_nuovi());
         return Ok(piani_in_rgb(&fine));
     }
 
