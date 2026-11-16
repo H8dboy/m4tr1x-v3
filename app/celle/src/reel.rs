@@ -2,7 +2,7 @@
 //!
 //! Il primo fotogramma (e uno ogni tanto) è una **chiave**: una foto a celle come in `lib.rs`, con i suoi tre
 //! strati. Gli altri sono **previsti**: per ogni cella si cerca di quanto si è spostata rispetto al fotogramma
-//! prima (uno spostamento intero `(dx, dy)` per cella, solo somme di differenze assolute), il fotogramma prima
+//! prima (uno spostamento `(dx, dy)` per cella in mezzi pixel, solo somme di differenze assolute e medie), il fotogramma prima
 //! spostato cella per cella fa da base, e il resto passa per la stessa trasformata a onde e la stessa codifica
 //! aritmetica del dettaglio delle foto (`dettaglio`, con `Base::Tutto`: qui la base somiglia davvero all'immagine,
 //! bande alte comprese). Gli spostamenti viaggiano compressi come gli strati 0 e 1 (`strati`: previsti dalle celle
@@ -107,34 +107,76 @@ impl Stato {
 }
 
 // ─── Spostamento per cella ──────────────────────────────────────────────────
+//
+// Gli spostamenti sono in **mezzi pixel** (come i codec a pixel: tra due pixel si prende la media, aritmetica
+// intera). Sulla luce intera un vettore `(hx, hy)` sposta di `hx/2` pixel; sui colori dimezzati di `hx/4`: un quarto
+// di pixel, con la media pesata dei quattro pixel intorno.
 
-/// Somma delle differenze assolute della luce della cella con il riferimento spostato di `(dx, dy)` (ai bordi si
-/// prende il pixel più vicino). `ogni` > 1 usa un pixel ogni tanti: per la ricerca grossolana.
-fn scarto(cur: &Piano, rif: &Piano, pix: &[u32], dx: i32, dy: i32, ogni: usize) -> i64 {
+/// Il pixel della luce in `(x + hx/2, y + hy/2)`: tra due pixel la media, tra quattro la media dei quattro. Ai
+/// bordi si prende il pixel più vicino.
+#[inline]
+fn campione(rif: &Piano, x: i32, y: i32, hx: i32, hy: i32) -> i32 {
+    let (w, h) = (rif.w as i32, rif.h as i32);
+    let (ix, iy) = (x + hx.div_euclid(2), y + hy.div_euclid(2));
+    let at = |xx: i32, yy: i32| rif.v[yy.clamp(0, h - 1) as usize * rif.w + xx.clamp(0, w - 1) as usize];
+    match (hx & 1, hy & 1) {
+        (0, 0) => at(ix, iy),
+        (1, 0) => (at(ix, iy) + at(ix + 1, iy) + 1) >> 1,
+        (0, _) => (at(ix, iy) + at(ix, iy + 1) + 1) >> 1,
+        _ => (at(ix, iy) + at(ix + 1, iy) + at(ix, iy + 1) + at(ix + 1, iy + 1) + 2) >> 2,
+    }
+}
+
+/// Il pixel di un colore dimezzato in `(x + qx/4, y + qy/4)`: media pesata dei quattro pixel intorno.
+#[inline]
+fn campione_quarto(rif: &Piano, x: i32, y: i32, qx: i32, qy: i32) -> i32 {
+    let (w, h) = (rif.w as i32, rif.h as i32);
+    let (ix, iy) = (x + qx.div_euclid(4), y + qy.div_euclid(4));
+    let (fx, fy) = (qx.rem_euclid(4), qy.rem_euclid(4));
+    let at = |xx: i32, yy: i32| rif.v[yy.clamp(0, h - 1) as usize * rif.w + xx.clamp(0, w - 1) as usize];
+    if fx == 0 && fy == 0 {
+        return at(ix, iy);
+    }
+    ((4 - fx) * (4 - fy) * at(ix, iy) + fx * (4 - fy) * at(ix + 1, iy) + (4 - fx) * fy * at(ix, iy + 1) + fx * fy * at(ix + 1, iy + 1) + 8) >> 4
+}
+
+/// Somma delle differenze assolute della luce della cella con il riferimento spostato di `(hx, hy)` mezzi pixel.
+/// `ogni` > 1 usa un pixel ogni tanti: per la ricerca grossolana.
+fn scarto(cur: &Piano, rif: &Piano, pix: &[u32], hx: i32, hy: i32, ogni: usize) -> i64 {
     let (w, h) = (cur.w as i32, cur.h as i32);
     let mut s = 0i64;
     let mut i = 0;
-    while i < pix.len() {
-        let k = pix[i] as usize;
-        let (x, y) = ((k % cur.w) as i32, (k / cur.w) as i32);
-        let (xx, yy) = ((x + dx).clamp(0, w - 1), (y + dy).clamp(0, h - 1));
-        s += (cur.v[k] - rif.v[yy as usize * cur.w + xx as usize]).unsigned_abs() as i64;
-        i += ogni;
+    if hx & 1 == 0 && hy & 1 == 0 {
+        let (dx, dy) = (hx / 2, hy / 2);
+        while i < pix.len() {
+            let k = pix[i] as usize;
+            let (x, y) = ((k % cur.w) as i32, (k / cur.w) as i32);
+            let (xx, yy) = ((x + dx).clamp(0, w - 1), (y + dy).clamp(0, h - 1));
+            s += (cur.v[k] - rif.v[yy as usize * cur.w + xx as usize]).unsigned_abs() as i64;
+            i += ogni;
+        }
+    } else {
+        while i < pix.len() {
+            let k = pix[i] as usize;
+            s += (cur.v[k] - campione(rif, (k % cur.w) as i32, (k / cur.w) as i32, hx, hy)).unsigned_abs() as i64;
+            i += ogni;
+        }
     }
     s
 }
 
-/// Lo spostamento di ogni cella: si provano i candidati (fermo, quello previsto dalle celle vicine, quello della
-/// stessa cella nel fotogramma prima, quelli delle celle a sinistra e sopra), se nessuno spiega la cella si cerca a
-/// passi di 4 pixel su pochi pixel, poi si raffina di un pixel alla volta finché migliora. Il costo è lo scarto più
-/// una piccola penale per gli spostamenti lontani da quello previsto (costano byte e fanno bordi). Restituisce gli
-/// spostamenti e lo scarto totale della luce.
+/// Lo spostamento di ogni cella, in mezzi pixel: si provano i candidati (fermo, quello previsto dalle celle vicine,
+/// quello della stessa cella nel fotogramma prima, quelli delle celle a sinistra e sopra), se nessuno spiega la
+/// cella si cerca a passi di 4 pixel su pochi pixel, poi si raffina di un pixel alla volta e infine di mezzo pixel
+/// finché migliora. Il costo è lo scarto più una piccola penale per gli spostamenti lontani da quello previsto
+/// (costano byte e fanno bordi). Restituisce gli spostamenti e lo scarto totale della luce.
 fn cerca_vettori(cur: &Piano, rif: &Piano, st: &Stato, cerca: i32, passo: u8) -> (Vec<(i32, i32)>, i64) {
     let n = st.griglia.celle();
     let mut v = vec![(0i32, 0i32); n];
     let mut piatti = vec![0i32; n * 2];
     let mut tot = 0i64;
-    let lambda = 2 * passo.max(1) as i64;
+    let lambda = passo.max(1) as i64;
+    let lim = 2 * cerca;
     for (c0, sinistra, sopra, quante) in strati::ordine(&st.griglia) {
         for c in c0..c0 + quante {
             let pix = &st.pixel[c];
@@ -143,7 +185,7 @@ fn cerca_vettori(cur: &Piano, rif: &Piano, st: &Stato, cerca: i32, passo: u8) ->
                 continue;
             }
             let (px, py) = if c == c0 { (strati::previsione(&piatti, 2, 0, sinistra, sopra), strati::previsione(&piatti, 2, 1, sinistra, sopra)) } else { v[c0] };
-            let costo = |dx: i32, dy: i32| scarto(cur, rif, pix, dx, dy, 1) + lambda * ((dx - px).abs() + (dy - py).abs()) as i64;
+            let costo = |hx: i32, hy: i32| scarto(cur, rif, pix, hx, hy, 1) + lambda * ((hx - px).abs() + (hy - py).abs()) as i64;
             let mut candidati = vec![(0, 0), (px, py), st.vettori[c]];
             if let Some(s) = sinistra {
                 candidati.push(v[s]);
@@ -152,51 +194,53 @@ fn cerca_vettori(cur: &Piano, rif: &Piano, st: &Stato, cerca: i32, passo: u8) ->
                 candidati.push(v[u]);
             }
             let mut migliore = (i64::MAX, (0, 0));
-            for (dx, dy) in candidati {
-                let (dx, dy) = (dx.clamp(-cerca, cerca), dy.clamp(-cerca, cerca));
-                let k = costo(dx, dy);
+            for (hx, hy) in candidati {
+                let (hx, hy) = (hx.clamp(-lim, lim), hy.clamp(-lim, lim));
+                let k = costo(hx, hy);
                 if k < migliore.0 {
-                    migliore = (k, (dx, dy));
+                    migliore = (k, (hx, hy));
                 }
             }
-            // niente spiega la cella: ricerca grossolana a passi di 4 su un pixel ogni 3
+            // niente spiega la cella: ricerca grossolana a passi di 4 pixel su un pixel ogni 3
             if cerca >= 4 && migliore.0 > 4 * pix.len() as i64 {
                 let ogni = 3usize;
                 let mut grossa = (i64::MAX, migliore.1);
-                let mut dy = -cerca;
-                while dy <= cerca {
-                    let mut dx = -cerca;
-                    while dx <= cerca {
-                        let k = scarto(cur, rif, pix, dx, dy, ogni) * ogni as i64 + lambda * ((dx - px).abs() + (dy - py).abs()) as i64;
+                let mut hy = -lim;
+                while hy <= lim {
+                    let mut hx = -lim;
+                    while hx <= lim {
+                        let k = scarto(cur, rif, pix, hx, hy, ogni) * ogni as i64 + lambda * ((hx - px).abs() + (hy - py).abs()) as i64;
                         if k < grossa.0 {
-                            grossa = (k, (dx, dy));
+                            grossa = (k, (hx, hy));
                         }
-                        dx += 4;
+                        hx += 8;
                     }
-                    dy += 4;
+                    hy += 8;
                 }
                 let k = costo(grossa.1 .0, grossa.1 .1);
                 if k < migliore.0 {
                     migliore = (k, grossa.1);
                 }
             }
-            // un pixel alla volta finché migliora
-            loop {
-                let (bx, by) = migliore.1;
-                let mut meglio = false;
-                for (ddx, ddy) in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)] {
-                    let (dx, dy) = (bx + ddx, by + ddy);
-                    if dx.abs() > cerca || dy.abs() > cerca {
-                        continue;
+            // un pixel alla volta, poi mezzo pixel alla volta, finché migliora
+            for salto in [2, 1] {
+                loop {
+                    let (bx, by) = migliore.1;
+                    let mut meglio = false;
+                    for (ddx, ddy) in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)] {
+                        let (hx, hy) = (bx + ddx * salto, by + ddy * salto);
+                        if hx.abs() > lim || hy.abs() > lim {
+                            continue;
+                        }
+                        let k = costo(hx, hy);
+                        if k < migliore.0 {
+                            migliore = (k, (hx, hy));
+                            meglio = true;
+                        }
                     }
-                    let k = costo(dx, dy);
-                    if k < migliore.0 {
-                        migliore = (k, (dx, dy));
-                        meglio = true;
+                    if !meglio {
+                        break;
                     }
-                }
-                if !meglio {
-                    break;
                 }
             }
             v[c] = migliore.1;
@@ -208,16 +252,14 @@ fn cerca_vettori(cur: &Piano, rif: &Piano, st: &Stato, cerca: i32, passo: u8) ->
     (v, tot)
 }
 
-/// Il fotogramma prima spostato cella per cella: la base del fotogramma previsto. I colori dimezzati si spostano
-/// della metà (arrotondata verso il basso).
+/// Il fotogramma prima spostato cella per cella (mezzi pixel sulla luce, quarti sui colori dimezzati): la base del
+/// fotogramma previsto.
 fn prevedi(rif: &Piani, mappa: &[u32], v: &[(i32, i32)]) -> Piani {
     let (w, h) = (rif.y.w, rif.y.h);
     let mut y = Piano::nuovo(w, h);
     for k in 0..w * h {
-        let (dx, dy) = v[mappa[k] as usize];
-        let xx = ((k % w) as i32 + dx).clamp(0, w as i32 - 1) as usize;
-        let yy = ((k / w) as i32 + dy).clamp(0, h as i32 - 1) as usize;
-        y.v[k] = rif.y.v[yy * w + xx];
+        let (hx, hy) = v[mappa[k] as usize];
+        y.v[k] = campione(&rif.y, (k % w) as i32, (k / w) as i32, hx, hy);
     }
     let (wc, hc) = (rif.cb.w, rif.cb.h);
     let mut cb = Piano::nuovo(wc, hc);
@@ -225,11 +267,9 @@ fn prevedi(rif: &Piani, mappa: &[u32], v: &[(i32, i32)]) -> Piani {
     for yc in 0..hc {
         for xc in 0..wc {
             let k = (2 * yc).min(h - 1) * w + (2 * xc).min(w - 1);
-            let (dx, dy) = v[mappa[k] as usize];
-            let xx = (xc as i32 + dx.div_euclid(2)).clamp(0, wc as i32 - 1) as usize;
-            let yy = (yc as i32 + dy.div_euclid(2)).clamp(0, hc as i32 - 1) as usize;
-            cb.v[yc * wc + xc] = rif.cb.v[yy * wc + xx];
-            cr.v[yc * wc + xc] = rif.cr.v[yy * wc + xx];
+            let (hx, hy) = v[mappa[k] as usize];
+            cb.v[yc * wc + xc] = campione_quarto(&rif.cb, xc as i32, yc as i32, hx, hy);
+            cr.v[yc * wc + xc] = campione_quarto(&rif.cr, xc as i32, yc as i32, hx, hy);
         }
     }
     Piani { y, cb, cr }
@@ -295,7 +335,7 @@ fn leggi_vettori(st: &Stato, p: &Previsto) -> Result<(u8, u8, u8, Vec<(i32, i32)
     if !(1..=LIVELLI_MAX).contains(&livelli) || cerca > CERCA_MAX {
         return Err(Errore::Formato("livelli o raggio di ricerca"));
     }
-    let piatti = strati::decodifica_valori(&st.griglia, &p.vettori, 2, -(cerca as i32), cerca as i32);
+    let piatti = strati::decodifica_valori(&st.griglia, &p.vettori, 2, -2 * cerca as i32, 2 * cerca as i32);
     Ok((passo, croma, livelli, piatti.chunks_exact(2).map(|c| (c[0], c[1])).collect()))
 }
 
@@ -329,7 +369,7 @@ impl Reel {
         self.fotogrammi.iter().map(|f| f.byte_totali()).sum()
     }
 
-    /// Gli spostamenti per cella del fotogramma `i` (vuoto per una chiave): per misurare e guardare.
+    /// Gli spostamenti per cella del fotogramma `i`, in mezzi pixel (vuoto per una chiave): per misurare e guardare.
     pub fn vettori(&self, i: usize) -> Result<Vec<(i32, i32)>, Errore> {
         let f = self.fotogrammi.get(i).ok_or(Errore::Formato("fotogramma inesistente"))?;
         let Fotogramma::Previsto(p) = f else { return Ok(vec![]) };
@@ -468,18 +508,21 @@ mod tests {
         let d = decodifica_reel(&r).unwrap();
         assert_eq!(d.len(), 5);
         assert!(psnr_minimo(&f, &d) >= 3000, "PSNR {}", psnr_minimo(&f, &d));
-        assert!(r.vettori(1).unwrap().iter().all(|&v| v == (0, 0)));
+        // quasi tutte ferme: qualche cella puo' preferire il mezzo pixel, che liscia l'errore di quantizzazione
+        let v = r.vettori(1).unwrap();
+        let ferme = v.iter().filter(|&&s| s == (0, 0)).count();
+        assert!(ferme * 10 >= v.len() * 9, "celle ferme {ferme} su {}", v.len());
     }
 
     #[test]
     fn reel_che_scorre_trova_lo_spostamento() {
-        // la camera va di (3, −2) a ogni fotogramma: il pixel x di oggi era in x + 3 ieri
+        // la camera va di (3, −2) a ogni fotogramma: il pixel x di oggi era in x + 3 ieri, cioè (6, −4) mezzi pixel
         let f: Vec<Immagine> = (0..6).map(|i| scena(192, 128, 3 * i, -2 * i, 0)).collect();
         let r = codifica_reel(&f, par()).unwrap();
         let chiave = r.fotogrammi[0].byte_totali();
         let v = r.vettori(1).unwrap();
-        let giusti = v.iter().filter(|&&s| s == (3, -2)).count();
-        assert!(giusti * 10 >= v.len() * 8, "spostamento (3,−2) trovato in {giusti} celle su {}", v.len());
+        let giusti = v.iter().filter(|&&s| s == (6, -4)).count();
+        assert!(giusti * 10 >= v.len() * 8, "spostamento (6,−4) trovato in {giusti} celle su {}", v.len());
         for p in &r.fotogrammi[1..] {
             assert!(p.byte_totali() * 3 < chiave, "scorre: previsto {} byte contro chiave {}", p.byte_totali(), chiave);
         }
