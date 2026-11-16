@@ -133,6 +133,12 @@ riferimenti), ~40 ms a decodificare, PC dell'officina senza ottimizzazioni.
 
 Comando: `cargo run --release --example misura_reel -- <cartella con frame-NNN.bmp> -- passo,croma,chiave_ogni,cerca,raggio,bidir …`.
 
+## Provato sul nodo via Tor (16/11/2026)
+
+`cargo run --release -p m4tr1x-feed --example celle -- <onion> <dati> <foto.bmp>` contro il nodo di prova: foto 1600×1200,
+4 pezzi, 177.562 B; carico 26 s; scheda a celle pubblicata e riletta; riscarico pezzo per pezzo: anteprima 9.661 B
+dopo 1 s (PSNR 25,4 dB), 33,6 dB a 6 s, 35,9 dB a 10 s, completa a 14 s (36,8 dB). Pezzi identici.
+
 ## Pacchetto e app (16/11/2026): l'alveare arriva nel social
 
 `pacchetto.rs` è il formato di viaggio (ADR-0005: ogni pezzo un blob con il suo hash):
