@@ -101,6 +101,11 @@ pub struct FileMedia {
     pub titolo: String,
     /// hash dei pezzi in ordine (vuoto = un blob solo): l'interfaccia li ripassa a `media_file` così come sono
     pub pezzi: Vec<String>,
+    /// solo per le foto e i reel a celle: i byte di ogni pezzo, nello stesso ordine (l'interfaccia li ripassa a
+    /// `celle_apri` così come sono); vuoto per gli altri tipi
+    pub misure: Vec<u64>,
+    /// foto o reel a celle (alveare): si apre con `celle_apri`, non con `media_file`
+    pub celle: bool,
 }
 
 impl From<m4tr1x_protocol::SchedaFile> for FileMedia {
@@ -110,8 +115,37 @@ impl From<m4tr1x_protocol::SchedaFile> for FileMedia {
             m4tr1x_protocol::Sezione::Film => "film",
             m4tr1x_protocol::Sezione::Musica => "musica",
         };
-        Self { sha256: f.sha256, mime: f.mime, dimensione: f.dimensione, sezione: sezione.into(), titolo: f.titolo, pezzi: f.pezzi }
+        let celle = f.a_celle();
+        Self { sha256: f.sha256, mime: f.mime, dimensione: f.dimensione, sezione: sezione.into(), titolo: f.titolo, pezzi: f.pezzi, misure: f.misure, celle }
     }
+}
+
+/// Una foto o un reel appena codificati a celle sul computer, pronti da pubblicare: quanti pezzi, quanti byte in
+/// tutto e quanti nel primo (l'anteprima), fotogrammi (0 per una foto).
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct CellePronte {
+    pub mime: String,
+    pub pezzi: u32,
+    pub dimensione: u64,
+    pub anteprima: u64,
+    pub fotogrammi: u32,
+    pub millisecondi: u64,
+}
+
+/// Dove sta la foto o il reel a celle che si sta guardando: pezzi arrivati su quanti, byte scesi, fotogrammi
+/// decodificati finora, fotogrammi al secondo, errore se qualcosa è andato storto. I pixel si chiedono a parte
+/// (`celle_quadro`), grezzi.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct CelleStato {
+    pub larghezza: u32,
+    pub altezza: u32,
+    pub pezzi_arrivati: u32,
+    pub pezzi_totali: u32,
+    pub byte_arrivati: u64,
+    pub fotogrammi: u32,
+    pub fps: u8,
+    pub finito: bool,
+    pub errore: Option<String>,
 }
 
 /// Un reel, una foto, un film o un brano, GIÀ verificato. La didascalia si mostra solo con `textContent`.

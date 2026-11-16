@@ -1,0 +1,11 @@
+[package]
+name = "m4tr1x-celle"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Immagini a celle esagonali (idea del fondatore, docs/design/VIDEO_A_CELLE.md): griglia adattiva dalla complessità, colore per cella, strati di dettaglio come differenze. Aritmetica intera, nessuna dipendenza."
+
+[dependencies]
+
+[dev-dependencies]

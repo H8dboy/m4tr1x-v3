@@ -30,6 +30,8 @@ m4tr1x-protocol = { path = "../protocol" }
 m4tr1x-posta = { path = "../posta" }
 # reels, film, musica: pulizia dei metadati SUL computer prima di caricare (I-16)
 m4tr1x-media = { path = "../media" }
+# alveare: foto e reel a celle esagonali, codificati e decodificati sul computer (nessuna dipendenza)
+m4tr1x-celle = { path = "../celle" }
 # solo timer (attesa di tor pronto nel feed); niente rete (I-36)
 tokio = { version = "=1.53.3", default-features = false, features = ["time"] }
 zeroize = "=1.8.2"

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-celle-stato"
+description = "Enables the celle_stato command without any pre-configured scope."
+commands.allow = ["celle_stato"]
+
+[[permission]]
+identifier = "deny-celle-stato"
+description = "Denies the celle_stato command without any pre-configured scope."
+commands.deny = ["celle_stato"]

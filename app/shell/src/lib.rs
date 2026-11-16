@@ -9,7 +9,7 @@
 pub mod api;
 pub mod api_seme;
 
-use api::{Avanzamento, Discussione, DiscussioneAperta, Feed, FilePronto, Forum, Galleria, Identita, Media, Messaggio, Post, Posta, Profilo, Stato};
+use api::{Avanzamento, CellePronte, CelleStato, Discussione, DiscussioneAperta, Feed, FilePronto, Forum, Galleria, Identita, Media, Messaggio, Post, Posta, Profilo, Stato};
 use api_seme::SemeDaMostrare;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::{firma_come_identita, Portachiavi, Sistema};
@@ -142,6 +142,45 @@ struct Operazioni {
 /// Il file scelto per la pubblicazione, GIÀ pulito (I-16): solo il contenuto, mai il nome né il percorso.
 #[derive(Default)]
 struct FileScelto(Mutex<Option<(Vec<u8>, &'static str)>>);
+
+/// Una foto o un reel a celle che si sta guardando: i pezzi arrivano via Tor uno alla volta e un filo a parte li
+/// decodifica man mano; l'interfaccia legge stato e pixel ogni mezzo secondo.
+#[derive(Default)]
+struct Visto {
+    /// cambia a ogni `celle_apri`: i fili di un'apertura vecchia si fermano
+    generazione: u32,
+    mime: String,
+    larghezza: u32,
+    altezza: u32,
+    pezzi_totali: u32,
+    /// i pezzi arrivati e verificati, in ordine
+    pezzi: Vec<Vec<u8>>,
+    /// quanti pezzi il filo che decodifica ha già usato
+    decodificati: usize,
+    byte_arrivati: u64,
+    /// i fotogrammi decodificati (uno per una foto, rifatto a ogni pezzo), RGBA
+    fotogrammi: Vec<Vec<u8>>,
+    fps: u8,
+    /// tutti i pezzi sono scesi e decodificati (o si è fermato per un errore)
+    finito: bool,
+    errore: Option<String>,
+}
+
+/// Lo stato dell'alveare: il pacchetto codificato pronto da pubblicare (i pezzi, mai il file né il nome) e quello
+/// che si sta guardando. `op`: una codifica o un'apertura alla volta, con la fase per l'interfaccia.
+#[derive(Default)]
+struct Alveare {
+    pronto: Mutex<Option<(Vec<Vec<u8>>, &'static str)>>,
+    visto: Arc<Mutex<Visto>>,
+    in_corso: Arc<AtomicBool>,
+    fase: Arc<Mutex<Option<Avanzamento>>>,
+}
+
+impl Alveare {
+    fn imposta(&self, a: Avanzamento) {
+        *self.fase.lock().unwrap() = Some(a);
+    }
+}
 
 /// Aspetta che tor sia pronto (al massimo il tempo di bootstrap del trasporto), segnalando la fase.
 /// "Spento" con tor configurato = sta per partire (app appena aperta): si aspetta; si smette solo su errore.
@@ -537,6 +576,344 @@ fn media_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.media.fase()
 }
 
+// ─── Alveare: foto e reel a celle esagonali (docs/design/VIDEO_A_CELLE.md) ───
+// La codifica e la decodifica stanno QUI, sul computer di chi carica e di chi guarda (crate m4tr1x-celle: aritmetica
+// intera, nessuna dipendenza): nessun hub in mezzo ricodifica niente. L'interfaccia manda i pixel grezzi (RGBA dal
+// canvas: mai il file, mai il nome: I-16 vale da sé, il formato porta solo pixel) e riceve pixel grezzi. In rete
+// vanno i pezzi: il primo è l'anteprima (l'immagine intera in pochi KB), gli altri la affinano; chi guarda vede
+// l'immagine dal primo pezzo e la vede migliorare mentre gli altri scendono.
+
+/// Pixel al massimo di una foto o di un fotogramma (l'interfaccia riduce prima: una foto da 2 MP costa ~25 MB di
+/// memoria in codifica).
+const CELLE_PIXEL_MAX: u64 = m4tr1x_celle::PIXEL_MAX;
+/// Fotogrammi al massimo di un reel (30 s a 20 fotogrammi al secondo): stanno in memoria come pixel grezzi.
+const CELLE_FOTOGRAMMI_MAX: u32 = 600;
+/// Pixel al massimo di un fotogramma di reel.
+const CELLE_PIXEL_FOTOGRAMMA_MAX: u64 = 720 * 720;
+/// Una chiave ogni tanti fotogrammi: ogni gruppo è un pezzo che si legge da solo (~4 s a 12 fotogrammi al secondo).
+const CELLE_CHIAVE_OGNI: u16 = 48;
+
+fn rgb_da_rgba(rgba: &[u8]) -> Vec<u8> {
+    rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect()
+}
+
+fn rgba_da_rgb(rgb: &[u8]) -> Vec<u8> {
+    rgb.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect()
+}
+
+/// Codifica a celle quello che arriva dall'interfaccia: corpo grezzo = larghezza, altezza, numero di fotogrammi,
+/// fotogrammi al secondo (quattro numeri a 32 bit, poco significativo prima), poi i pixel RGBA di ogni fotogramma.
+/// Un fotogramma con 0 al secondo è una foto. Il pacchetto resta qui in attesa di `celle_pubblica`; all'interfaccia
+/// tornano solo i conti (pezzi, byte, anteprima).
+#[tauri::command]
+async fn celle_prepara(request: tauri::ipc::Request<'_>, alveare: tauri::State<'_, Alveare>) -> Result<CellePronte, String> {
+    let tauri::ipc::InvokeBody::Raw(b) = request.body() else { return Err("servono i pixel".into()) };
+    if b.len() < 16 {
+        return Err("intestazione dei pixel mancante".into());
+    }
+    let numero = |i: usize| u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]);
+    let (w, h, n, fps) = (numero(0), numero(4), numero(8), numero(12));
+    if w == 0 || h == 0 || n == 0 || w > 65535 || h > 65535 {
+        return Err("misure dei pixel non valide".into());
+    }
+    let pixel = w as u64 * h as u64;
+    let foto = fps == 0;
+    if foto && (n != 1 || pixel > CELLE_PIXEL_MAX) {
+        return Err("una foto è un fotogramma solo, al massimo 2560×2560".into());
+    }
+    if !foto && (fps > 60 || n > CELLE_FOTOGRAMMI_MAX || pixel > CELLE_PIXEL_FOTOGRAMMA_MAX) {
+        return Err(format!("un reel è al massimo {CELLE_FOTOGRAMMI_MAX} fotogrammi da 720×720, fino a 60 al secondo"));
+    }
+    let attesi = 16 + pixel * 4 * n as u64;
+    if b.len() as u64 != attesi {
+        return Err("i pixel non corrispondono alle misure".into());
+    }
+    if alveare.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("l'alveare è già al lavoro".into());
+    }
+    alveare.imposta(Avanzamento { fase: "codifico".into(), secondi: 0, tentativo: 0, pezzi_fatti: 0, pezzi_totali: n });
+    let fotogrammi: Vec<m4tr1x_celle::Immagine> = b[16..].chunks_exact((pixel * 4) as usize).map(|f| m4tr1x_celle::Immagine { larghezza: w, altezza: h, rgb: rgb_da_rgba(f) }).collect();
+    let fase = alveare.fase.clone();
+    let t0 = std::time::Instant::now();
+    let esito = tauri::async_runtime::spawn_blocking(move || -> Result<(Vec<Vec<u8>>, &'static str, u32), String> {
+        if foto {
+            let (c, _) = m4tr1x_celle::codifica(&fotogrammi[0], m4tr1x_celle::Parametri::default()).map_err(|e| e.to_string())?;
+            Ok((m4tr1x_celle::pacchetto::pezzi_foto(&c), m4tr1x_protocol::MIME_CELLE_FOTO, 0))
+        } else {
+            let p = m4tr1x_celle::reel::ParametriReel { chiave_ogni: CELLE_CHIAVE_OGNI, fps: fps as u8, ..m4tr1x_celle::reel::ParametriReel::default() };
+            let r = m4tr1x_celle::reel::codifica_reel_con(&fotogrammi, p, |fatti| {
+                *fase.lock().unwrap() = Some(Avanzamento { fase: "codifico".into(), secondi: t0.elapsed().as_secs(), tentativo: 0, pezzi_fatti: u32::try_from(fatti).unwrap_or(u32::MAX), pezzi_totali: n });
+            })
+            .map_err(|e| e.to_string())?;
+            Ok((m4tr1x_celle::pacchetto::pezzi_reel(&r), m4tr1x_protocol::MIME_CELLE_REEL, n))
+        }
+    })
+    .await
+    .map_err(|e| format!("codifica interrotta: {e}"))
+    .and_then(|r| r);
+    alveare.in_corso.store(false, Ordering::SeqCst);
+    *alveare.fase.lock().unwrap() = None;
+    let (pezzi, mime, fotogrammi) = esito?;
+    let troppo = pezzi.iter().any(|p| p.len() as u64 > m4tr1x_protocol::PEZZO);
+    if troppo || pezzi.len() > m4tr1x_protocol::MASSIMO_PEZZI_CELLE {
+        return Err("il contenuto è troppo grande per viaggiare a pezzi: riduci la misura o la durata".into());
+    }
+    let dimensione = pezzi.iter().map(|p| p.len() as u64).sum();
+    let anteprima = pezzi[0].len() as u64;
+    let quanti = u32::try_from(pezzi.len()).unwrap_or(u32::MAX);
+    *alveare.pronto.lock().unwrap() = Some((pezzi, mime));
+    Ok(CellePronte { mime: mime.into(), pezzi: quanti, dimensione, anteprima, fotogrammi, millisecondi: t0.elapsed().as_millis() as u64 })
+}
+
+/// Pubblica il pacchetto a celle preparato: ogni pezzo parte come blob (con la sua autorizzazione firmata, quelli
+/// già sul nodo si saltano), poi la scheda firmata con hash e misura di ogni pezzo va al nodo.
+#[tauri::command]
+async fn celle_pubblica(sezione: String, titolo: String, testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>, alveare: tauri::State<'_, Alveare>) -> Result<Media, String> {
+    let sez = sezione_da(&sezione)?;
+    if testo.chars().count() > m4tr1x_protocol::MASSIMO_TESTO_POST {
+        return Err(format!("la didascalia supera i {} caratteri", m4tr1x_protocol::MASSIMO_TESTO_POST));
+    }
+    let (pezzi, mime) = alveare.pronto.lock().unwrap().clone().ok_or("prepara prima una foto o un reel")?;
+    let intero: Vec<u8> = pezzi.concat();
+    let sha = m4tr1x_transport::http::sha256_hex(&intero);
+    drop(intero);
+    let hash: Vec<String> = pezzi.iter().map(|p| m4tr1x_transport::http::sha256_hex(p)).collect();
+    let misure: Vec<u64> = pezzi.iter().map(|p| p.len() as u64).collect();
+    let dimensione: u64 = misure.iter().sum();
+    let tags = m4tr1x_protocol::tag_file_a_celle(sez, &sha, mime, dimensione, &titolo, &hash, &misure).map_err(|e| match e {
+        m4tr1x_protocol::Rifiuto::Forma(m) => m.to_string(),
+        altro => altro.to_string(),
+    })?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let nodo_file = rete.nodo_dei_file()?;
+    let scheda = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_FILE, testo.trim(), &tags).map_err(|e| format!("scheda non firmata: {e}"))?;
+    let autorizza = |sha_pezzo: &str| -> Result<String, String> {
+        let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
+        let tag_aut = m4tr1x_protocol::tag_autorizzazione_file(sha_pezzo, ora, ora + 600).map_err(|e| e.to_string())?;
+        let aut = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_AUTORIZZAZIONE_FILE, "Carico un file", &tag_aut).map_err(|e| format!("autorizzazione non firmata: {e}"))?;
+        Ok(m4tr1x_transport::http::autorizzazione(&serde_json::to_string(&aut).map_err(|e| e.to_string())?))
+    };
+    let op = &op.media;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra operazione sui file è in corso".into());
+    }
+    let fette: Vec<&[u8]> = pezzi.iter().map(|p| p.as_slice()).collect();
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        match m4tr1x_feed::carica_pezzi(&*tor, &nodo_file, &fette, autorizza, |f| op.imposta(Avanzamento::from(&f))).await {
+            Ok(()) => {}
+            Err(m4tr1x_feed::ErroreCarico::Rifiutato { stato, motivo }) => return Err(format!("il nodo dei file non ha accettato un pezzo ({stato}): {motivo}")),
+            Err(m4tr1x_feed::ErroreCarico::Autorizzazione(e)) => return Err(e),
+            Err(m4tr1x_feed::ErroreCarico::NonRaggiungibile(e)) => return Err(format!("non sono partiti tutti i pezzi: il nodo dei file non risponde ancora. Riprova tra un minuto, riparte dai pezzi mancanti ({})", e.ultimo)),
+        }
+        m4tr1x_feed::pubblica(&*tor, &nodo, &scheda, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map_err(|e| match e {
+            m4tr1x_feed::ErrorePubblica::Rifiutato(m) => format!("il nodo ha rifiutato la scheda: {m}"),
+            m4tr1x_feed::ErrorePubblica::NonRaggiungibile(n) => format!("pezzi caricati, scheda non partita: riprova tra un minuto ({})", n.ultimo),
+        })
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito?;
+    *alveare.pronto.lock().unwrap() = None;
+    let file = m4tr1x_protocol::file_da_evento(&scheda).ok_or("scheda non leggibile")?;
+    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into() })
+}
+
+/// Decodifica i pezzi arrivati e non ancora usati di `visto` (chiamato da un filo a parte): una foto si rifà da
+/// tutti i pezzi che ci sono; di un reel ogni pezzo aggiunge i suoi fotogrammi.
+fn decodifica_pezzi_arrivati(visto: &Mutex<Visto>, generazione: u32) -> bool {
+    let (mime, pezzi, da) = {
+        let v = visto.lock().unwrap();
+        if v.generazione != generazione {
+            return false;
+        }
+        if v.decodificati == v.pezzi.len() {
+            return true;
+        }
+        (v.mime.clone(), v.pezzi.clone(), v.decodificati)
+    };
+    // i pezzi arrivano dalla rete firmati da chiunque: un decodificatore che va in panico non deve portarsi via
+    // l'app né lasciare l'interfaccia ad aspettare per sempre; e quello che si tiene in memoria ha gli stessi
+    // limiti di quello che si codifica (misura della foto, numero di fotogrammi)
+    let gia = { visto.lock().unwrap().fotogrammi.len() };
+    let decodifica = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(Vec<Vec<u8>>, u32, u32, u8, bool), String> {
+        if mime == m4tr1x_protocol::MIME_CELLE_FOTO {
+            let viste: Vec<&[u8]> = pezzi.iter().map(|p| p.as_slice()).collect();
+            m4tr1x_celle::pacchetto::apri_foto(&viste).map(|img| (vec![rgba_da_rgb(&img.rgb)], img.larghezza, img.altezza, 0, true)).map_err(|e| e.to_string())
+        } else {
+            let mut nuovi = Vec::new();
+            let mut misura = (0, 0, 0);
+            let mut r = Ok(());
+            for p in &pezzi[da..] {
+                match m4tr1x_celle::pacchetto::apri_reel(p) {
+                    Ok((fotogrammi, fps)) => {
+                        for f in fotogrammi {
+                            if (gia + nuovi.len()) as u32 >= CELLE_FOTOGRAMMI_MAX || f.larghezza as u64 * f.altezza as u64 > CELLE_PIXEL_FOTOGRAMMA_MAX {
+                                r = Err("reel troppo lungo o troppo grande".to_string());
+                                break;
+                            }
+                            misura = (f.larghezza, f.altezza, fps);
+                            nuovi.push(rgba_da_rgb(&f.rgb));
+                        }
+                    }
+                    Err(e) => r = Err(e.to_string()),
+                }
+                if r.is_err() {
+                    break;
+                }
+            }
+            r.map(|_| (nuovi, misura.0, misura.1, misura.2, false))
+        }
+    }));
+    let esito: Result<(Vec<Vec<u8>>, u32, u32, u8, bool), String> = match decodifica {
+        Ok(r) => r,
+        Err(_) => Err("decodifica interrotta".to_string()),
+    };
+    let mut v = visto.lock().unwrap();
+    if v.generazione != generazione {
+        return false;
+    }
+    match esito {
+        Ok((fotogrammi, w, h, fps, sostituisci)) => {
+            if sostituisci {
+                v.fotogrammi = fotogrammi;
+            } else {
+                v.fotogrammi.extend(fotogrammi);
+            }
+            if w > 0 {
+                v.larghezza = w;
+                v.altezza = h;
+            }
+            if fps > 0 {
+                v.fps = fps;
+            }
+            v.decodificati = pezzi.len();
+            true
+        }
+        Err(e) => {
+            v.errore = Some(format!("il contenuto non si legge: {e}"));
+            v.finito = true;
+            false
+        }
+    }
+}
+
+/// Apre una foto o un reel a celle dalla sua scheda: i pezzi scendono via Tor uno alla volta (prima dal nodo dei
+/// file, poi dal nodo), ognuno accettato solo con hash e misura della scheda (I-17), e si decodificano man mano.
+/// Torna subito: l'interfaccia legge `celle_stato` e `celle_quadro` ogni mezzo secondo.
+#[tauri::command]
+async fn celle_apri(sha256: String, mime: String, dimensione: u64, pezzi: Vec<String>, misure: Vec<u64>, rete: tauri::State<'_, Rete>, alveare: tauri::State<'_, Alveare>) -> Result<(), String> {
+    if sha256.len() != 64 || !sha256.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) {
+        return Err("hash del file non valido".into());
+    }
+    if !m4tr1x_protocol::MIME_CELLE.contains(&mime.as_str()) || !m4tr1x_protocol::strati_validi(dimensione, &pezzi, &misure) {
+        return Err("scheda a celle non valida".into());
+    }
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let fonti = rete.fonti()?;
+    if alveare.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("l'alveare è già al lavoro".into());
+    }
+    let generazione = {
+        let mut v = alveare.visto.lock().unwrap();
+        let g = v.generazione.wrapping_add(1);
+        *v = Visto { generazione: g, mime: mime.clone(), pezzi_totali: u32::try_from(pezzi.len()).unwrap_or(u32::MAX), ..Visto::default() };
+        g
+    };
+    let attesi: Vec<(String, usize)> = pezzi.iter().cloned().zip(misure.iter().map(|&m| usize::try_from(m).unwrap_or(usize::MAX))).collect();
+    let visto = alveare.visto.clone();
+    let fase = alveare.fase.clone();
+    let in_corso = alveare.in_corso.clone();
+    // filo che decodifica i pezzi man mano che arrivano
+    let visto_dec = visto.clone();
+    let decodifica = tauri::async_runtime::spawn_blocking(move || loop {
+        if !decodifica_pezzi_arrivati(&visto_dec, generazione) {
+            break;
+        }
+        let v = visto_dec.lock().unwrap();
+        if v.generazione != generazione || (v.finito && v.decodificati == v.pezzi.len()) {
+            break;
+        }
+        drop(v);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    });
+    tauri::async_runtime::spawn(async move {
+        let op = Operazione { in_corso: AtomicBool::new(true), fase: Mutex::new(None) };
+        let esito = async {
+            *fase.lock().unwrap() = Some(Avanzamento::tor(0));
+            attendi_tor(&tor, &op).await?;
+            let avanza = |f: m4tr1x_feed::Fase| *fase.lock().unwrap() = Some(Avanzamento::from(&f));
+            m4tr1x_feed::scarica_pezzi(&*tor, &fonti, &attesi, &avanza, |_, b| {
+                let mut v = visto.lock().unwrap();
+                if v.generazione == generazione {
+                    v.byte_arrivati += b.len() as u64;
+                    v.pezzi.push(b.to_vec());
+                }
+            })
+            .await
+            .map_err(|e| match e {
+                m4tr1x_feed::ErroreScarico::Scheda => "scheda del file non valida".to_string(),
+                m4tr1x_feed::ErroreScarico::NessunaFonte { pezzo, ultimo } => format!("nessun nodo ha dato il pezzo {pezzo} ({ultimo})"),
+                m4tr1x_feed::ErroreScarico::NonCorrisponde => "un pezzo ricevuto non è quello della scheda: scartato".to_string(),
+            })
+        }
+        .await;
+        {
+            let mut v = visto.lock().unwrap();
+            if v.generazione == generazione {
+                if let Err(e) = esito {
+                    // quello che è sceso resta visibile: l'anteprima vale anche a metà
+                    v.errore = Some(e);
+                }
+                v.finito = true;
+            }
+        }
+        let _ = decodifica.await;
+        *fase.lock().unwrap() = None;
+        in_corso.store(false, Ordering::SeqCst);
+    });
+    Ok(())
+}
+
+/// Dove sta la foto o il reel che si sta guardando.
+#[tauri::command]
+fn celle_stato(alveare: tauri::State<'_, Alveare>) -> CelleStato {
+    let v = alveare.visto.lock().unwrap();
+    CelleStato {
+        larghezza: v.larghezza,
+        altezza: v.altezza,
+        pezzi_arrivati: u32::try_from(v.pezzi.len()).unwrap_or(u32::MAX),
+        pezzi_totali: v.pezzi_totali,
+        byte_arrivati: v.byte_arrivati,
+        fotogrammi: u32::try_from(v.fotogrammi.len()).unwrap_or(u32::MAX),
+        fps: v.fps,
+        finito: v.finito && (v.decodificati == v.pezzi.len() || v.errore.is_some()),
+        errore: v.errore.clone(),
+    }
+}
+
+/// I pixel RGBA del fotogramma `indice` di quello che si sta guardando (0 per una foto), grezzi, preceduti da
+/// larghezza e altezza (32 bit, poco significativo prima). Vuoto se quel fotogramma non c'è ancora.
+#[tauri::command]
+fn celle_quadro(indice: u32, alveare: tauri::State<'_, Alveare>) -> tauri::ipc::Response {
+    let v = alveare.visto.lock().unwrap();
+    let mut b = Vec::new();
+    if let Some(f) = v.fotogrammi.get(indice as usize) {
+        b.reserve(8 + f.len());
+        b.extend_from_slice(&v.larghezza.to_le_bytes());
+        b.extend_from_slice(&v.altezza.to_le_bytes());
+        b.extend_from_slice(f);
+    }
+    tauri::ipc::Response::new(b)
+}
+
+/// Fase della codifica o dello scarico a celle in corso.
+#[tauri::command]
+fn celle_avanzamento(alveare: tauri::State<'_, Alveare>) -> Avanzamento {
+    alveare.fase.lock().unwrap().clone().unwrap_or_else(Avanzamento::fermo)
+}
+
 // ─── Forum ───────────────────────────────────────────────────────────────────
 // Stesso schema della v2 (discussioni e risposte sono kind 1 con il tag del forum). Tutto ciò che arriva dal
 // nodo è verificato in m4tr1x-feed; si firma con la tua identità da `firma_con_la_mia_identita`, come i post.
@@ -803,6 +1180,7 @@ pub fn costruisci<R: Runtime>(
     b.manage(StatoSeme::default())
         .manage(Operazioni::default())
         .manage(FileScelto::default())
+        .manage(Alveare::default())
         .manage(Chiavi(chiavi))
         .setup(move |app| {
             prima(app)?;
@@ -818,7 +1196,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento])
 }
 
 pub fn run() {

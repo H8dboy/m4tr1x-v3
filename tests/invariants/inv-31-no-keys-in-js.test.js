@@ -100,8 +100,9 @@ test('i comandi restituiscono solo tipi di api.rs (le parole solo ai comandi del
       assert.ok(/^seme_/.test(c.name), `${c.file}: il comando ${c.name} restituisce le parole del seme ma non è un comando seme_*`)
       continue
     }
-    // unica eccezione: media_file restituisce i byte di un file pubblico, accettati solo dopo hash e tipo (I-17)
-    if (inner === 'tauri::ipc::Response') { assert.equal(c.name, 'media_file', `${c.file}: ${c.name} restituisce byte grezzi`); continue }
+    // uniche eccezioni: media_file restituisce i byte di un file pubblico, accettati solo dopo hash e tipo (I-17);
+    // celle_quadro i pixel decodificati di una foto o di un reel a celle (pezzi accettati solo con hash e misura)
+    if (inner === 'tauri::ipc::Response') { assert.ok(['media_file', 'celle_quadro'].includes(c.name), `${c.file}: ${c.name} restituisce byte grezzi`); continue }
     assert.ok(SIMPLE.test(inner) || apiTypes.includes(inner), `${c.file}: il comando ${c.name} restituisce ${c.ret}, non un tipo di api.rs`)
   }
   assert.ok(!semeTypes.some(t => apiTypes.includes(t)), 'il tipo delle parole è anche in api.rs')
@@ -146,7 +147,7 @@ test('chiave d\'identità: letta solo per firmare, mai tenuta dal guscio', () =>
   const aiuto = /fn firma_con_la_mia_identita\([\s\S]*?\n}\n/.exec(lib)
   assert.ok(aiuto && aiuto[0].includes('firma_come_identita('), 'firma_come_identita fuori da firma_con_la_mia_identita')
   const chiamanti = [...lib.matchAll(/async fn (\w+)\([^)]*\)[^{]*\{[\s\S]*?\n}\n/g)].filter(m => m[0].includes('firma_con_la_mia_identita(')).map(m => m[1]).sort()
-  assert.deepEqual(chiamanti, ['forum_pubblica', 'forum_rispondi', 'media_pubblica', 'profilo_salva', 'pubblica'], `la tua identità firma da: ${chiamanti}`)
+  assert.deepEqual(chiamanti, ['celle_pubblica', 'forum_pubblica', 'forum_rispondi', 'media_pubblica', 'profilo_salva', 'pubblica'], `la tua identità firma da: ${chiamanti}`)
   const pc = read(path.join(ROOT, 'app', 'identity', 'src', 'portachiavi.rs'))
   assert.match(pc, /let v = Zeroizing::new\(v\);/, 'il buffer letto dal portachiavi non si cancella')
   assert.match(pc, /fn leggi\(&self, voce: &str\) -> Result<Option<Zeroizing<\[u8; 32\]>>, IdentityError>;/, 'il portachiavi restituisce il segreto senza Zeroizing')

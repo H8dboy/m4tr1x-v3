@@ -148,6 +148,7 @@ function testoFase(a) {
     case 'attesa_ripresa': return `il nodo non risponde ancora, Tor continua a cercarlo: riprovo tra ${s} s`
     case 'carico_pezzo': return pezzi(a, 'carico')
     case 'scarico_pezzo': return pezzi(a, 'scarico')
+    case 'codifico': return Number(a.pezzi_totali) > 1 ? `codifico a celle il fotogramma ${Number(a.pezzi_fatti) + 1} di ${Number(a.pezzi_totali)}… ${s} s` : 'codifico a celle…'
     default: return ''
   }
 }
@@ -337,7 +338,7 @@ async function salvaProfilo() {
 // controllati (hash e tipo) e si mostra con un indirizzo blob: del tipo della scheda (elenco chiuso nel lato Rust).
 // Per pubblicare, i byte del file scelto vanno al lato Rust, che lo PULISCE prima di tutto il resto.
 
-/** @typedef {{sha256: string, mime: string, dimensione: number, sezione: string, titolo: string, pezzi: string[]}} FileMedia */
+/** @typedef {{sha256: string, mime: string, dimensione: number, sezione: string, titolo: string, pezzi: string[], misure: number[], celle: boolean}} FileMedia */
 /** @typedef {{id: string, autore: string, nome: string|null, testo: string, creato: number, file: FileMedia}} Media */
 
 /** @type {typeof SEZIONI[keyof typeof SEZIONI]} */ let sezioneAperta = SEZIONI.reels
@@ -391,6 +392,7 @@ async function conFaseMedia(comando, lavoro) {
 
 function chiudiVisore() {
   if (urlAperto) { URL.revokeObjectURL(urlAperto); urlAperto = null }
+  fermaCelle()
   document.getElementById('media-schermo')?.replaceChildren()
   nascondi('media-visore', true)
 }
@@ -401,6 +403,7 @@ function apriSezione(s) {
   sezioneAperta = s
   mostra('t-media', s.titolo)
   mostra('media-cosa', s.file)
+  nascondi('media-celle-riga', s !== SEZIONI.reels)
   const scegli = /** @type {HTMLInputElement|null} */ (document.getElementById('media-scegli'))
   if (scegli) scegli.accept = s.accetta
   caricaMedia()
@@ -421,6 +424,7 @@ async function caricaMedia() {
 
 /** @param {Media} m */
 async function apriMedia(m) {
+  if (m.file.celle) return apriCelle(m)
   await conFaseMedia(`scarico ${mega(Number(m.file.dimensione))} via Tor…`, async () => {
     /** @type {ArrayBuffer} */
     // i pezzi tornano al lato Rust così come sono arrivati dalla scheda verificata: lì si controllano hash e numero
@@ -443,16 +447,172 @@ async function apriMedia(m) {
 }
 
 let filePronto = false
+/** il file scelto è stato codificato a celle (alveare): si pubblica con `celle_pubblica` */
+let cellePronte = false
+
+// ─── Alveare: foto e reel a celle ─────────────────────────────────────────────
+// Qui si fa solo quello che il lato Rust non può fare: leggere i pixel dal file scelto (il browser decodifica JPEG,
+// PNG e MP4) e disegnarli su un canvas. Al lato Rust vanno pixel grezzi RGBA (mai il file né il nome); da lì tornano
+// pixel grezzi. Codifica, pezzi, hash, firme e rete stanno di là.
+
+/** Lato lungo al massimo di una foto a celle (una foto da 2 MP costa ~25 MB di memoria in codifica). */
+const CELLE_FOTO_LATO = 1600
+/** Un reel a celle: lato lungo, fotogrammi al secondo e secondi al massimo (la codifica costa ~0,3 s a fotogramma). */
+const CELLE_REEL_LATO = 480
+const CELLE_REEL_FPS = 12
+const CELLE_REEL_SECONDI = 30
+
+/** Intestazione dei pixel per `celle_prepara`: larghezza, altezza, fotogrammi, fotogrammi al secondo (0 = foto). */
+function testaPixel(/** @type {number} */ w, /** @type {number} */ h, /** @type {number} */ n, /** @type {number} */ fps) {
+  const b = new Uint8Array(16 + w * h * 4 * n)
+  new DataView(b.buffer).setUint32(0, w, true)
+  new DataView(b.buffer).setUint32(4, h, true)
+  new DataView(b.buffer).setUint32(8, n, true)
+  new DataView(b.buffer).setUint32(12, fps, true)
+  return b
+}
+
+/** Misure ridotte perché il lato lungo non superi `lato` (pari, per i colori dimezzati). */
+function ridotte(/** @type {number} */ w, /** @type {number} */ h, /** @type {number} */ lato) {
+  const k = Math.min(1, lato / Math.max(w, h))
+  return [Math.max(2, Math.round(w * k / 2) * 2), Math.max(2, Math.round(h * k / 2) * 2)]
+}
+
+/** I pixel RGBA di una foto scelta, ridotta: dal decodificatore del browser al canvas. */
+async function pixelFoto(/** @type {File} */ f) {
+  const bm = await createImageBitmap(f)
+  const [w, h] = ridotte(bm.width, bm.height, CELLE_FOTO_LATO)
+  const c = document.createElement('canvas'); c.width = w; c.height = h
+  const ctx = c.getContext('2d'); if (!ctx) throw new Error('canvas non disponibile')
+  ctx.drawImage(bm, 0, 0, w, h); bm.close()
+  const b = testaPixel(w, h, 1, 0)
+  b.set(ctx.getImageData(0, 0, w, h).data, 16)
+  return b
+}
+
+/** I fotogrammi RGBA di un video scelto, ridotti, a passo fisso (il browser decodifica, qui si disegna). */
+async function pixelVideo(/** @type {File} */ f) {
+  const url = URL.createObjectURL(f)
+  try {
+    const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url
+    await new Promise((ok, no) => { v.onloadedmetadata = () => ok(null); v.onerror = () => no(new Error('video non leggibile da questo computer (serve MP4 H.264)')) })
+    if (!(v.videoWidth > 0) || !(v.duration > 0)) throw new Error('video senza immagini')
+    const secondi = Math.min(v.duration, CELLE_REEL_SECONDI)
+    const n = Math.max(1, Math.floor(secondi * CELLE_REEL_FPS))
+    const [w, h] = ridotte(v.videoWidth, v.videoHeight, CELLE_REEL_LATO)
+    const c = document.createElement('canvas'); c.width = w; c.height = h
+    const ctx = c.getContext('2d'); if (!ctx) throw new Error('canvas non disponibile')
+    const b = testaPixel(w, h, n, CELLE_REEL_FPS)
+    for (let i = 0; i < n; i++) {
+      mostra('media-pulito', `leggo il fotogramma ${i + 1} di ${n}…`)
+      await new Promise((ok, no) => { v.onseeked = () => ok(null); v.onerror = () => no(new Error('video interrotto')); v.currentTime = Math.min(v.duration, i / CELLE_REEL_FPS) })
+      ctx.drawImage(v, 0, 0, w, h)
+      b.set(ctx.getImageData(0, 0, w, h).data, 16 + i * w * h * 4)
+    }
+    v.removeAttribute('src'); v.load()
+    return { b, n }
+  } finally { URL.revokeObjectURL(url) }
+}
+
+/** Codifica a celle il file scelto (foto o video) nel lato Rust e dice quanto pesa. */
+async function preparaCelle(/** @type {File} */ f) {
+  const video = f.type.startsWith('video/')
+  mostra('media-pulito', video ? 'leggo i fotogrammi…' : 'leggo la foto…')
+  const pix = video ? (await pixelVideo(f)).b : await pixelFoto(f)
+  mostra('media-pulito', 'codifico a celle sul tuo computer…')
+  const fase = setInterval(async () => {
+    const a = await invoke('celle_avanzamento').catch(() => null)
+    if (a && a.fase === 'codifico') mostra('media-pulito', testoFase(a))
+  }, 1000)
+  try {
+    const p = await invoke('celle_prepara', pix)
+    const fotogrammi = Number(p.fotogrammi) ? ` · ${Number(p.fotogrammi)} fotogrammi` : ''
+    mostra('media-pulito', `alveare ✓ · ${Number(p.pezzi)} pezzi · anteprima ${mega(Number(p.anteprima))} · in tutto ${mega(Number(p.dimensione))}${fotogrammi} · ${(Number(p.millisecondi) / 1000).toFixed(1)} s`)
+  } finally { clearInterval(fase) }
+}
+
+/** @type {number|null} */ let celleTimer = null
+/** @type {number|null} */ let celleQuadro = null
+
+function fermaCelle() {
+  if (celleTimer !== null) { clearInterval(celleTimer); celleTimer = null }
+  if (celleQuadro !== null) { clearInterval(celleQuadro); celleQuadro = null }
+}
+
+/** Disegna sul canvas i pixel grezzi (larghezza, altezza, RGBA) tornati da `celle_quadro`. */
+function disegna(/** @type {HTMLCanvasElement} */ c, /** @type {ArrayBuffer} */ buf) {
+  if (buf.byteLength < 8) return false
+  const dv = new DataView(buf)
+  const w = dv.getUint32(0, true), h = dv.getUint32(4, true)
+  if (w === 0 || h === 0 || buf.byteLength !== 8 + w * h * 4) return false
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
+  const ctx = c.getContext('2d'); if (!ctx) return false
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(buf, 8, w * h * 4), w, h), 0, 0)
+  return true
+}
+
+/** Apre una foto o un reel a celle: l'immagine intera compare dal primo pezzo e si affina mentre gli altri scendono. */
+async function apriCelle(/** @type {Media} */ m) {
+  await conFaseMedia('cerco i pezzi via Tor…', async () => {
+    chiudiVisore()
+    // la scheda torna al lato Rust così com'è arrivata: lì si controllano hash e misure di ogni pezzo
+    await invoke('celle_apri', { sha256: m.file.sha256, mime: m.file.mime, dimensione: m.file.dimensione, pezzi: Array.isArray(m.file.pezzi) ? m.file.pezzi : [], misure: Array.isArray(m.file.misure) ? m.file.misure : [] })
+    const c = document.createElement('canvas'); c.className = 'celle'
+    document.getElementById('media-schermo')?.append(c)
+    mostra('media-v-titolo', String(m.file.titolo) || 'Senza titolo')
+    mostra('media-v-chi', `${m.nome ? String(m.nome) : String(m.autore).slice(0, 12) + '…'} · ${quando(Number(m.creato))} · alveare`)
+    mostra('media-v-testo', String(m.testo))
+    nascondi('media-visore', false)
+    document.getElementById('media-visore')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const reel = String(m.file.mime).startsWith('video/')
+    let disegnati = 0, quadro = 0, fotogrammi = 0, fps = CELLE_REEL_FPS
+    celleTimer = setInterval(async () => {
+      const s = await invoke('celle_stato').catch(() => null)
+      if (!s) return
+      fotogrammi = Number(s.fotogrammi); if (Number(s.fps) > 0) fps = Number(s.fps)
+      const arrivati = Number(s.pezzi_arrivati), totali = Number(s.pezzi_totali)
+      const dove = arrivati >= totali ? `${totali} pezzi · ${mega(Number(s.byte_arrivati))} ✓` : `pezzo ${arrivati} di ${totali} · ${mega(Number(s.byte_arrivati))}`
+      if (s.errore) mostra('media-stato', `${dove} · ${String(s.errore)}`)
+      else if (!reel && arrivati === 0) { const a = await invoke('celle_avanzamento').catch(() => null); mostra('media-stato', a ? testoFase(a) || 'cerco il primo pezzo…' : 'cerco il primo pezzo…') }
+      else mostra('media-stato', reel ? `${dove} · ${fotogrammi} fotogrammi` : arrivati === 1 ? `anteprima: ${dove} (immagine intera, si affina)` : dove)
+      // la foto si ridisegna a ogni pezzo in più; il reel scorre con il suo timer
+      if (!reel && fotogrammi > 0 && arrivati !== disegnati) {
+        if (disegna(c, await invoke('celle_quadro', { indice: 0 }))) disegnati = arrivati
+      }
+      if (s.finito && (reel || arrivati === disegnati)) { if (celleTimer !== null) clearInterval(celleTimer); celleTimer = null }
+    }, 400)
+    if (reel) {
+      celleQuadro = setInterval(async () => {
+        if (fotogrammi === 0) return
+        if (quadro >= fotogrammi) { if (celleTimer === null) quadro = 0; else return }
+        if (disegna(c, await invoke('celle_quadro', { indice: quadro }))) quadro++
+      }, Math.round(1000 / fps))
+    }
+  })
+}
 
 async function sceltoFile() {
   const scegli = /** @type {HTMLInputElement} */ (document.getElementById('media-scegli'))
   const f = scegli.files && scegli.files[0]
   filePronto = false
+  cellePronte = false
   const pub = /** @type {HTMLButtonElement|null} */ (document.getElementById('media-pubblica'))
   if (pub) pub.disabled = true
   mostra('media-pulito', '')
   if (!f) return
   if (f.size > 1024 * 1024 * 1024) { mostra('media-pulito', 'file troppo grande (massimo 1 GB)'); return }
+  const alveare = /** @type {HTMLInputElement|null} */ (document.getElementById('media-celle'))
+  if (alveare && alveare.checked && sezioneAperta === SEZIONI.reels && (f.type === 'image/jpeg' || f.type === 'image/png' || f.type === 'video/mp4' || f.type === 'video/quicktime')) {
+    try {
+      await preparaCelle(f)
+      cellePronte = true
+      filePronto = true
+      if (pub) pub.disabled = false
+    } catch (e) {
+      mostra('media-pulito', String(e))
+    }
+    return
+  }
   mostra('media-pulito', 'pulisco il file sul tuo computer…')
   try {
     // solo il CONTENUTO: il nome del file e la cartella non vanno al lato Rust né al nodo
@@ -469,10 +629,11 @@ async function pubblicaMedia() {
   if (!filePronto) return
   const s = sezioneAperta
   let fatto = false
-  await conFaseMedia('firmo, carico il file e cerco il nodo…', async () => {
-    await invoke('media_pubblica', { sezione: s.nome, titolo: campo('media-titolo').value, testo: campo('media-testo').value })
+  await conFaseMedia(cellePronte ? 'firmo, carico i pezzi e cerco il nodo…' : 'firmo, carico il file e cerco il nodo…', async () => {
+    await invoke(cellePronte ? 'celle_pubblica' : 'media_pubblica', { sezione: s.nome, titolo: campo('media-titolo').value, testo: campo('media-testo').value })
     fatto = true
     filePronto = false
+    cellePronte = false
     campo('media-titolo').value = ''; campo('media-testo').value = ''
     const scegli = /** @type {HTMLInputElement} */ (document.getElementById('media-scegli')); scegli.value = ''
     mostra('media-pulito', '')

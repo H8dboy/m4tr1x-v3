@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-celle-avanzamento"
+description = "Enables the celle_avanzamento command without any pre-configured scope."
+commands.allow = ["celle_avanzamento"]
+
+[[permission]]
+identifier = "deny-celle-avanzamento"
+description = "Denies the celle_avanzamento command without any pre-configured scope."
+commands.deny = ["celle_avanzamento"]
