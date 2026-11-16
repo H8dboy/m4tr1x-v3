@@ -88,6 +88,9 @@ struct Stato {
     mappa: Vec<u32>,
     /// gli indici dei pixel di ogni cella
     pixel: Vec<Vec<u32>>,
+    /// per ogni pixel la cella oltre il bordo più vicino e il suo peso in ottavi (0–4): la previsione si sfuma
+    vicina: Vec<u32>,
+    peso: Vec<u8>,
     /// il fotogramma prima, ricostruito (luce intera, colori dimezzati)
     rif: Piani,
     /// gli spostamenti del fotogramma prima, per cella
@@ -104,7 +107,8 @@ impl Stato {
         for (k, &c) in mappa.iter().enumerate() {
             pixel[c as usize].push(k as u32);
         }
-        Stato { griglia, mappa, pixel, rif, vettori: vec![(0, 0); n], ctx: contesti_nuovi() }
+        let (vicina, peso) = griglia.vicine();
+        Stato { griglia, mappa, pixel, vicina, peso, rif, vettori: vec![(0, 0); n], ctx: contesti_nuovi() }
     }
 }
 
@@ -255,13 +259,20 @@ fn cerca_vettori(cur: &Piano, rif: &Piano, st: &Stato, cerca: i32, passo: u8) ->
 }
 
 /// Il fotogramma prima spostato cella per cella (mezzi pixel sulla luce, quarti sui colori dimezzati): la base del
-/// fotogramma previsto.
-fn prevedi(rif: &Piani, mappa: &[u32], v: &[(i32, i32)]) -> Piani {
+/// fotogramma previsto. Vicino al bordo tra due celle con spostamenti diversi la previsione è una media pesata
+/// delle due (come l'OBMC di H.263): niente gradini artificiali, che costerebbero byte nel resto.
+fn prevedi(rif: &Piani, st: &Stato, v: &[(i32, i32)]) -> Piani {
+    let mappa = &st.mappa;
+    let sfuma = !std::env::var("M4_SFUMA").map(|s| s == "0").unwrap_or(false);
     let (w, h) = (rif.y.w, rif.y.h);
     let mut y = Piano::nuovo(w, h);
     for k in 0..w * h {
         let (hx, hy) = v[mappa[k] as usize];
-        y.v[k] = campione(&rif.y, (k % w) as i32, (k / w) as i32, hx, hy);
+        let (x, yy) = ((k % w) as i32, (k / w) as i32);
+        let a = campione(&rif.y, x, yy, hx, hy);
+        let (vx, vy) = v[st.vicina[k] as usize];
+        let p = st.peso[k] as i32;
+        y.v[k] = if sfuma && p > 0 && (vx, vy) != (hx, hy) { ((8 - p) * a + p * campione(&rif.y, x, yy, vx, vy) + 4) >> 3 } else { a };
     }
     let (wc, hc) = (rif.cb.w, rif.cb.h);
     let mut cb = Piano::nuovo(wc, hc);
@@ -270,8 +281,13 @@ fn prevedi(rif: &Piani, mappa: &[u32], v: &[(i32, i32)]) -> Piani {
         for xc in 0..wc {
             let k = (2 * yc).min(h - 1) * w + (2 * xc).min(w - 1);
             let (hx, hy) = v[mappa[k] as usize];
-            cb.v[yc * wc + xc] = campione_quarto(&rif.cb, xc as i32, yc as i32, hx, hy);
-            cr.v[yc * wc + xc] = campione_quarto(&rif.cr, xc as i32, yc as i32, hx, hy);
+            let (vx, vy) = v[st.vicina[k] as usize];
+            let p = st.peso[k] as i32;
+            let (xc, yc) = (xc as i32, yc as i32);
+            let (a, b) = (campione_quarto(&rif.cb, xc, yc, hx, hy), campione_quarto(&rif.cr, xc, yc, hx, hy));
+            let (a, b) = if sfuma && p > 0 && (vx, vy) != (hx, hy) { (((8 - p) * a + p * campione_quarto(&rif.cb, xc, yc, vx, vy) + 4) >> 3, ((8 - p) * b + p * campione_quarto(&rif.cr, xc, yc, vx, vy) + 4) >> 3) } else { (a, b) };
+            cb.v[yc as usize * wc + xc as usize] = a;
+            cr.v[yc as usize * wc + xc as usize] = b;
         }
     }
     Piani { y, cb, cr }
@@ -307,7 +323,7 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
             Some(v) => {
                 let st = stato.as_mut().expect("stato");
                 let n = st.griglia.celle();
-                let pred = prevedi(&st.rif, &st.mappa, &v);
+                let pred = prevedi(&st.rif, st, &v);
                 // chi legge parte dagli stessi contesti: si codifica con una copia e si rilegge con l'altra
                 let mut ctx_lettura = st.ctx.clone();
                 let dettaglio = if passo > 0 { dettaglio::codifica(&orig, &pred, passo, p.foto.passo_croma, livelli, &st.mappa, n, Base::Tutto, &mut st.ctx) } else { vec![] };
@@ -357,7 +373,7 @@ pub fn decodifica_reel(r: &Reel) -> Result<Vec<Immagine>, Errore> {
             Fotogramma::Previsto(p) => {
                 let st = stato.as_mut().ok_or(Errore::Formato("fotogramma previsto senza una chiave prima"))?;
                 let (passo, croma, livelli, v) = leggi_vettori(st, p)?;
-                let pred = prevedi(&st.rif, &st.mappa, &v);
+                let pred = prevedi(&st.rif, st, &v);
                 let fine = if passo > 0 && !p.dettaglio.is_empty() { dettaglio::decodifica(&p.dettaglio, &pred, passo, croma, livelli, &st.mappa, st.griglia.celle(), Base::Tutto, &mut st.ctx) } else { pred };
                 out.push(piani_in_rgb(&fine));
                 st.rif = fine;
@@ -379,7 +395,7 @@ impl Reel {
         let Fotogramma::Previsto(p) = f else { return Ok(vec![]) };
         let chiave = self.fotogrammi[..i].iter().rev().find_map(|f| if let Fotogramma::Chiave(c) = f { Some(c) } else { None }).ok_or(Errore::Formato("fotogramma previsto senza una chiave prima"))?;
         let t = crate::leggi_testa(&chiave.testa)?;
-        let st = Stato { mappa: vec![], pixel: vec![], rif: Piani { y: Piano::nuovo(0, 0), cb: Piano::nuovo(0, 0), cr: Piano::nuovo(0, 0) }, vettori: vec![], griglia: t.griglia, ctx: contesti_nuovi() };
+        let st = Stato { mappa: vec![], pixel: vec![], rif: Piani { y: Piano::nuovo(0, 0), cb: Piano::nuovo(0, 0), cr: Piano::nuovo(0, 0) }, vettori: vec![], griglia: t.griglia, ctx: contesti_nuovi(), vicina: vec![], peso: vec![] };
         Ok(leggi_vettori(&st, p)?.3)
     }
 

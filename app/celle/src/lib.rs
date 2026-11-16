@@ -256,11 +256,18 @@ impl Griglia {
     /// La cella (finale) di un pixel: il centro più vicino tra quelli delle celle base intorno al pixel
     /// (e i loro centri di raffinamento). Solo interi: distanze al quadrato in virgola fissa.
     pub fn cella_di(&self, x: u32, y: u32) -> u32 {
+        self.due_celle(x, y).0 .1
+    }
+
+    /// Le due celle più vicine a un pixel, con le distanze al quadrato (×256²): la sua e quella oltre il bordo più
+    /// vicino. Serve a sfumare tra celle vicine (reel).
+    fn due_celle(&self, x: u32, y: u32) -> ((i64, u32), (i64, u32)) {
         let (hx, vy) = Self::passi(self.raggio);
         let px = x as i64 * S + S / 2;
         let py = y as i64 * S + S / 2;
         let j0 = (py / vy) as i64;
         let mut migliore = (i64::MAX, 0u32);
+        let mut seconda = (i64::MAX, 0u32);
         for j in (j0 - 1).max(0)..=(j0 + 1).min(self.righe as i64 - 1) {
             let sfalso = if j % 2 == 1 { hx / 2 } else { 0 };
             let i0 = ((px - sfalso) / hx) as i64;
@@ -272,12 +279,36 @@ impl Griglia {
                     let (cx, cy) = self.centri[c as usize];
                     let dd = (px - cx) * (px - cx) + (py - cy) * (py - cy);
                     if dd < migliore.0 {
+                        seconda = migliore;
                         migliore = (dd, c);
+                    } else if dd < seconda.0 {
+                        seconda = (dd, c);
                     }
                 }
             }
         }
-        migliore.1
+        if seconda.0 == i64::MAX {
+            seconda = migliore;
+        }
+        (migliore, seconda)
+    }
+
+    /// Per ogni pixel la cella oltre il bordo più vicino e quanto pesa (in ottavi, 0–4): 4 sul bordo, 0 da metà
+    /// raggio in dentro. Con `dd1 ≤ dd2` distanze al quadrato: `peso = (16·dd1 − 8·dd2) / (dd1 + dd2)`, tagliato a
+    /// 0–4; solo interi.
+    pub fn vicine(&self) -> (Vec<u32>, Vec<u8>) {
+        let n = (self.larghezza * self.altezza) as usize;
+        let mut vicina = Vec::with_capacity(n);
+        let mut peso = Vec::with_capacity(n);
+        for y in 0..self.altezza {
+            for x in 0..self.larghezza {
+                let ((dd1, _), (dd2, c2)) = self.due_celle(x, y);
+                let p = if dd1 + dd2 == 0 { 0 } else { ((16 * dd1 - 8 * dd2) / (dd1 + dd2)).clamp(0, 4) };
+                vicina.push(c2);
+                peso.push(p as u8);
+            }
+        }
+        (vicina, peso)
     }
 
     /// Per ogni pixel la sua cella, riga per riga.
