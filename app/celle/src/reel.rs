@@ -16,6 +16,15 @@
 //! più grosso in fondo alla piramide** (`passo_a`): la doppia previsione da sola, su video rumorosi, rende il 2 %;
 //! con le foglie quantizzate più grosse si risparmia un quarto dei byte a pari PSNR (misure nel README).
 //!
+//! **Celle che seguono il moto** (13/11/2026, idea del fondatore: "celle intelligenti che predicono la dimensione in
+//! base a quando il moto cambia"): la griglia di un previsto non è più quella della chiave. Ogni cella base può
+//! essere intera o divisa in sette, e chi legge **prevede da solo** quali dividere dagli spostamenti del fotogramma
+//! prima (`raffinate_previste`): dove due celle vicine si muovono in modo diverso, o dentro una cella divisa i
+//! sette spostamenti non sono uguali, la cella resta piccola; dove il moto è uniforme torna grande. Zero byte. Chi
+//! scrive può contraddire la previsione con un bit adattivo per cella base (`divisioni`, quasi gratis quando la
+//! previsione è giusta): divide dove lo scarto per pixel è alto e la divisione paga, riunisce dove i sette
+//! spostamenti sono uguali.
+//!
 //! L'alveare al lavoro sul video: dentro ogni fotogramma previsto il resto arriva a pezzi, cella per cella, con le
 //! celle in ordine di quanto la previsione ha sbagliato (`dettaglio::percorri`): prima quelle che si muovono o si
 //! scoprono, per ultime quelle ferme. Un fotogramma previsto troncato è intero (la base c'è sempre), solo meno fine
@@ -26,10 +35,10 @@
 
 use crate::aritmetica::{Lettore, Prob, Scrittore};
 use crate::dettaglio::{self, Base, Contesti, Piani, Piano, LIVELLI_MAX};
-use crate::{codifica, contesti_nuovi, decodifica_piani, leggi_varint, piani_di, piani_in_rgb, scrivi_varint, strati, ycbcr, Codificata, Errore, Griglia, Immagine, Parametri, Strati};
+use crate::{codifica, contesti_nuovi, decodifica_piani, leggi_varint, piani_di, piani_in_rgb, scrivi_varint, strati, ycbcr, Codificata, Errore, Griglia, Immagine, Parametri, Strati, S};
 
 /// Versione del formato del reel.
-pub const VERSIONE_REEL: u8 = 2;
+pub const VERSIONE_REEL: u8 = 3;
 const MAGIA_REEL: &[u8; 4] = b"M4RL";
 /// Spostamento massimo per cella che il formato sa scrivere (pixel).
 pub const CERCA_MAX: u8 = 32;
@@ -37,6 +46,14 @@ pub const CERCA_MAX: u8 = 32;
 const RIFERIMENTI: usize = 12;
 /// Di quanti ottavi cresce il passo a ogni livello della piramide dei bidirezionali (vedi `passo_a`).
 const GROSSEZZA_B: u8 = 3;
+/// Due spostamenti distano "abbastanza" (mezzi pixel, |dx|+|dy|) perché la cella tra loro vada divisa.
+const SOGLIA_MOTO: i32 = 4;
+/// Una cella intera con scarto medio per pixel sopra `SOGLIA_SCARTO × passo` si prova a dividere…
+const SOGLIA_SCARTO: i64 = 1;
+/// …e si divide se lo scarto cala di più di `PENALE_DIVISIONE × passo` (sei spostamenti in più costano byte).
+const PENALE_DIVISIONE: i64 = 24;
+/// Sotto questi pixel una cella non si divide (ritagli ai bordi dell'immagine).
+const PIXEL_MIN_DIVISIONE: usize = 64;
 
 /// Parametri di un reel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,11 +69,13 @@ pub struct ParametriReel {
     pub soglia_chiave: u8,
     /// Quanti fotogrammi bidirezionali tra un'àncora e l'altra (0 = nessuno, 3 = piramide di quattro come x264).
     pub bidirezionali: u8,
+    /// Le celle seguono il moto (si dividono dove non è uniforme). Solo chi scrive decide: chi legge segue i bit.
+    pub celle_mobili: bool,
 }
 
 impl Default for ParametriReel {
     fn default() -> Self {
-        Self { foto: Parametri::default(), chiave_ogni: 60, cerca: 16, soglia_chiave: 24, bidirezionali: 3 }
+        Self { foto: Parametri::default(), chiave_ogni: 60, cerca: 16, soglia_chiave: 24, bidirezionali: 3, celle_mobili: true }
     }
 }
 
@@ -66,6 +85,8 @@ pub struct Previsto {
     /// passo, passo dei colori, livelli, raggio di ricerca, poi (varint) quando si mostra e i riferimenti, tutti
     /// come indici dalla chiave: `mostra`, `rif_a` e, se bidirezionale, `rif_b`
     pub testa: Vec<u8>,
+    /// per cella base un bit: la divisione in sette è diversa da quella prevista; vuoto = tutto come previsto
+    pub divisioni: Vec<u8>,
     /// per cella da dove si prevede (0 passato, 1 futuro, 2 media), compresso; vuoto se non bidirezionale
     pub modi: Vec<u8>,
     /// spostamento (dx, dy) per cella verso il primo riferimento, compresso
@@ -78,7 +99,7 @@ pub struct Previsto {
 
 impl Previsto {
     pub fn byte_totali(&self) -> usize {
-        self.testa.len() + self.modi.len() + self.vettori.len() + self.vettori_b.len() + self.dettaglio.len()
+        self.testa.len() + self.divisioni.len() + self.modi.len() + self.vettori.len() + self.vettori_b.len() + self.dettaglio.len()
     }
     pub fn bidirezionale(&self) -> bool {
         !self.vettori_b.is_empty()
@@ -106,8 +127,9 @@ pub struct Reel {
     pub fotogrammi: Vec<Fotogramma>,
 }
 
-/// Quello che resta da un fotogramma all'altro, uguale da una parte e dall'altra.
-struct Stato {
+/// La geometria di una griglia: quello che serve per prevedere e codificare un fotogramma su di essa.
+#[derive(Clone)]
+struct Geometria {
     griglia: Griglia,
     mappa: Vec<u32>,
     /// gli indici dei pixel di ogni cella
@@ -115,9 +137,28 @@ struct Stato {
     /// per ogni pixel la cella oltre il bordo più vicino e il suo peso in ottavi (0–4): la previsione si sfuma
     vicina: Vec<u32>,
     peso: Vec<u8>,
+}
+
+impl Geometria {
+    fn nuova(griglia: Griglia) -> Self {
+        let (mappa, vicina, peso) = griglia.mappa_e_vicine();
+        let mut pixel = vec![Vec::new(); griglia.celle()];
+        for (k, &c) in mappa.iter().enumerate() {
+            pixel[c as usize].push(k as u32);
+        }
+        Geometria { griglia, mappa, pixel, vicina, peso }
+    }
+}
+
+/// Quello che resta da un fotogramma all'altro, uguale da una parte e dall'altra.
+struct Stato {
+    /// la griglia della chiave: i previsti tengono il suo reticolo e il suo raggio, cambiano solo le divisioni
+    base: Griglia,
+    /// la geometria dell'ultimo fotogramma codificato
+    geo: Geometria,
     /// i fotogrammi ricostruiti del gruppo (dalla chiave), per indice di visualizzazione
     rif: Vec<(u32, Piani)>,
-    /// gli spostamenti dell'ultimo fotogramma codificato, per cella (candidati per il prossimo)
+    /// gli spostamenti dell'ultimo fotogramma codificato, sulle celle di `geo` (candidati e regola per il prossimo)
     vettori: Vec<(i32, i32)>,
     /// le probabilità della codifica aritmetica del resto, tenute da un fotogramma all'altro (da zero a ogni chiave)
     ctx: [Contesti; 2],
@@ -125,14 +166,18 @@ struct Stato {
 
 impl Stato {
     fn nuovo(griglia: Griglia, chiave: Piani) -> Self {
-        let mappa = griglia.mappa();
-        let n = griglia.celle();
-        let mut pixel = vec![Vec::new(); n];
-        for (k, &c) in mappa.iter().enumerate() {
-            pixel[c as usize].push(k as u32);
+        let geo = Geometria::nuova(griglia.clone());
+        let n = geo.griglia.celle();
+        Stato { base: griglia, geo, rif: vec![(0, chiave)], vettori: vec![(0, 0); n], ctx: contesti_nuovi() }
+    }
+    /// La geometria per queste divisioni: quella dell'ultimo fotogramma se è uguale (il caso normale: rifarla costa
+    /// ~50 ms a fotogramma), altrimenti nuova.
+    fn geometria_per(&self, raffinate: &[bool]) -> Geometria {
+        if self.geo.griglia.raffinate() == raffinate {
+            self.geo.clone()
+        } else {
+            Geometria::nuova(self.base.clone().con_raffinate(raffinate.to_vec()))
         }
-        let (vicina, peso) = griglia.vicine();
-        Stato { griglia, mappa, pixel, vicina, peso, rif: vec![(0, chiave)], vettori: vec![(0, 0); n], ctx: contesti_nuovi() }
     }
     fn riferimento(&self, mostra: u32) -> Option<&Piani> {
         self.rif.iter().find(|(m, _)| *m == mostra).map(|(_, p)| p)
@@ -209,24 +254,32 @@ fn scarto(cur: &Piano, rif: &Piano, pix: &[u32], hx: i32, hy: i32, ogni: usize) 
 /// quello della stessa cella nel fotogramma prima, quelli delle celle a sinistra e sopra), se nessuno spiega la
 /// cella si cerca a passi di 4 pixel su pochi pixel, poi si raffina di un pixel alla volta e infine di mezzo pixel
 /// finché migliora. Il costo è lo scarto più una piccola penale per gli spostamenti lontani da quello previsto
-/// (costano byte e fanno bordi). Restituisce gli spostamenti e lo scarto della luce per cella.
-fn cerca_vettori(cur: &Piano, rif: &Piano, st: &Stato, cerca: i32, passo: u8) -> (Vec<(i32, i32)>, Vec<i64>) {
-    let n = st.griglia.celle();
+/// (costano byte e fanno bordi). `cand` è lo spostamento della stessa zona nel fotogramma prima, per cella.
+/// Restituisce gli spostamenti e lo scarto della luce per cella.
+fn cerca_vettori(cur: &Piano, rif: &Piano, geo: &Geometria, cand: &[(i32, i32)], cerca: i32, passo: u8) -> (Vec<(i32, i32)>, Vec<i64>) {
+    let n = geo.griglia.celle();
     let mut v = vec![(0i32, 0i32); n];
     let mut piatti = vec![0i32; n * 2];
     let mut scarti = vec![0i64; n];
     let lambda = passo.max(1) as i64;
     let lim = 2 * cerca;
-    for (c0, sinistra, sopra, quante) in strati::ordine(&st.griglia) {
+    for (c0, sinistra, sopra, quante) in strati::ordine(&geo.griglia) {
         for c in c0..c0 + quante {
-            let pix = &st.pixel[c];
-            if pix.is_empty() || cerca == 0 {
+            let pix = &geo.pixel[c];
+            let (px, py) = if c == c0 { (strati::previsione(&piatti, 2, 0, sinistra, sopra), strati::previsione(&piatti, 2, 1, sinistra, sopra)) } else { v[c0] };
+            if pix.is_empty() {
+                // fuori dall'immagine: lo spostamento previsto, che non costa niente e non sembra un moto diverso
+                v[c] = (px.clamp(-lim, lim), py.clamp(-lim, lim));
+                piatti[c * 2] = v[c].0;
+                piatti[c * 2 + 1] = v[c].1;
+                continue;
+            }
+            if cerca == 0 {
                 scarti[c] = scarto(cur, rif, pix, 0, 0, 1);
                 continue;
             }
-            let (px, py) = if c == c0 { (strati::previsione(&piatti, 2, 0, sinistra, sopra), strati::previsione(&piatti, 2, 1, sinistra, sopra)) } else { v[c0] };
             let costo = |hx: i32, hy: i32| scarto(cur, rif, pix, hx, hy, 1) + lambda * ((hx - px).abs() + (hy - py).abs()) as i64;
-            let mut candidati = vec![(0, 0), (px, py), st.vettori[c]];
+            let mut candidati = vec![(0, 0), (px, py), cand[c]];
             if let Some(s) = sinistra {
                 candidati.push(v[s]);
             }
@@ -307,6 +360,143 @@ fn azzera_inutili(g: &Griglia, v: &mut [(i32, i32)], usa: &[bool]) {
     }
 }
 
+// ─── Celle che seguono il moto ──────────────────────────────────────────────
+
+/// Quali celle base restano divise nel prossimo fotogramma, viste dagli spostamenti dell'ultimo (`g`, `v`): una
+/// cella divisa resta divisa finché dentro il moto non è uniforme (uno dei sette spostamenti dista più di
+/// `SOGLIA_MOTO` dal centro), poi torna intera da sola. Le divisioni nuove le dice chi scrive con i bit: dagli
+/// spostamenti non si vede se un confine passa **dentro** una cella intera o **tra** due (provato: prevedere la
+/// divisione quando due vicine intere si muovono diversamente sbagliava quasi sempre, e ogni errore costa un bit).
+/// Chi scrive e chi legge la calcolano uguale: zero byte.
+fn raffinate_previste(g: &Griglia, v: &[(i32, i32)]) -> Vec<bool> {
+    let dist = |a: (i32, i32), b: (i32, i32)| (a.0 - b.0).abs() + (a.1 - b.1).abs();
+    (0..g.celle_base())
+        .map(|k| {
+            let c0 = g.inizio[k] as usize;
+            g.raffinate[k] && (c0 + 1..c0 + 7).any(|c| dist(v[c], v[c0]) > SOGLIA_MOTO)
+        })
+        .collect()
+}
+
+/// Il campo di moto da tenere per il fotogramma dopo (regola delle divisioni e candidati): gli spostamenti verso il
+/// primo riferimento, ma per le celle che guardano solo al futuro (modo 1) lo spostamento verso il secondo
+/// riferimento girato e scalato alla distanza del primo: è il moto vero della cella, non il valore di comodo che
+/// `azzera_inutili` le dà per costare poco.
+fn campo_di_moto(va: &[(i32, i32)], vb: &[(i32, i32)], modi: &[u8], t: &TestaPrevisto) -> Vec<(i32, i32)> {
+    let Some(rif_b) = t.rif_b else { return va.to_vec() };
+    let (da, db) = (t.mostra as i64 - t.rif_a as i64, rif_b as i64 - t.mostra as i64);
+    if db <= 0 || da <= 0 || modi.len() != va.len() || vb.len() != va.len() {
+        return va.to_vec();
+    }
+    va.iter().zip(vb).zip(modi).map(|((&a, &b), &m)| if m == 1 { ((-(b.0 as i64) * da / db) as i32, (-(b.1 as i64) * da / db) as i32) } else { a }).collect()
+}
+
+/// Per ogni cella della griglia nuova lo spostamento che aveva la stessa zona (il pixel al centro) nel fotogramma
+/// prima: il candidato "stessa cella" della ricerca.
+fn candidati(st: &Stato, g: &Griglia) -> Vec<(i32, i32)> {
+    let (w, h) = (g.larghezza as i64 - 1, g.altezza as i64 - 1);
+    (0..g.celle() as u32)
+        .map(|c| {
+            let (cx, cy) = g.centro(c);
+            st.vettori[st.geo.griglia.cella_di((cx / S).clamp(0, w) as u32, (cy / S).clamp(0, h) as u32) as usize]
+        })
+        .collect()
+}
+
+/// Un bit per cella base: la divisione reale è diversa da quella prevista. Contesto: la previsione e il bit prima.
+/// Tutto come previsto → nessun byte.
+fn codifica_divisioni(previste: &[bool], reali: &[bool]) -> Vec<u8> {
+    if previste == reali {
+        return vec![];
+    }
+    let mut sc = Scrittore::nuovo();
+    let mut pr = [Prob::NUOVA; 4];
+    let mut prima = false;
+    for (&p, &r) in previste.iter().zip(reali) {
+        let f = p != r;
+        sc.bit(&mut pr[p as usize * 2 + prima as usize], f);
+        prima = f;
+    }
+    sc.chiudi()
+}
+
+fn decodifica_divisioni(b: &[u8], previste: &[bool]) -> Vec<bool> {
+    if b.is_empty() {
+        return previste.to_vec();
+    }
+    let mut le = Lettore::nuovo(b);
+    let mut pr = [Prob::NUOVA; 4];
+    let mut prima = false;
+    previste
+        .iter()
+        .map(|&p| {
+            let f = le.bit(&mut pr[p as usize * 2 + prima as usize]);
+            prima = f;
+            p != f
+        })
+        .collect()
+}
+
+/// La griglia di un previsto e gli spostamenti verso il primo riferimento, scelti da chi scrive.
+struct Scelta {
+    geo: Geometria,
+    va: Vec<(i32, i32)>,
+    scarti: Vec<i64>,
+    divisioni: Vec<u8>,
+}
+
+/// Chi scrive sceglie la griglia: parte da quella prevista (come chi legge), cerca gli spostamenti; riunisce le
+/// celle divise con sette spostamenti uguali; prova a dividere le celle intere con scarto alto e tiene la divisione
+/// solo se lo scarto cala più della penale. Al massimo tre ricerche.
+fn scegli_griglia(st: &Stato, cur: &Piano, rif: &Piano, cerca: i32, passo: u8, celle_mobili: bool) -> Scelta {
+    let previste = raffinate_previste(&st.geo.griglia, &st.vettori);
+    let cerca_su = |raff: &[bool]| {
+        let geo = st.geometria_per(raff);
+        let cand = candidati(st, &geo.griglia);
+        let (v, sc) = cerca_vettori(cur, rif, &geo, &cand, cerca, passo);
+        (geo, v, sc)
+    };
+    let (geo0, v0, s0) = cerca_su(&previste);
+    if !celle_mobili {
+        return Scelta { geo: geo0, va: v0, scarti: s0, divisioni: vec![] };
+    }
+    let p = passo.max(1) as i64;
+    let g0 = &geo0.griglia;
+    let mut prova = previste.clone();
+    let mut da_decidere = Vec::new();
+    for k in 0..g0.celle_base() {
+        let c0 = g0.inizio[k] as usize;
+        if g0.raffinate[k] {
+            // divisa: quanto costerebbe intera, con lo spostamento del centro su tutte e sette? se la differenza
+            // non supera la penale, si riunisce
+            let (hx, hy) = v0[c0];
+            let unita: i64 = (c0..c0 + 7).map(|c| scarto(cur, rif, &geo0.pixel[c], hx, hy, 1)).sum();
+            let divisa: i64 = (c0..c0 + 7).map(|c| s0[c]).sum();
+            if unita - divisa <= PENALE_DIVISIONE * p {
+                prova[k] = false;
+            }
+        } else if geo0.pixel[c0].len() >= PIXEL_MIN_DIVISIONE && s0[c0] > SOGLIA_SCARTO * p * geo0.pixel[c0].len() as i64 {
+            prova[k] = true;
+            da_decidere.push(k);
+        }
+    }
+    if prova == previste {
+        return Scelta { geo: geo0, va: v0, scarti: s0, divisioni: vec![] };
+    }
+    let (geo1, v1, s1) = cerca_su(&prova);
+    let mut finale = prova.clone();
+    for &k in &da_decidere {
+        let c1 = geo1.griglia.inizio[k] as usize;
+        let dopo: i64 = (c1..c1 + 7).map(|c| s1[c]).sum();
+        if s0[g0.inizio[k] as usize] - dopo <= PENALE_DIVISIONE * p {
+            finale[k] = false;
+        }
+    }
+    let (geo, va, scarti) = if finale == prova { (geo1, v1, s1) } else { cerca_su(&finale) };
+    let divisioni = codifica_divisioni(&previste, &finale);
+    Scelta { geo, va, scarti, divisioni }
+}
+
 /// I due riferimenti di un fotogramma e gli spostamenti verso ognuno; `modi` dice per cella quale si usa
 /// (0 il primo, 1 il secondo, 2 la media). Per un previsto semplice `b` è `None` e `modi` è vuoto.
 struct Previsione<'a> {
@@ -371,7 +561,7 @@ impl Previsione<'_> {
 /// Il riferimento (o i due) spostato cella per cella (mezzi pixel sulla luce, quarti sui colori dimezzati): la base
 /// del fotogramma previsto. Vicino al bordo tra due celle che prevedono in modo diverso la previsione è una media
 /// pesata delle due (come l'OBMC di H.263): niente gradini artificiali, che costerebbero byte nel resto.
-fn prevedi(st: &Stato, pr: &Previsione) -> Piani {
+fn prevedi(st: &Geometria, pr: &Previsione) -> Piani {
     let (w, h) = (pr.a.y.w, pr.a.y.h);
     let mut y = Piano::nuovo(w, h);
     for k in 0..w * h {
@@ -497,12 +687,12 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
         if !chiave {
             let st = stato.as_mut().expect("stato");
             let (mostra, rif_a) = ((i - base) as u32, (ancora - base) as u32);
-            let (v, scarti) = cerca_vettori(&orig.y, &st.riferimento(rif_a).expect("riferimento").y, st, cerca, passo);
-            let tot: i64 = scarti.iter().sum();
+            let sc = scegli_griglia(st, &orig.y, &st.riferimento(rif_a).expect("riferimento").y, cerca, passo, p.celle_mobili);
+            let tot: i64 = sc.scarti.iter().sum();
             if p.soglia_chiave != 0 && tot / (w * h) as i64 > p.soglia_chiave as i64 {
                 chiave = true;
             } else {
-                out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, &Compito { indice: i, mostra, rif_a, rif_b: None, profondita: 0 }, v, vec![], vec![], passo, croma, livelli, cerca)));
+                out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, &Compito { indice: i, mostra, rif_a, rif_b: None, profondita: 0 }, sc.geo, sc.divisioni, sc.va, vec![], vec![], passo, croma, livelli, cerca)));
             }
         }
         if chiave {
@@ -539,16 +729,19 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
             let a = st.riferimento(c.rif_a).expect("riferimento a");
             let b = st.riferimento(c.rif_b.expect("riferimento b")).expect("riferimento b");
             let (passo, croma) = (passo_a(passo, c.profondita), passo_a(croma, c.profondita));
-            let (va, sa) = cerca_vettori(&orig.y, &a.y, st, cerca, passo);
-            let (vb, sb) = cerca_vettori(&orig.y, &b.y, st, cerca, passo);
+            // la griglia si sceglie sul primo riferimento; verso il secondo si cerca sulla stessa griglia
+            let sc = scegli_griglia(st, &orig.y, &a.y, cerca, passo, p.celle_mobili);
+            let (geo, sa) = (sc.geo, sc.scarti);
+            let va = sc.va;
+            let (vb, sb) = cerca_vettori(&orig.y, &b.y, &geo, &candidati(st, &geo.griglia), cerca, passo);
             // per cella: passato, futuro o media, quello con lo scarto minore
-            let n = st.griglia.celle();
+            let n = geo.griglia.celle();
             let mut modi = vec![0u8; n];
             for cc in 0..n {
                 let (ax, ay) = va[cc];
                 let (bx, by) = vb[cc];
                 let mut sm = 0i64;
-                for &k in &st.pixel[cc] {
+                for &k in &geo.pixel[cc] {
                     let (x, y) = ((k as usize % w) as i32, (k as usize / w) as i32);
                     let m = (campione(&a.y, x, y, ax, ay) + campione(&b.y, x, y, bx, by) + 1) >> 1;
                     sm += (orig.y.v[k as usize] - m).unsigned_abs() as i64;
@@ -565,9 +758,9 @@ pub fn codifica_reel(fotogrammi: &[Immagine], p: ParametriReel) -> Result<Reel, 
             let mut vb = vb;
             let usa_a: Vec<bool> = modi.iter().map(|&m| m != 1).collect();
             let usa_b: Vec<bool> = modi.iter().map(|&m| m != 0).collect();
-            azzera_inutili(&st.griglia, &mut va, &usa_a);
-            azzera_inutili(&st.griglia, &mut vb, &usa_b);
-            out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, c, va, vb, modi, passo, croma, livelli, cerca)));
+            azzera_inutili(&geo.griglia, &mut va, &usa_a);
+            azzera_inutili(&geo.griglia, &mut vb, &usa_b);
+            out.push(Fotogramma::Previsto(codifica_previsto(st, &orig, c, geo, sc.divisioni, va, vb, modi, passo, croma, livelli, cerca)));
         }
         ancora = i;
         // prossima àncora: a distanza `gruppo`, oppure l'ultimo fotogramma
@@ -586,21 +779,21 @@ fn codifica_reel_in_catena(fotogrammi: &[Immagine], p: ParametriReel) -> Result<
 /// Codifica un previsto (semplice o bidirezionale) dato lo stato, l'originale, i riferimenti e gli spostamenti;
 /// aggiorna lo stato con la ricostruzione.
 #[allow(clippy::too_many_arguments)]
-fn codifica_previsto(st: &mut Stato, orig: &Piani, c: &Compito, va: Vec<(i32, i32)>, vb: Vec<(i32, i32)>, modi: Vec<u8>, passo: u8, croma: u8, livelli: u8, cerca: i32) -> Previsto {
-    let n = st.griglia.celle();
+fn codifica_previsto(st: &mut Stato, orig: &Piani, c: &Compito, geo: Geometria, divisioni: Vec<u8>, va: Vec<(i32, i32)>, vb: Vec<(i32, i32)>, modi: Vec<u8>, passo: u8, croma: u8, livelli: u8, cerca: i32) -> Previsto {
+    let n = geo.griglia.celle();
     let pred = {
         let a = st.riferimento(c.rif_a).expect("riferimento a");
         let b = c.rif_b.map(|m| st.riferimento(m).expect("riferimento b"));
-        prevedi(st, &Previsione { a, b, va: &va, vb: &vb, modi: &modi })
+        prevedi(&geo, &Previsione { a, b, va: &va, vb: &vb, modi: &modi })
     };
     // chi legge parte dagli stessi contesti: si codifica con una copia e si rilegge con l'altra
     let mut ctx_lettura = st.ctx.clone();
-    let dettaglio = if passo > 0 { dettaglio::codifica(orig, &pred, passo, croma, livelli, &st.mappa, n, Base::Tutto, &mut st.ctx) } else { vec![] };
+    let dettaglio = if passo > 0 { dettaglio::codifica(orig, &pred, passo, croma, livelli, &geo.mappa, n, Base::Tutto, &mut st.ctx) } else { vec![] };
     // il riferimento per i fotogrammi dopo è quello che vede chi legge, non l'originale
-    let fine = if passo > 0 { dettaglio::decodifica(&dettaglio, &pred, passo, croma, livelli, &st.mappa, n, Base::Tutto, &mut ctx_lettura) } else { pred };
+    let fine = if passo > 0 { dettaglio::decodifica(&dettaglio, &pred, passo, croma, livelli, &geo.mappa, n, Base::Tutto, &mut ctx_lettura) } else { pred };
     let piatti = |v: &[(i32, i32)]| v.iter().flat_map(|&(a, b)| [a, b]).collect::<Vec<i32>>();
-    let vettori = strati::codifica_valori(&st.griglia, &piatti(&va), 2);
-    let (vettori_b, modi_b) = if c.rif_b.is_some() { (strati::codifica_valori(&st.griglia, &piatti(&vb), 2), codifica_modi(&modi)) } else { (vec![], vec![]) };
+    let vettori = strati::codifica_valori(&geo.griglia, &piatti(&va), 2);
+    let (vettori_b, modi_b) = if c.rif_b.is_some() { (strati::codifica_valori(&geo.griglia, &piatti(&vb), 2), codifica_modi(&modi)) } else { (vec![], vec![]) };
     let mut testa = vec![passo, croma, livelli, cerca as u8];
     scrivi_varint(&mut testa, c.mostra as u64);
     scrivi_varint(&mut testa, c.rif_a as u64);
@@ -608,8 +801,9 @@ fn codifica_previsto(st: &mut Stato, orig: &Piani, c: &Compito, va: Vec<(i32, i3
         scrivi_varint(&mut testa, b as u64);
     }
     st.tieni(c.mostra, fine);
-    st.vettori = va;
-    Previsto { testa, modi: modi_b, vettori, vettori_b, dettaglio }
+    st.geo = geo;
+    st.vettori = campo_di_moto(&va, &vb, &modi, &TestaPrevisto { passo, croma, livelli, cerca: cerca as u8, mostra: c.mostra, rif_a: c.rif_a, rif_b: c.rif_b });
+    Previsto { testa, divisioni, modi: modi_b, vettori, vettori_b, dettaglio }
 }
 
 /// Quello che dice l'intestazione di un previsto.
@@ -636,6 +830,13 @@ fn leggi_testa_previsto(p: &Previsto) -> Result<TestaPrevisto, Errore> {
     let rif_a = leggi_varint(&p.testa, &mut i)? as u32;
     let rif_b = if p.bidirezionale() { Some(leggi_varint(&p.testa, &mut i)? as u32) } else { None };
     Ok(TestaPrevisto { passo, croma, livelli, cerca, mostra, rif_a, rif_b })
+}
+
+/// La griglia di un previsto: il reticolo della chiave con le divisioni previste dall'ultimo fotogramma, corrette
+/// dai bit di `divisioni`.
+fn griglia_del_previsto(base: &Griglia, ultima: &Griglia, vettori: &[(i32, i32)], p: &Previsto) -> Griglia {
+    let previste = raffinate_previste(ultima, vettori);
+    base.clone().con_raffinate(decodifica_divisioni(&p.divisioni, &previste))
 }
 
 /// Gli spostamenti di un previsto, per cella, verso il primo e il secondo riferimento, e i modi.
@@ -667,19 +868,21 @@ pub fn decodifica_reel(r: &Reel) -> Result<Vec<Immagine>, Errore> {
             Fotogramma::Previsto(p) => {
                 let st = stato.as_mut().ok_or(Errore::Formato("fotogramma previsto senza una chiave prima"))?;
                 let t = leggi_testa_previsto(p)?;
-                let (va, vb, modi) = leggi_vettori(&st.griglia, p, &t);
+                let geo = st.geometria_per(griglia_del_previsto(&st.base, &st.geo.griglia, &st.vettori, p).raffinate());
+                let (va, vb, modi) = leggi_vettori(&geo.griglia, p, &t);
                 let pred = {
                     let a = st.riferimento(t.rif_a).ok_or(Errore::Formato("riferimento mancante"))?;
                     let b = match t.rif_b {
                         Some(m) => Some(st.riferimento(m).ok_or(Errore::Formato("secondo riferimento mancante"))?),
                         None => None,
                     };
-                    prevedi(st, &Previsione { a, b, va: &va, vb: &vb, modi: &modi })
+                    prevedi(&geo, &Previsione { a, b, va: &va, vb: &vb, modi: &modi })
                 };
-                let fine = if t.passo > 0 && !p.dettaglio.is_empty() { dettaglio::decodifica(&p.dettaglio, &pred, t.passo, t.croma, t.livelli, &st.mappa, st.griglia.celle(), Base::Tutto, &mut st.ctx) } else { pred };
+                let fine = if t.passo > 0 && !p.dettaglio.is_empty() { dettaglio::decodifica(&p.dettaglio, &pred, t.passo, t.croma, t.livelli, &geo.mappa, geo.griglia.celle(), Base::Tutto, &mut st.ctx) } else { pred };
                 out.push((base + t.mostra as usize, piani_in_rgb(&fine)));
                 st.tieni(t.mostra, fine);
-                st.vettori = va;
+                st.geo = geo;
+                st.vettori = campo_di_moto(&va, &vb, &modi, &t);
             }
         }
     }
@@ -692,30 +895,53 @@ impl Reel {
         self.fotogrammi.iter().map(|f| f.byte_totali()).sum()
     }
 
-    fn griglia_di(&self, i: usize) -> Result<Griglia, Errore> {
-        let chiave = self.fotogrammi[..i].iter().rev().find_map(|f| if let Fotogramma::Chiave(c) = f { Some(c) } else { None }).ok_or(Errore::Formato("fotogramma previsto senza una chiave prima"))?;
-        Ok(crate::leggi_testa(&chiave.testa)?.griglia)
+    /// Ripercorre i fotogrammi fino all'`i`-esimo (in ordine di decodifica) seguendo solo griglie e spostamenti,
+    /// senza toccare i pixel: la griglia di un previsto dipende dagli spostamenti di quello prima. Restituisce la
+    /// griglia del fotogramma `i` e i suoi spostamenti verso il primo riferimento (vuoti per una chiave).
+    fn ripercorri(&self, i: usize) -> Result<(Griglia, Vec<(i32, i32)>, Vec<u8>), Errore> {
+        let mut corrente: Option<(Griglia, Griglia, Vec<(i32, i32)>)> = None; // base, ultima griglia, ultimi spostamenti
+        for f in &self.fotogrammi[..=i] {
+            match f {
+                Fotogramma::Chiave(c) => {
+                    let g = crate::leggi_testa(&c.testa)?.griglia;
+                    let v = vec![(0, 0); g.celle()];
+                    corrente = Some((g.clone(), g, v));
+                }
+                Fotogramma::Previsto(p) => {
+                    let (base, ultima, vettori) = corrente.take().ok_or(Errore::Formato("fotogramma previsto senza una chiave prima"))?;
+                    let g = griglia_del_previsto(&base, &ultima, &vettori, p);
+                    let t = leggi_testa_previsto(p)?;
+                    let (va, vb, modi) = leggi_vettori(&g, p, &t);
+                    if std::ptr::eq(f, &self.fotogrammi[i]) {
+                        return Ok((g, va, modi));
+                    }
+                    let moto = campo_di_moto(&va, &vb, &modi, &t);
+                    corrente = Some((base, g, moto));
+                }
+            }
+        }
+        let (_, g, _) = corrente.ok_or(Errore::Formato("fotogramma inesistente"))?;
+        Ok((g, vec![], vec![]))
+    }
+
+    /// La griglia del fotogramma `i` (in ordine di decodifica): per misurare e guardare quante celle ha e quali sono
+    /// divise.
+    pub fn griglia(&self, i: usize) -> Result<Griglia, Errore> {
+        self.fotogrammi.get(i).ok_or(Errore::Formato("fotogramma inesistente"))?;
+        Ok(self.ripercorri(i)?.0)
     }
 
     /// Gli spostamenti per cella verso il primo riferimento del fotogramma `i` (in ordine di decodifica), in mezzi
     /// pixel (vuoto per una chiave): per misurare e guardare.
     pub fn vettori(&self, i: usize) -> Result<Vec<(i32, i32)>, Errore> {
-        let f = self.fotogrammi.get(i).ok_or(Errore::Formato("fotogramma inesistente"))?;
-        let Fotogramma::Previsto(p) = f else { return Ok(vec![]) };
-        let g = self.griglia_di(i)?;
-        let tp = leggi_testa_previsto(p)?;
-        Ok(leggi_vettori(&g, p, &tp).0)
+        self.fotogrammi.get(i).ok_or(Errore::Formato("fotogramma inesistente"))?;
+        Ok(self.ripercorri(i)?.1)
     }
 
     /// Per cella da dove si prevede il fotogramma `i` (0 passato, 1 futuro, 2 media); vuoto se non bidirezionale.
     pub fn modi(&self, i: usize) -> Result<Vec<u8>, Errore> {
-        let f = self.fotogrammi.get(i).ok_or(Errore::Formato("fotogramma inesistente"))?;
-        let Fotogramma::Previsto(p) = f else { return Ok(vec![]) };
-        if !p.bidirezionale() {
-            return Ok(vec![]);
-        }
-        let g = self.griglia_di(i)?;
-        Ok(decodifica_modi(&p.modi, g.celle()))
+        self.fotogrammi.get(i).ok_or(Errore::Formato("fotogramma inesistente"))?;
+        Ok(self.ripercorri(i)?.2)
     }
 
     /// Tutto il reel in un elenco di byte: magia, versione, numero di fotogrammi, poi per ognuno il tipo e i suoi
@@ -739,7 +965,7 @@ impl Reel {
                 }
                 Fotogramma::Previsto(p) => {
                     b.push(1);
-                    for q in [&p.testa, &p.modi, &p.vettori, &p.vettori_b, &p.dettaglio] {
+                    for q in [&p.testa, &p.divisioni, &p.modi, &p.vettori, &p.vettori_b, &p.dettaglio] {
                         pezzo(&mut b, q);
                     }
                 }
@@ -777,8 +1003,8 @@ impl Reel {
                     fotogrammi.push(Fotogramma::Chiave(Codificata { testa, colore, pendenza, dettaglio }));
                 }
                 1 => {
-                    let (testa, modi, vettori, vettori_b, dettaglio) = (pezzo(&mut i)?, pezzo(&mut i)?, pezzo(&mut i)?, pezzo(&mut i)?, pezzo(&mut i)?);
-                    fotogrammi.push(Fotogramma::Previsto(Previsto { testa, modi, vettori, vettori_b, dettaglio }));
+                    let (testa, divisioni, modi, vettori, vettori_b, dettaglio) = (pezzo(&mut i)?, pezzo(&mut i)?, pezzo(&mut i)?, pezzo(&mut i)?, pezzo(&mut i)?, pezzo(&mut i)?);
+                    fotogrammi.push(Fotogramma::Previsto(Previsto { testa, divisioni, modi, vettori, vettori_b, dettaglio }));
                 }
                 _ => return Err(Errore::Formato("tipo di fotogramma sconosciuto")),
             }
@@ -830,7 +1056,7 @@ mod tests {
     }
 
     fn par() -> ParametriReel {
-        ParametriReel { foto: Parametri { raggio: 12, ..Parametri::default() }, chiave_ogni: 0, cerca: 8, soglia_chiave: 40, bidirezionali: 0 }
+        ParametriReel { foto: Parametri { raggio: 12, ..Parametri::default() }, chiave_ogni: 0, cerca: 8, soglia_chiave: 40, bidirezionali: 0, celle_mobili: true }
     }
 
     fn tipi(r: &Reel) -> String {
@@ -910,6 +1136,52 @@ mod tests {
         assert_eq!(decodifica_reel(&r6).unwrap().len(), 6);
     }
 
+    /// Due moti nella stessa scena: la metà sinistra scorre di (3, 0) a ogni fotogramma, la destra sta ferma.
+    fn due_moti(w: u32, h: u32, i: i32) -> Immagine {
+        let sinistra = scena(w, h, 3 * i, 0, 0);
+        let destra = scena(w, h, 0, 0, 1);
+        let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let k = (y * w as usize + x) * 3;
+                rgb.extend_from_slice(if x < w as usize / 2 { &sinistra.rgb[k..k + 3] } else { &destra.rgb[k..k + 3] });
+            }
+        }
+        Immagine { larghezza: w, altezza: h, rgb }
+    }
+
+    #[test]
+    fn le_celle_si_dividono_dove_il_moto_cambia_e_chi_legge_lo_prevede() {
+        let f: Vec<Immagine> = (0..6).map(|i| due_moti(192, 128, i)).collect();
+        let r = codifica_reel(&f, par()).unwrap();
+        assert_eq!(tipi(&r), "CPPPPP");
+        let base = r.griglia(0).unwrap().celle_base();
+        // il primo previsto parte dalla griglia prevista (tutta intera: la chiave era ferma) e divide le celle sul confine
+        let g1 = r.griglia(1).unwrap();
+        let divise1 = g1.raffinate().iter().filter(|&&d| d).count();
+        assert!(divise1 > 0 && divise1 * 2 < base, "divise {divise1} su {base}");
+        // le celle divise stanno sul confine tra i due moti (x ≈ 96): nessuna lontana
+        for k in 0..base {
+            if g1.raffinate()[k] {
+                let (cx, _) = g1.centro(g1.inizio[k]);
+                assert!((cx / S - 96).abs() <= 2 * 12, "cella divisa lontana dal confine: x = {}", cx / S);
+            }
+        }
+        // dal secondo previsto in poi chi legge prevede le divisioni dagli spostamenti: i bit di correzione calano
+        let div = |i: usize| if let Fotogramma::Previsto(p) = &r.fotogrammi[i] { p.divisioni.len() } else { 0 };
+        assert!(div(1) > 0, "il primo previsto deve dire quali celle divide");
+        assert!(div(2) < div(1) && div(3) < div(1), "correzioni {} {} {}", div(1), div(2), div(3));
+        let g3 = r.griglia(3).unwrap();
+        assert!(g3.raffinate().iter().filter(|&&d| d).count() > 0);
+        // si decodifica uguale e costa meno che con le celle fisse
+        let d = decodifica_reel(&r).unwrap();
+        assert!(psnr_minimo(&f, &d) >= 2800, "PSNR {}", psnr_minimo(&f, &d));
+        let fisse = codifica_reel(&f, ParametriReel { celle_mobili: false, ..par() }).unwrap();
+        assert!(r.griglia(3).unwrap().celle() > fisse.griglia(3).unwrap().celle());
+        let dfisse = decodifica_reel(&fisse).unwrap();
+        assert!(r.byte_totali() < fisse.byte_totali() || psnr_minimo(&f, &d) > psnr_minimo(&f, &dfisse) + 50, "mobili {} byte, fisse {}", r.byte_totali(), fisse.byte_totali());
+    }
+
     #[test]
     fn cambio_di_scena_fa_una_chiave() {
         let f = vec![scena(160, 96, 0, 0, 0), scena(160, 96, 0, 0, 0), gradiente(160, 96), gradiente(160, 96)];
@@ -953,6 +1225,7 @@ mod tests {
             for (i, x) in p.modi.iter_mut().enumerate() {
                 *x = x.wrapping_add((i as u8).wrapping_mul(31));
             }
+            p.divisioni = vec![0x5a, 0xa5, 0x00, 0xff, 0x13];
             for (i, x) in p.dettaglio.iter_mut().enumerate() {
                 *x = x.wrapping_add(i as u8);
             }

@@ -16,16 +16,16 @@ fn main() {
     let sep = args.iter().position(|a| a == "--").unwrap_or(args.len());
     let cartella = args.first().expect("cartella dei fotogrammi");
     let scrivi = args[..sep].iter().find_map(|a| a.strip_prefix("scrivi="));
-    let insiemi: Vec<(u8, u8, u16, u8, u16, u8)> = if sep < args.len() {
+    let insiemi: Vec<(u8, u8, u16, u8, u16, u8, u8)> = if sep < args.len() {
         args[sep + 1..]
             .iter()
             .map(|s| {
                 let v: Vec<u32> = s.split(',').map(|x| x.parse().expect("numero")).collect();
-                (v[0] as u8, *v.get(1).unwrap_or(&(v[0] / 2)) as u8, *v.get(2).unwrap_or(&60) as u16, *v.get(3).unwrap_or(&16) as u8, *v.get(4).unwrap_or(&0) as u16, *v.get(5).unwrap_or(&3) as u8)
+                (v[0] as u8, *v.get(1).unwrap_or(&(v[0] / 2)) as u8, *v.get(2).unwrap_or(&60) as u16, *v.get(3).unwrap_or(&16) as u8, *v.get(4).unwrap_or(&0) as u16, *v.get(5).unwrap_or(&3) as u8, *v.get(6).unwrap_or(&1) as u8)
             })
             .collect()
     } else {
-        vec![(8, 4, 60, 16, 0, 3), (8, 4, 60, 16, 0, 0), (12, 6, 60, 16, 0, 3), (12, 6, 60, 16, 0, 0), (16, 8, 60, 16, 0, 3)]
+        vec![(12, 6, 60, 16, 0, 3, 1), (12, 6, 60, 16, 0, 3, 0), (16, 8, 60, 16, 0, 3, 1), (16, 8, 60, 16, 0, 3, 0)]
     };
 
     let mut nomi: Vec<_> = std::fs::read_dir(cartella).expect("cartella").filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with("frame-") && n.ends_with(".bmp")).unwrap_or(false)).collect();
@@ -35,9 +35,9 @@ fn main() {
     assert!(n > 0, "nessun frame-NNN.bmp in {cartella}");
     let (w, h) = (fotogrammi[0].larghezza, fotogrammi[0].altezza);
     println!("{n} fotogrammi {w}x{h} · grezzo {} byte/fotogramma", w * h * 3);
-    println!("{:<22} {:>6} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>7} {:>7} {:>6} {:>9}", "passo,croma,chiave,cerca,r,b", "chiavi", "totale", "B/fotog.", "B chiave", "B prev.", "B bidir", "vett.", "PSNR m", "min", "mosse", "ms c/d");
-    for (i, &(passo, croma, chiave_ogni, cerca, raggio, bidir)) in insiemi.iter().enumerate() {
-        let p = ParametriReel { foto: Parametri { passo_dettaglio: passo, passo_croma: croma, raggio, ..Parametri::default() }, chiave_ogni, cerca, soglia_chiave: 24, bidirezionali: bidir };
+    println!("{:<24} {:>6} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>6} {:>6} {:>7} {:>7} {:>6} {:>9}", "passo,croma,chiave,cerca,r,b,m", "chiavi", "totale", "B/fotog.", "B chiave", "B prev.", "B bidir", "vett.", "celle", "div.B", "PSNR m", "min", "mosse", "ms c/d");
+    for (i, &(passo, croma, chiave_ogni, cerca, raggio, bidir, mobili)) in insiemi.iter().enumerate() {
+        let p = ParametriReel { foto: Parametri { passo_dettaglio: passo, passo_croma: croma, raggio, ..Parametri::default() }, chiave_ogni, cerca, soglia_chiave: 24, bidirezionali: bidir, celle_mobili: mobili != 0 };
         let t0 = Instant::now();
         let r = codifica_reel(&fotogrammi, p).unwrap();
         let tc = t0.elapsed().as_millis();
@@ -57,6 +57,7 @@ fn main() {
         // celle che si muovono: media sui previsti della quota di vettori diversi da zero
         let mut mosse = 0usize;
         let mut celle = 0usize;
+        let b_div: usize = r.fotogrammi.iter().filter_map(|f| if let Fotogramma::Previsto(p) = f { Some(p.divisioni.len()) } else { None }).sum();
         for k in 0..n {
             if matches!(r.fotogrammi[k], Fotogramma::Previsto(_)) {
                 let v = r.vettori(k).unwrap();
@@ -66,8 +67,8 @@ fn main() {
         }
         let totale = r.in_byte().len();
         println!(
-            "{:<22} {:>6} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>7} {:>7} {:>5}% {:>4}/{:<4}",
-            format!("{passo},{croma},{chiave_ogni},{cerca},{raggio},{bidir}"),
+            "{:<24} {:>6} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>6} {:>6} {:>7} {:>7} {:>5}% {:>4}/{:<4}",
+            format!("{passo},{croma},{chiave_ogni},{cerca},{raggio},{bidir},{mobili}"),
             chiavi,
             totale,
             totale / n,
@@ -75,6 +76,8 @@ fn main() {
             if np > bidir_n { (b_prev - b_bidir) / (np - bidir_n) } else { 0 },
             if bidir_n > 0 { b_bidir / bidir_n } else { 0 },
             if np > 0 { b_vett / np } else { 0 },
+            if np > 0 { celle / np } else { 0 },
+            if np > 0 { b_div / np } else { 0 },
             db(media as u32),
             db(minimo),
             if celle > 0 { mosse * 100 / celle } else { 0 },

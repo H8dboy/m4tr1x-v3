@@ -43,7 +43,7 @@ pub struct Immagine {
 pub const VERSIONE: u8 = 3;
 const MAGIA: &[u8; 4] = b"M4CL";
 /// Scala dei numeri a virgola fissa per le coordinate dei centri (1 pixel = 256).
-const S: i64 = 256;
+pub(crate) const S: i64 = 256;
 /// √3 · 256, arrotondato: passo orizzontale tra i centri = r · √3.
 const RAD3: i64 = 443;
 /// Raggio più piccolo e più grande ammessi dal formato (pixel).
@@ -309,6 +309,22 @@ impl Griglia {
             }
         }
         (vicina, peso)
+    }
+
+    /// Mappa e vicine in un giro solo (per il reel, che rifà la geometria a ogni fotogramma).
+    pub fn mappa_e_vicine(&self) -> (Vec<u32>, Vec<u32>, Vec<u8>) {
+        let n = (self.larghezza * self.altezza) as usize;
+        let (mut mappa, mut vicina, mut peso) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
+        for y in 0..self.altezza {
+            for x in 0..self.larghezza {
+                let ((dd1, c1), (dd2, c2)) = self.due_celle(x, y);
+                let p = if dd1 + dd2 == 0 { 0 } else { ((16 * dd1 - 8 * dd2) / (dd1 + dd2)).clamp(0, 4) };
+                mappa.push(c1);
+                vicina.push(c2);
+                peso.push(p as u8);
+            }
+        }
+        (mappa, vicina, peso)
     }
 
     /// Per ogni pixel la sua cella, riga per riga.
