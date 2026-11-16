@@ -112,3 +112,34 @@ test('"file servito" solo nei test: una funzione passata dal codice; da un file 
     assert.ok(!s.a.logs.some(l => /servit/i.test(l)), s.a.logs.join('\n'))
   } finally { await b.close(); await s.a.close() }
 })
+
+test("un file a pezzi (tag pezzo, ADR-0005) si replica pezzo per pezzo: l'hash intero non è un blob e non si chiede", async () => {
+  const owner = testIdentity()
+  const pezzi = [crypto.randomBytes(3000), crypto.randomBytes(2000)]
+  const intero = Buffer.concat(pezzi)
+  const shaIntero = crypto.createHash('sha256').update(intero).digest('hex')
+  const auths = pezzi.map(p => uploadAuth(owner, p))
+  const a = await startTestNode({ uploaders: [owner.publicKey] })
+  const b = await startTestNode({ peers: [`http://127.0.0.1:${a.node.port}`], allowLoopbackPeersForTests: true })
+  try {
+    for (const [i, p] of pezzi.entries()) {
+      const up = await request(a.node.port, '/blob', { method: 'PUT', body: p, headers: { Authorization: auths[i].header } })
+      assert.equal(up.status, 201, up.body.toString())
+    }
+    // una scheda a celle: ogni pezzo con hash e misura; `x` e `size` sono del file intero, che come blob non esiste
+    const tags = [['x', shaIntero], ['m', 'image/vnd.m4tr1x.celle'], ['size', String(intero.length)], ['t', 'm4tr1x-signal'], ...auths.map((x, i) => ['pezzo', x.sha, String(pezzi[i].length)])]
+    const ev = protocol.buildEvent({ kind: 1063, content: 'foto a celle', tags }, owner, NET)
+    const ws = await wsOpen(a.node.port)
+    const ok = await wsExchange(ws, ['EVENT', ev], m => m[0] === 'OK')
+    ws.close()
+    assert.equal(ok.at(-1)[2], true, JSON.stringify(ok.at(-1)))
+    for (const [i, x] of auths.entries()) {
+      const preso = await waitFor(async () => { const r = await request(b.node.port, '/blob/' + x.sha); return r.status === 200 && r.body.equals(pezzi[i]) })
+      assert.ok(preso, `B non ha replicato il pezzo ${i + 1}:\n` + b.logs.join('\n'))
+    }
+    const r = await request(b.node.port, '/blob/' + shaIntero)
+    assert.equal(r.status, 404, 'il file intero non è un blob')
+    assert.equal(b.logs.filter(l => l.startsWith('peer: file richiesto')).length, 2, "si chiedono i due pezzi, non l'intero:\n" + b.logs.join('\n'))
+    assert.ok(!b.logs.some(l => l.includes('non replicato')), b.logs.join('\n'))
+  } finally { await b.close(); await a.close() }
+})
