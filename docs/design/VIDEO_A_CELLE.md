@@ -2,8 +2,7 @@
 
 > **Priorità (fondatore, 12/11/2026): questo viene prima del resto del social.** "Se vinciamo sulla banda abbiamo vinto su tutto: a quel punto M4TR1X è realtà, il resto può aspettare." Codice: `app/celle` (PR #14), misure nel suo README.
 >
-> Stato: prima versione per le foto scritta e misurata il 12/11 (strati base 5–25 KB per un'immagine intera; dettaglio ancora 8–10× il JPEG). Scritta qui perché una prima versione era andata persa. Si riprende
-> quando si fanno gli hub (ADR-0006, F6). Non cambia il trasporto a pezzi (ADR-0005), lo completa.
+> Stato: prima versione per le foto scritta e misurata il 12/11 (strati base 5–25 KB per un'immagine intera; dettaglio 8–10× il JPEG). Il 13/11 lo strato del dettaglio è stato rifatto (trasformata a onde intera 5/3, codifica aritmetica adattiva, pezzi progressivi) e gli strati base compressi: a pari PSNR le celle stanno a 0,29× il JPEG q50 su un render e a 0,70× su una foto di uno schermo, con il dettaglio che arriva a pezzi (misure nel README del crate). Scritta qui perché una prima versione era andata persa. Prossimo: foto normali e telefono, poi i reel (previsione cella per cella dal fotogramma prima). Non cambia il trasporto a pezzi (ADR-0005), lo completa.
 
 ## Il problema che risolve
 

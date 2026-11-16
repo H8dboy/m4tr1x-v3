@@ -132,6 +132,10 @@
 
 ## Prossimo (dal 12/11/2026)
 
+**Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 13/11 in `app/celle/README.md`: foto a
+0,29–0,70× i byte del JPEG a pari PSNR, dettaglio a pezzi. Prossimi passi lì: foto normali e telefono, pendenze più
+leggere, reel con previsione cella per cella, strati come blob a pezzi.
+
 **Per far usare l'app a persone fidate (giorni):**
 1. Installer ricostruito da `main` e provato dal fondatore con la sua identità (recupero dal seme, profilo, post, un file).
 2. Report completo con tor vero e campagna di sabotaggio completa su `main` (ultima completa il 16/10): serve un PC con il tor del lock Windows (casa), non l'officina.

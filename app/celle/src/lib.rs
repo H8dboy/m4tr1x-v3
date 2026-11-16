@@ -13,11 +13,20 @@
 //! 3. **Strati per cella, colore e dettaglio separati.**
 //!    - strato 0 — il **colore** medio della cella (Y, Cb, Cr): poco, arriva subito, basta per vedere l'immagine intera;
 //!    - strato 1 — la **pendenza** di luce e colore dentro la cella (sei numeri): sfumature senza "piastrelle";
-//!    - strato 2 — il **dettaglio**: la differenza che resta, pixel per pixel, quantizzata e compressa con conteggi
-//!      di zeri e numeri a lunghezza variabile. Si può anche non mandare: l'immagine resta intera, solo meno fine.
+//!    - strato 2 — il **dettaglio**: l'immagine vera passa per una trasformata a onde intera (`onde`), le bande si
+//!      quantizzano e si scrivono con la codifica aritmetica adattiva (`aritmetica`), a pezzi dalla banda più
+//!      grossolana alla più fine (`dettaglio`); la media grossolana è prevista dagli strati 0 e 1. Si può anche non
+//!      mandare, o mandare a metà: l'immagine resta intera, solo meno fine.
 //!
 //! Il formato è un elenco di byte semplice (`Codificata`): intestazione + tre strati separati, così ogni strato può
 //! viaggiare come blob proprio (ADR-0005) e arrivare quando la banda c'è.
+
+pub mod aritmetica;
+pub mod dettaglio;
+pub mod onde;
+mod strati;
+
+pub use dettaglio::pezzi_byte as pezzi_dettaglio;
 
 /// Un'immagine RGB a 8 bit per canale, righe dall'alto.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,7 +38,7 @@ pub struct Immagine {
 }
 
 /// Versione del formato: cambia se cambia il modo di leggere i byte.
-pub const VERSIONE: u8 = 1;
+pub const VERSIONE: u8 = 2;
 const MAGIA: &[u8; 4] = b"M4CL";
 /// Scala dei numeri a virgola fissa per le coordinate dei centri (1 pixel = 256).
 const S: i64 = 256;
@@ -44,8 +53,14 @@ const SCALA_PENDENZA: i64 = 32;
 /// Parametri di codifica scelti da chi chiama (o predefiniti).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Parametri {
-    /// Passo di quantizzazione del dettaglio (strato 2): più grande = meno byte, meno fine. 0 = niente strato 2.
+    /// Passo di quantizzazione del dettaglio della luce (strato 2): più grande = meno byte, meno fine. 0 = niente
+    /// strato 2.
     pub passo_dettaglio: u8,
+    /// Passo di quantizzazione del dettaglio dei colori (dimezzati). Metà di quello della luce rende meglio sul PSNR
+    /// in RGB (gli errori sui colori si amplificano passando a RGB); misurato il 13/11/2026.
+    pub passo_croma: u8,
+    /// Livelli della trasformata a onde (1–5): più livelli = più pezzi progressivi.
+    pub livelli: u8,
     /// Una cella si raffina (7 celle) se lo scarto medio assoluto della sua luce supera questa soglia.
     pub soglia_raffinamento: u8,
     /// Forza un raggio invece di ricavarlo dalla complessità (0 = automatico).
@@ -54,18 +69,18 @@ pub struct Parametri {
 
 impl Default for Parametri {
     fn default() -> Self {
-        Self { passo_dettaglio: 8, soglia_raffinamento: 10, raggio: 0 }
+        Self { passo_dettaglio: 8, passo_croma: 4, livelli: 3, soglia_raffinamento: 10, raggio: 0 }
     }
 }
 
 /// Il risultato della codifica: strati separati, ognuno può essere un blob.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Codificata {
-    /// intestazione: magia, versione, larghezza, altezza, raggio, passo, celle raffinate
+    /// intestazione: magia, versione, larghezza, altezza, raggio, passo, passo dei colori, livelli, celle raffinate
     pub testa: Vec<u8>,
-    /// strato 0: colore medio per cella (Y, Cb, Cr)
+    /// strato 0: colore medio per cella (Y, Cb, Cr), compresso (`strati`)
     pub colore: Vec<u8>,
-    /// strato 1: pendenza per cella di luce, Cb e Cr (gx, gy per ognuno: 6 byte)
+    /// strato 1: pendenza per cella di luce, Cb e Cr (gx, gy per ognuno), compressa (`strati`)
     pub pendenza: Vec<u8>,
     /// strato 2: dettaglio quantizzato e compresso
     pub dettaglio: Vec<u8>,
@@ -157,11 +172,11 @@ pub struct Griglia {
     pub larghezza: u32,
     pub altezza: u32,
     pub raggio: u16,
-    colonne: u32,
-    righe: u32,
+    pub(crate) colonne: u32,
+    pub(crate) righe: u32,
     /// per ogni cella base: indice della sua prima cella nell'elenco finale (7 se raffinata, 1 se no)
-    inizio: Vec<u32>,
-    raffinate: Vec<bool>,
+    pub(crate) inizio: Vec<u32>,
+    pub(crate) raffinate: Vec<bool>,
     /// centri di tutte le celle finali, in virgola fissa (×256)
     centri: Vec<(i64, i64)>,
 }
@@ -291,7 +306,7 @@ impl Griglia {
 
 // ─── Byte: numeri a lunghezza variabile e zig-zag ────────────────────────────
 
-fn scrivi_varint(out: &mut Vec<u8>, mut v: u64) {
+pub(crate) fn scrivi_varint(out: &mut Vec<u8>, mut v: u64) {
     while v >= 0x80 {
         out.push((v as u8) | 0x80);
         v >>= 7;
@@ -299,7 +314,7 @@ fn scrivi_varint(out: &mut Vec<u8>, mut v: u64) {
     out.push(v as u8);
 }
 
-fn leggi_varint(b: &[u8], i: &mut usize) -> Result<u64, Errore> {
+pub(crate) fn leggi_varint(b: &[u8], i: &mut usize) -> Result<u64, Errore> {
     let mut v: u64 = 0;
     let mut sh = 0;
     loop {
@@ -317,10 +332,12 @@ fn leggi_varint(b: &[u8], i: &mut usize) -> Result<u64, Errore> {
 }
 
 #[inline]
+#[allow(dead_code)]
 fn zigzag(v: i64) -> u64 {
     ((v << 1) ^ (v >> 63)) as u64
 }
 #[inline]
+#[allow(dead_code)]
 fn dezigzag(u: u64) -> i64 {
     ((u >> 1) as i64) ^ -((u & 1) as i64)
 }
@@ -433,44 +450,20 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
         pendenza.extend(pendenze[c].iter().map(|&v| v as u8));
     }
 
-    // strato 2: dettaglio = differenza tra la luce vera e colore + pendenza, quantizzata; per cella, pixel in
-    // ordine di riga; zeri contati, valori zig-zag a lunghezza variabile
+    // strato 2: dettaglio = bande della trasformata a onde dell'immagine vera, con la media grossolana prevista
+    // dall'immagine di base (quella che il decodificatore ricava dagli strati 0 e 1)
+    let livelli = p.livelli.clamp(1, dettaglio::LIVELLI_MAX);
     let mut dettaglio = Vec::new();
     if p.passo_dettaglio > 0 {
-        let passo = p.passo_dettaglio as i64;
-        // ordine: tutti i pixel della cella 0, poi della 1, … (così uno strato parziale è comunque "a celle")
-        let mut per_cella: Vec<Vec<u32>> = vec![vec![]; n];
-        for (k, &c) in mappa.iter().enumerate() {
-            per_cella[c as usize].push(k as u32);
-        }
-        let mut zeri: u64 = 0;
-        for c in 0..n {
-            let (gx, gy) = (pendenze[c][0], pendenze[c][1]);
-            for &k in &per_cella[c] {
-                let (dx, dy) = scostamento(&bari, c as u32, k as usize, w);
-                let previsto = media[c].0 + (gx as i64 * dx + gy as i64 * dy) / SCALA_PENDENZA;
-                let resto = luce[k as usize] as i64 - previsto;
-                // zona morta: sotto i ¾ del passo non vale la pena spendere byte (e si evita di peggiorare); poi al passo più vicino
-                let q = if resto.abs() * 4 < passo * 3 {
-                    0
-                } else if resto >= 0 {
-                    (resto + passo / 2) / passo
-                } else {
-                    -((-resto + passo / 2) / passo)
-                };
-                if q == 0 {
-                    zeri += 1;
-                } else {
-                    scrivi_varint(&mut dettaglio, zeri);
-                    scrivi_varint(&mut dettaglio, zigzag(q));
-                    zeri = 0;
-                }
-            }
-        }
-        scrivi_varint(&mut dettaglio, zeri);
+        let base = piani_base(&mappa, &bari, &colore, &pendenza, w, h);
+        let orig = piani_di(img, &luce);
+        dettaglio = dettaglio::codifica(&orig, &base, p.passo_dettaglio, p.passo_croma, livelli);
     }
 
-    // intestazione: magia, versione, w, h, raggio, passo, celle base raffinate come bit
+    let colore = strati::codifica_colore(&griglia, &colore);
+    let pendenza = strati::codifica_pendenza(&griglia, &pendenza);
+
+    // intestazione: magia, versione, w, h, raggio, passi, livelli, celle base raffinate come bit
     let mut testa = Vec::new();
     testa.extend_from_slice(MAGIA);
     testa.push(VERSIONE);
@@ -478,6 +471,8 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
     testa.extend_from_slice(&(h as u16).to_le_bytes());
     testa.extend_from_slice(&raggio.to_le_bytes());
     testa.push(p.passo_dettaglio);
+    testa.push(p.passo_croma);
+    testa.push(livelli);
     let bits = griglia.raffinate();
     scrivi_varint(&mut testa, bits.len() as u64);
     let mut byte = 0u8;
@@ -496,6 +491,46 @@ pub fn codifica(img: &Immagine, p: Parametri) -> Result<(Codificata, Griglia), E
     Ok((Codificata { testa, colore, pendenza, dettaglio }, griglia))
 }
 
+/// I piani dell'immagine vera: luce intera, colori dimezzati.
+fn piani_di(img: &Immagine, luce: &[u8]) -> dettaglio::Piani {
+    let (w, h) = (img.larghezza as usize, img.altezza as usize);
+    let mut cb = dettaglio::Piano::nuovo(w, h);
+    let mut cr = dettaglio::Piano::nuovo(w, h);
+    for (k, px) in img.rgb.chunks_exact(3).enumerate() {
+        let (_, b, r) = ycbcr(px[0], px[1], px[2]);
+        cb.v[k] = b as i32;
+        cr.v[k] = r as i32;
+    }
+    dettaglio::Piani { y: dettaglio::Piano { w, h, v: luce.iter().map(|&v| v as i32).collect() }, cb: dettaglio::dimezza(&cb), cr: dettaglio::dimezza(&cr) }
+}
+
+/// L'immagine di base dagli strati 0 e 1 (colore + pendenza per cella), pixel per pixel: luce intera, colori
+/// dimezzati. La usano allo stesso modo chi codifica (per prevedere) e chi decodifica (per ricostruire): deve dare
+/// gli stessi numeri da una parte e dall'altra.
+fn piani_base(mappa: &[u32], bari: &[(i64, i64)], colore: &[u8], pendenza: &[u8], w: usize, h: usize) -> dettaglio::Piani {
+    let mut y = dettaglio::Piano::nuovo(w, h);
+    let mut cb = dettaglio::Piano::nuovo(w, h);
+    let mut cr = dettaglio::Piano::nuovo(w, h);
+    let con_pendenza = !pendenza.is_empty();
+    for (k, &cel) in mappa.iter().enumerate() {
+        let cel = cel as usize;
+        let mut yy = colore[cel * 3] as i64;
+        let mut b = colore[cel * 3 + 1] as i64;
+        let mut r = colore[cel * 3 + 2] as i64;
+        if con_pendenza {
+            let (dx, dy) = scostamento(bari, cel as u32, k, w);
+            let g = |i: usize| pendenza[cel * 6 + i] as i8 as i64;
+            yy += (g(0) * dx + g(1) * dy) / SCALA_PENDENZA;
+            b += (g(2) * dx + g(3) * dy) / SCALA_PENDENZA;
+            r += (g(4) * dx + g(5) * dy) / SCALA_PENDENZA;
+        }
+        y.v[k] = yy.clamp(0, 255) as i32;
+        cb.v[k] = b.clamp(0, 255) as i32;
+        cr.v[k] = r.clamp(0, 255) as i32;
+    }
+    dettaglio::Piani { y, cb: dettaglio::dimezza(&cb), cr: dettaglio::dimezza(&cr) }
+}
+
 /// Quanti strati usare nella decodifica: solo colore, colore e pendenza, o tutto.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Strati {
@@ -507,7 +542,7 @@ pub enum Strati {
 /// Decodifica. Gli strati mancanti (vuoti) si saltano: l'immagine esce intera, meno fine.
 pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
     let t = &c.testa;
-    if t.len() < 12 || &t[0..4] != MAGIA {
+    if t.len() < 14 || &t[0..4] != MAGIA {
         return Err(Errore::Formato("intestazione"));
     }
     if t[4] != VERSIONE {
@@ -516,11 +551,16 @@ pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
     let w = u16::from_le_bytes([t[5], t[6]]) as u32;
     let h = u16::from_le_bytes([t[7], t[8]]) as u32;
     let raggio = u16::from_le_bytes([t[9], t[10]]);
-    let passo = t[11] as i64;
+    let passo = t[11];
+    let passo_croma = t[12];
+    let livelli = t[13];
     if w == 0 || h == 0 || !(RAGGIO_MIN..=RAGGIO_MAX).contains(&raggio) {
         return Err(Errore::Formato("dimensioni o raggio"));
     }
-    let mut i = 12;
+    if !(1..=dettaglio::LIVELLI_MAX).contains(&livelli) {
+        return Err(Errore::Formato("livelli"));
+    }
+    let mut i = 14;
     let nb = leggi_varint(t, &mut i)? as usize;
     let base = Griglia::nuova(w, h, raggio);
     if nb != base.celle_base() {
@@ -532,72 +572,58 @@ pub fn decodifica(c: &Codificata, strati: Strati) -> Result<Immagine, Errore> {
         *r = byte & (1 << (k % 8)) != 0;
     }
     let griglia = base.con_raffinate(raffinate);
-    let n = griglia.celle();
-    if c.colore.len() != n * 3 {
+    if c.colore.is_empty() {
         return Err(Errore::Formato("strato del colore"));
     }
+    let colore = strati::decodifica_colore(&griglia, &c.colore);
     let con_pendenza = strati != Strati::Colore && !c.pendenza.is_empty();
-    if con_pendenza && c.pendenza.len() != n * 6 {
-        return Err(Errore::Formato("strato della pendenza"));
-    }
+    let pendenza: Vec<u8> = if con_pendenza { strati::decodifica_pendenza(&griglia, &c.pendenza) } else { vec![] };
     let mappa = griglia.mappa();
     let bari = griglia.baricentri(&mappa);
     let (w, h) = (w as usize, h as usize);
-    let mut luce = vec![0i64; w * h];
-    let mut croma = vec![(0u8, 0u8); w * h];
     let mut uscita = Vec::with_capacity(w * h * 3);
+    // il dettaglio si applica solo sopra colore + pendenza: è stato previsto così da chi ha codificato
+    if strati == Strati::Tutti && con_pendenza && !c.dettaglio.is_empty() && passo > 0 {
+        let base = piani_base(&mappa, &bari, &colore, &pendenza, w, h);
+        let fine = dettaglio::decodifica(&c.dettaglio, &base, passo, passo_croma, livelli);
+        let (cb, cr) = (dettaglio::raddoppia(&fine.cb, w, h), dettaglio::raddoppia(&fine.cr, w, h));
+        for k in 0..w * h {
+            let (r, g, b) = rgb(fine.y.v[k].clamp(0, 255), cb.v[k].clamp(0, 255) as u8, cr.v[k].clamp(0, 255) as u8);
+            uscita.extend_from_slice(&[r, g, b]);
+        }
+        return Ok(Immagine { larghezza: w as u32, altezza: h as u32, rgb: uscita });
+    }
+    // senza dettaglio: colore e pendenza per cella, pixel per pixel, a piena risoluzione anche nei colori
     for (k, &cel) in mappa.iter().enumerate() {
         let cel = cel as usize;
-        let mut y = c.colore[cel * 3] as i64;
-        let mut cb = c.colore[cel * 3 + 1] as i64;
-        let mut cr = c.colore[cel * 3 + 2] as i64;
+        let mut y = colore[cel * 3] as i64;
+        let mut cb = colore[cel * 3 + 1] as i64;
+        let mut cr = colore[cel * 3 + 2] as i64;
         if con_pendenza {
             let (dx, dy) = scostamento(&bari, cel as u32, k, w);
-            let g = |i: usize| c.pendenza[cel * 6 + i] as i8 as i64;
+            let g = |i: usize| pendenza[cel * 6 + i] as i8 as i64;
             y += (g(0) * dx + g(1) * dy) / SCALA_PENDENZA;
             cb += (g(2) * dx + g(3) * dy) / SCALA_PENDENZA;
             cr += (g(4) * dx + g(5) * dy) / SCALA_PENDENZA;
         }
-        luce[k] = y;
-        croma[k] = (cb.clamp(0, 255) as u8, cr.clamp(0, 255) as u8);
-    }
-    if strati == Strati::Tutti && !c.dettaglio.is_empty() && passo > 0 {
-        let mut per_cella: Vec<Vec<u32>> = vec![vec![]; n];
-        for (k, &cel) in mappa.iter().enumerate() {
-            per_cella[cel as usize].push(k as u32);
-        }
-        let ordine = per_cella.into_iter().flatten();
-        let d = &c.dettaglio;
-        let mut i = 0usize;
-        let mut zeri = leggi_varint(d, &mut i)?;
-        let mut valore_dopo = true;
-        for k in ordine {
-            if zeri > 0 {
-                zeri -= 1;
-                continue;
-            }
-            if !valore_dopo {
-                break;
-            }
-            if i >= d.len() {
-                break;
-            }
-            let q = dezigzag(leggi_varint(d, &mut i)?);
-            luce[k as usize] += q * passo;
-            if i < d.len() {
-                zeri = leggi_varint(d, &mut i)?;
-            } else {
-                valore_dopo = false;
-            }
-        }
-    }
-    for (k, &cel) in mappa.iter().enumerate() {
-        let cel = cel as usize;
-        let _ = cel;
-        let (r, g, b) = rgb(luce[k].clamp(0, 255) as i32, croma[k].0, croma[k].1);
+        let (r, g, b) = rgb(y.clamp(0, 255) as i32, cb.clamp(0, 255) as u8, cr.clamp(0, 255) as u8);
         uscita.extend_from_slice(&[r, g, b]);
     }
     Ok(Immagine { larghezza: w as u32, altezza: h as u32, rgb: uscita })
+}
+
+/// PSNR (dB ×100) della sola luce: dice quanto è fine il dettaglio senza il peso dei colori.
+pub fn psnr_luce_x100(a: &Immagine, b: &Immagine) -> Option<u32> {
+    if a.rgb.len() != b.rgb.len() || a.rgb.is_empty() {
+        return None;
+    }
+    let (la, lb) = (luce_di(a), luce_di(b));
+    let se: u64 = la.iter().zip(&lb).map(|(x, y)| ((*x as i64 - *y as i64).pow(2)) as u64).sum();
+    if se == 0 {
+        return Some(9999);
+    }
+    let num = 65025u64 * la.len() as u64;
+    Some((10 * (log10_x100(num) as i64 - log10_x100(se) as i64)).max(0) as u32)
 }
 
 /// Rapporto segnale/rumore di picco (dB ×100) tra due immagini: più alto = più simili; oltre 3500 (35 dB) l'occhio
@@ -748,9 +774,11 @@ mod tests {
         let con_pendenza = decodifica(&c, Strati::ColoreEPendenza).unwrap();
         let tutto = decodifica(&c, Strati::Tutti).unwrap();
         let (p0, p1, p2) = (psnr_x100(&img, &solo_colore).unwrap(), psnr_x100(&img, &con_pendenza).unwrap(), psnr_x100(&img, &tutto).unwrap());
-        assert!(p0 < p1 && p1 <= p2, "gli strati devono migliorare: {p0} {p1} {p2}");
+        assert!(p0 < p1, "la pendenza deve migliorare il colore: {p0} {p1}");
         assert!(p1 > 3000, "un gradiente con la pendenza deve superare 30 dB: {p1}");
-        assert!(c.dettaglio.len() < c.colore.len(), "su un gradiente il dettaglio è quasi vuoto: {} byte", c.dettaglio.len());
+        // qui il dettaglio ha poco da aggiungere: resta sopra i 40 dB (i colori dimezzati costano qualche decimo)
+        assert!(p2 > 4000, "gradiente con il dettaglio: {p2}");
+        assert!(c.dettaglio.len() < 400, "su un gradiente il dettaglio è quasi vuoto: {} byte", c.dettaglio.len());
     }
 
     #[test]
@@ -780,8 +808,11 @@ mod tests {
         v.testa[4] = 9;
         assert!(decodifica(&v, Strati::Tutti).is_err());
         let mut col = c.clone();
-        col.colore.pop();
+        col.colore.clear();
         assert_eq!(decodifica(&col, Strati::Tutti).unwrap_err(), Errore::Formato("strato del colore"));
+        let mut col2 = c.clone();
+        col2.colore.truncate(col2.colore.len() / 2);
+        assert_eq!(decodifica(&col2, Strati::Tutti).unwrap().rgb.len(), img.rgb.len(), "colore a metà: immagine intera, colori sbagliati, nessun errore");
         let mut det = c.clone();
         det.dettaglio = vec![0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
         let _ = decodifica(&det, Strati::Tutti); // qualunque esito, ma senza panico
