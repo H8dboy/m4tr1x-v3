@@ -16,25 +16,41 @@
 set -euo pipefail
 UTENTE=m4app
 RESOLVER_PORTE=(53 853 5353 5355)
+# passi di `prepara` su stderr con l'ora: se si blocca (visto in CI il 24/11/2026: 60 s senza nessuna riga), si sa dove
+passo() { echo "passo $(date +%T.%3N): $*" >&2; }
 
 case "${1:-}" in
   prepara)
-    id -u "$UTENTE" >/dev/null 2>&1 || useradd --create-home --shell /usr/sbin/nologin "$UTENTE"
+    passo "utente $UTENTE: c'è già?"
+    if ! timeout 20 id -u "$UTENTE" >/dev/null 2>&1; then
+      passo "utente $UTENTE: useradd"
+      # in CI (24/11/2026) questo passo è rimasto appeso 60 s: con un tetto, chi tiene i file degli utenti, e un secondo tentativo
+      if ! timeout 20 useradd --create-home --shell /usr/sbin/nologin "$UTENTE"; then
+        echo "useradd non riuscito o appeso; processi e blocchi:" >&2
+        ps -eo pid,etime,cmd | grep -E 'useradd|passwd|shadow|dpkg|apt|nscd|userdb|sssd|cloud-init|waagent' | grep -v grep >&2 || true
+        ls -la /etc/*.lock /etc/.pwd.lock 2>/dev/null >&2 || true
+        id -u "$UTENTE" >/dev/null 2>&1 || timeout 30 useradd --create-home --shell /usr/sbin/nologin "$UTENTE"
+      fi
+    fi
+    passo "ACL sui socket dei resolver"
     # resolver via socket UNIX: negati solo a $UTENTE (connect su un socket UNIX richiede la scrittura)
     for sock in /run/systemd/resolve/io.systemd.Resolve /run/systemd/resolve/io.systemd.Resolve.Monitor \
                 /run/dbus/system_bus_socket /run/avahi-daemon/socket /run/nscd/socket; do
       if [ -S "$sock" ]; then setfacl -m "u:$UTENTE:---" "$sock"; echo "negato a $UTENTE: $sock"; fi
     done
+    passo "ricerca di altri socket di resolver"
     # qualsiasi altro socket UNIX di resolver noto ancora raggiungibile da $UTENTE è un errore
     for sock in $(find /run /var/run -maxdepth 3 -type s \( -name 'io.systemd.Resolve*' -o -name 'system_bus_socket' -o -path '*avahi*' -o -path '*nscd*' \) 2>/dev/null); do
       if sudo -u "$UTENTE" test -w "$sock"; then echo "resolver locale raggiungibile da $UTENTE: $sock" >&2; exit 1; fi
     done
 
+    passo "ipset"
     ipset create m4relay hash:ip,port -exist
     ipset flush m4relay
     ipset restore -exist < "$2"
     echo "ipset m4relay: $(ipset list m4relay | grep -c ',tcp:') destinazioni"
 
+    passo "regole iptables"
     for T in iptables ip6tables; do
       $T -N M4VIOLA 2>/dev/null || $T -F M4VIOLA
       $T -A M4VIOLA -j LOG --log-prefix "M4-I01 " --log-uid
@@ -51,6 +67,7 @@ case "${1:-}" in
     iptables -A M4APP -p tcp -m set --match-set m4relay dst,dst -j ACCEPT
     iptables -A M4APP -j M4VIOLA
     ip6tables -A M4APP -j M4VIOLA
+    passo "fatto"
     ;;
 
   controllo)

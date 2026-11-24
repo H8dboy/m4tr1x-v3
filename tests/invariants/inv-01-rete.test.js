@@ -54,9 +54,9 @@ test('rete.sh: regole vere, il controllo positivo passa e le violazioni si conta
   t.after(() => { rete('pulisci'); fs.rmSync(dir, { recursive: true, force: true }) })
 
   const p = rete('prepara', ipset)
-  assert.equal(p.status, 0, `prepara: ${p.stdout}${p.stderr}`)
+  assert.equal(p.status, 0, `prepara: ${p.error ? `${p.error.message} (segnale ${p.signal}) ` : ''}${p.stdout}${p.stderr}`)
   const c = rete('controllo')
-  assert.equal(c.status, 0, `controllo positivo caduto: ${c.stdout}${c.stderr}`)
+  assert.equal(c.status, 0, `controllo positivo caduto: ${c.error ? `${c.error.message} (segnale ${c.signal}) ` : ''}${c.stdout}${c.stderr}`)
   assert.match(c.stdout, /controllo positivo: risoluzione \(\d+ → \d+\) e host esterno \(\d+ → \d+\)/)
   // dopo il controllo i contatori sono a zero; una violazione nuova deve vedersi in `conta`
   spawnSync('sudo', ['-n', '-u', 'm4app', 'timeout', '5', 'bash', '-c', 'exec 3<>/dev/tcp/192.0.2.1/443'])
