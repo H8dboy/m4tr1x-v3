@@ -161,6 +161,8 @@
 
 101. **Moderazione, passo 2: bandierine nel nodo (I-65).** Tabella `event_flags` (id evento, categoria, peso, regole, codice; `ON DELETE CASCADE`, nessuna colonna per persona); il relay, dopo aver salvato un evento nuovo, passa all'analizzatore SOLO `{ kind, content }`; regole da `regoleModerazioneFile` (fuori dal repo) controllate PRIMA di aprire il db (storte = il nodo non parte); `GET /admin/bandierine` solo per il proprietario con K13: contenuti con bandierine o segnalati (NIP-56 kind 1984), segnalazioni = persone diverse. `inv-65-moderazione-nodo` 5 prove, 5 sabotaggi presi; aggiornato `metriche-senza-chiave`. Il nodo Oracle lo riceve alla prossima reinstallazione (regole: nessuna finché il fondatore non le scrive). Prossimo: velo nell'app.
 
+102. **Moderazione, passo 3: velo nell'app (I-65).** Nodo: `GET /moderazione?ids=` pubblico (anche dall'onion), max 100 id, solo categoria/peso/codice. Trasporto: `http::bandierine` (risposta controllata campo per campo, categorie da elenco chiuso, solo id chiesti). Feed: `m4tr1x_feed::bandierine` (budget 60 s, a gruppi di 100); shell: dopo il feed, `Feed::con_bandierine` (se il nodo non risponde: niente veli e `bandierine_disponibili: false`, l'interfaccia lo scrive). UI: `velo()` con motivo in parole, «Mostra comunque», `sfruttamento-minori` non si apre. `inv-65-velo-app` (DOM finto con il main.js vero + prove Rust), 8 sabotaggi presi. Nodo Oracle aggiornato a af7ddbc prima di questo passo (va rifatto per avere la rotta pubblica). Da fare: velo in forum e reel.
+
 ## Prossimo (dal 12/11/2026)
 
 **Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 12/11 pomeriggio in `app/celle/README.md`: foto a

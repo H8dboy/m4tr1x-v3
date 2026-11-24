@@ -207,6 +207,71 @@ pub async fn carica(mut f: Stream, host: &OnionV3, autorizzazione: &str, corpo: 
     Ok(Caricato::Rifiutato { stato: r.stato, motivo })
 }
 
+// ─── Bandierine della moderazione (I-65) ─────────────────────────────────────
+// Il nodo dice quali dei contenuti chiesti hanno una bandierina: SOLO categoria, peso e «scritto in codice».
+// Una risposta storta si rifiuta tutta; chi chiama mostra il feed senza veli e lo dice ("bandierine non disponibili").
+
+/// Categorie che un nodo può mettere (packages/moderazione: CATEGORIE + `offuscamento`). Un nome fuori elenco
+/// non arriva mai all'interfaccia.
+pub const CATEGORIE_BANDIERINE: [&str; 10] =
+    ["truffa", "spam", "odio", "violenza", "armi", "droga", "sfruttamento-minori", "terrorismo", "altro", "offuscamento"];
+/// Id per richiesta (il nodo ne accetta al massimo tanti).
+pub const MASSIMO_ID_BANDIERINE: usize = 100;
+/// Corpo della risposta al massimo: 100 contenuti × poche bandierine corte.
+pub const MASSIMO_RISPOSTA_BANDIERINE: usize = 64 * 1024;
+
+/// Una bandierina su un contenuto: niente persone, niente regole.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Bandierina {
+    pub categoria: &'static str,
+    pub peso: u8,
+    pub codice: bool,
+}
+
+/// `GET /moderazione?ids=…` (al massimo [`MASSIMO_ID_BANDIERINE`] id): per ogni id chiesto, le sue bandierine
+/// (gli id senza bandierine non compaiono). Id non chiesti, categorie fuori elenco, pesi fuori scala, campi in più:
+/// la risposta intera è rifiutata.
+pub async fn bandierine(mut f: Stream, host: &OnionV3, ids: &[String]) -> Result<std::collections::HashMap<String, Vec<Bandierina>>> {
+    if ids.is_empty() || ids.len() > MASSIMO_ID_BANDIERINE || !ids.iter().all(|i| sha_valido(i)) {
+        return Err(errore("id dei contenuti non validi"));
+    }
+    let scadenza = Instant::now() + tempo_per(0);
+    let richiesta = format!("GET /moderazione?ids={} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nAccept: application/json\r\n\r\n", ids.join(","), host.host());
+    timeout_at(scadenza, f.write_all(richiesta.as_bytes())).await.map_err(|_| errore("tempo massimo superato"))?.map_err(errore)?;
+    let r = leggi_risposta(&mut f, MASSIMO_RISPOSTA_BANDIERINE, scadenza).await?;
+    let _ = f.shutdown().await;
+    if r.stato != 200 {
+        return Err(errore(format!("il nodo ha risposto {}", r.stato)));
+    }
+    leggi_bandierine(&r.corpo, ids)
+}
+
+fn leggi_bandierine(corpo: &[u8], chiesti: &[String]) -> Result<std::collections::HashMap<String, Vec<Bandierina>>> {
+    let no = |m: &str| errore(format!("bandierine: {m}"));
+    let v: serde_json::Value = serde_json::from_slice(corpo).map_err(|_| no("risposta non JSON"))?;
+    let radice = v.as_object().filter(|o| o.len() == 1).and_then(|o| o.get("bandierine")).and_then(|b| b.as_object()).ok_or_else(|| no("forma"))?;
+    let mut out = std::collections::HashMap::new();
+    for (id, lista) in radice {
+        if !chiesti.contains(id) {
+            return Err(no("id non chiesto"));
+        }
+        let lista = lista.as_array().filter(|l| !l.is_empty() && l.len() <= CATEGORIE_BANDIERINE.len()).ok_or_else(|| no("elenco"))?;
+        let mut tutte = vec![];
+        for b in lista {
+            let o = b.as_object().filter(|o| o.len() == 3).ok_or_else(|| no("campi"))?;
+            let categoria = o.get("categoria").and_then(|c| c.as_str()).and_then(|c| CATEGORIE_BANDIERINE.iter().find(|k| **k == c)).ok_or_else(|| no("categoria"))?;
+            let peso = o.get("peso").and_then(|p| p.as_u64()).filter(|p| (1..=3).contains(p)).ok_or_else(|| no("peso"))? as u8;
+            let codice = o.get("codice").and_then(|c| c.as_bool()).ok_or_else(|| no("codice"))?;
+            if tutte.iter().any(|x: &Bandierina| x.categoria == *categoria) {
+                return Err(no("categoria doppia"));
+            }
+            tutte.push(Bandierina { categoria, peso, codice });
+        }
+        out.insert(id.clone(), tutte);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +400,34 @@ mod tests {
         // un'autorizzazione con un a capo (iniezione di intestazioni) non parte
         let (f, _) = nodo_finto(vec![]);
         assert!(carica(f, &host(), "Nostr x\r\nX-Altro: y", &corpo).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn bandierine_solo_categoria_peso_e_codice_e_solo_per_gli_id_chiesti() {
+        let (a, b) = ("a".repeat(64), "b".repeat(64));
+        let buona = br#"{"bandierine":{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":[{"categoria":"truffa","peso":3,"codice":true}]}}"#;
+        let (f, h) = nodo_finto(ok(buona));
+        let r = bandierine(f, &host(), &[a.clone(), b.clone()]).await.unwrap();
+        assert_eq!(r.get(&a).unwrap(), &vec![Bandierina { categoria: "truffa", peso: 3, codice: true }]);
+        assert!(!r.contains_key(&b));
+        let inviato = String::from_utf8(h.await.unwrap()).unwrap();
+        assert!(inviato.starts_with(&format!("GET /moderazione?ids={a},{b} HTTP/1.1\r\n")), "{inviato}");
+        // un nodo che manda altro: rifiutato tutto
+        for storta in [
+            r#"{"bandierine":{"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc":[{"categoria":"truffa","peso":1,"codice":false}]}}"#, // id non chiesto
+            r#"{"bandierine":{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":[{"categoria":"opinioni","peso":1,"codice":false}]}}"#, // categoria inventata
+            r#"{"bandierine":{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":[{"categoria":"truffa","peso":9,"codice":false}]}}"#, // peso fuori scala
+            r#"{"bandierine":{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":[{"categoria":"truffa","peso":1,"codice":false,"autore":"x"}]}}"#, // campo in più
+            r#"{"bandierine":{},"testo":"<img src=x>"}"#, // campo in più fuori
+            "non json",
+        ] {
+            let (f, _) = nodo_finto(ok(storta.as_bytes()));
+            assert!(bandierine(f, &host(), &[a.clone()]).await.is_err(), "accettata: {storta}");
+        }
+        // id non validi o troppi: la richiesta non parte
+        let (f, _) = nodo_finto(vec![]);
+        assert!(bandierine(f, &host(), &["../admin".to_string()]).await.is_err());
+        let (f, _) = nodo_finto(vec![]);
+        assert!(bandierine(f, &host(), &vec![a.clone(); MASSIMO_ID_BANDIERINE + 1]).await.is_err());
     }
 }

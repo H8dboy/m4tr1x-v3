@@ -109,6 +109,19 @@ function createHttp(ctx) {
 
     if (p === '/health' && req.method === 'GET') return json(res, 200, { ok: true, role: cfg.role, network: cfg.network, version: ctx.version })
 
+    // Moderazione (I-65), per le app: quali dei contenuti chiesti hanno una bandierina. Solo categoria, peso e
+    // «scritto in codice»: mai le regole (direbbero com'è fatto l'elenco), mai chi scrive o chi segnala.
+    if (p === '/moderazione' && req.method === 'GET') {
+      const ids = (url.searchParams.get('ids') || '').split(',')
+      if (ids.length > 100 || !ids.every(i => /^[0-9a-f]{64}$/.test(i))) return json(res, 400, { error: 'ids: da 1 a 100 id di contenuti' })
+      /** @type {Record<string, Array<{ categoria: string, peso: number, codice: boolean }>>} */ const fuori = {}
+      for (const id of new Set(ids)) {
+        const f = qFlag.all(id)
+        if (f.length) fuori[id] = f.map((/** @type {any} */ x) => ({ categoria: x.categoria, peso: x.peso, codice: !!x.codice }))
+      }
+      return json(res, 200, { bandierine: fuori })
+    }
+
     const blobMatch = /^\/blob\/([0-9a-f]{64})$/.exec(p)
     if (blobMatch && (req.method === 'GET' || req.method === 'HEAD')) {
       const file = blobs.blobPath(cfg.dataDir, blobMatch[1])
