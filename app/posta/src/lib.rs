@@ -14,8 +14,7 @@
 use m4tr1x_dm as dm;
 use m4tr1x_feed::{ErrorePubblica, Fase, NonRaggiungibile};
 use m4tr1x_identity::creazione::{identita_salvata, IdentitaPubblica};
-use m4tr1x_identity::portachiavi::{carica, firma_come_identita, Portachiavi};
-use m4tr1x_identity::Ruolo;
+use m4tr1x_identity::portachiavi::{chiave_dm_corrente, chiavi_dm, dm_pubbliche, firma_come_identita, ruota_dm, Portachiavi};
 use m4tr1x_protocol::{Evento, Rete};
 use m4tr1x_transport::{OnionV3, Transport};
 use serde_json::{json, Value};
@@ -102,6 +101,10 @@ fn adesso() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+fn pk(e: m4tr1x_identity::IdentityError) -> ErrorePosta {
+    ErrorePosta::Portachiavi(e.to_string())
+}
+
 fn io(p: &dyn Portachiavi) -> Result<IdentitaPubblica, ErrorePosta> {
     identita_salvata(p).map_err(|e| ErrorePosta::Portachiavi(e.to_string()))?.ok_or(ErrorePosta::SenzaIdentita)
 }
@@ -130,24 +133,27 @@ fn annuncio_corrente(rete: Rete, annunci: &[Value], identita: &str, ora: u64) ->
 /// L'identità firma passando da `firma_come_identita`; la chiave DM vive solo dentro questa funzione.
 pub fn mio_annuncio(rete: Rete, p: &dyn Portachiavi, ora: u64) -> Result<Evento, ErrorePosta> {
     let chi = io(p)?;
-    let mia = carica(p, Ruolo::Dm, 1).map_err(|e| ErrorePosta::Portachiavi(e.to_string()))?.ok_or(ErrorePosta::SenzaIdentita)?;
-    Ok(dm::annuncio_dm_con(rete, &chi.identity, |d| firma_come_identita(p, d).ok(), &[&mia], &[], ora)?)
+    let mie = chiavi_dm(p).map_err(pk)?;
+    let rif: Vec<&_> = mie.iter().collect();
+    Ok(dm::annuncio_dm_con(rete, &chi.identity, |d| firma_come_identita(p, d).ok(), &rif, &[], ora)?)
+    // `mie` esce di scena qui: segreti cancellati
 }
 
 /// Apre le buste con la mia chiave DM e le raggruppa per interlocutore. Nessuna rete qui.
 /// Le buste non apribili o non valide si contano e basta.
 pub fn apri_tutte(rete: Rete, p: &dyn Portachiavi, buste: &[Value], annunci: &[Value], ora: u64) -> Result<Posta, ErrorePosta> {
-    let chi = io(p)?;
+    io(p)?;
+    let mie_pub = dm_pubbliche(p).map_err(pk)?;
     let mut scartate = 0;
     let mut per_chiave: BTreeMap<String, Vec<Messaggio>> = BTreeMap::new();
     {
-        let mia = carica(p, Ruolo::Dm, 1).map_err(|e| ErrorePosta::Portachiavi(e.to_string()))?.ok_or(ErrorePosta::SenzaIdentita)?;
+        let mie = chiavi_dm(p).map_err(pk)?;
         for b in buste.iter().take(MASSIMO_BUSTE as usize) {
-            let Ok(a) = dm::apri(rete, &mia, b) else {
+            let Some(a) = mie.iter().find_map(|k| dm::apri(rete, k, b).ok()) else {
                 scartate += 1;
                 continue;
             };
-            let mio = a.dm_mittente == chi.dm;
+            let mio = mie_pub.contains(&a.dm_mittente);
             let altro = if mio { a.dm_destinatario } else { a.dm_mittente };
             let m = Messaggio { mio, testo: a.testo, creato: a.created_at };
             let lista = per_chiave.entry(altro).or_default();
@@ -156,15 +162,38 @@ pub fn apri_tutte(rete: Rete, p: &dyn Portachiavi, buste: &[Value], annunci: &[V
                 lista.push(m);
             }
         }
-        // `mia` esce di scena qui: segreto cancellato
+        // `mie` escono di scena qui: segreti cancellati
     }
-    let mut conversazioni: Vec<Conversazione> = per_chiave
-        .into_iter()
-        .map(|(chiave, mut messaggi)| {
-            messaggi.sort_by(|a, b| a.creato.cmp(&b.creato));
-            Conversazione { identita: dm::identita_del_mittente(rete, annunci, &chiave, ora), dm: chiave, nome: None, messaggi }
-        })
-        .collect();
+    // una persona riconosciuta è UNA conversazione anche se ha ruotato la chiave DM (le sue chiavi tenute stanno
+    // tutte nel suo annuncio più recente); gli sconosciuti restano separati per chiave
+    let mut per_persona: BTreeMap<String, Conversazione> = BTreeMap::new();
+    for (chiave, messaggi) in per_chiave {
+        let identita = dm::identita_del_mittente(rete, annunci, &chiave, ora);
+        let gruppo = match &identita {
+            Some(i) => format!("identita:{i}"),
+            None => format!("chiave:{chiave}"),
+        };
+        match per_persona.get_mut(&gruppo) {
+            Some(c) => {
+                // la chiave mostrata è quella del messaggio più recente
+                if messaggi.iter().map(|m| m.creato).max() > c.messaggi.iter().map(|m| m.creato).max() {
+                    c.dm = chiave;
+                }
+                for m in messaggi {
+                    if !c.messaggi.contains(&m) {
+                        c.messaggi.push(m);
+                    }
+                }
+            }
+            None => {
+                per_persona.insert(gruppo, Conversazione { identita, dm: chiave, nome: None, messaggi });
+            }
+        }
+    }
+    let mut conversazioni: Vec<Conversazione> = per_persona.into_values().collect();
+    for c in &mut conversazioni {
+        c.messaggi.sort_by(|a, b| a.creato.cmp(&b.creato));
+    }
     conversazioni.sort_by(|a, b| b.messaggi.last().map(|m| m.creato).cmp(&a.messaggi.last().map(|m| m.creato)).then_with(|| a.dm.cmp(&b.dm)));
     Ok(Posta { conversazioni, scartate })
 }
@@ -174,20 +203,30 @@ pub fn apri_tutte(rete: Rete, p: &dyn Portachiavi, buste: &[Value], annunci: &[V
 async fn assicura_annuncio<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, p: &dyn Portachiavi, miei: &[Value], budget: Duration, avanza: &impl Fn(Fase)) -> Result<(), ErrorePosta> {
     let chi = io(p)?;
     let ora = adesso();
-    if da_rinnovare(rete, miei, &chi.identity, &chi.dm, ora).is_none() {
-        return Ok(());
+    let corrente = dm_pubbliche(p).map_err(pk)?.swap_remove(0);
+    match da_rinnovare(rete, miei, &chi.identity, &corrente, ora) {
+        None => return Ok(()),
+        // rotazione della chiave DM (K1d) a ogni rinnovo per scadenza, cioè ogni ~20 giorni: chi la ruba legge
+        // solo i messaggi del suo periodo. Le precedenti restano per i messaggi recenti (DM_TENUTE)
+        Some(RAGIONE_IN_SCADENZA) => {
+            ruota_dm(p).map_err(pk)?;
+        }
+        Some(_) => {}
     }
     let annuncio = mio_annuncio(rete, p, ora)?;
     m4tr1x_feed::pubblica(t, nodo, &annuncio, budget, avanza).await?;
     Ok(())
 }
 
+/// Ragione di [`da_rinnovare`] per l'annuncio che scade entro `dm::RINNOVO_ANNUNCIO`: è anche il momento della rotazione.
+pub const RAGIONE_IN_SCADENZA: &str = "annuncio in scadenza";
+
 /// Perché il mio annuncio va (ri)pubblicato, o `None` se quello sul nodo va ancora bene.
 pub fn da_rinnovare(rete: Rete, miei: &[Value], identita: &str, dm_mia: &str, ora: u64) -> Option<&'static str> {
     match annuncio_corrente(rete, miei, identita, ora) {
         None => Some("nessun annuncio valido"),
         Some((k, _)) if k != dm_mia => Some("l'annuncio non ha la mia chiave DM attuale"),
-        Some((_, scadenza)) if scadenza.saturating_sub(ora) < dm::RINNOVO_ANNUNCIO => Some("annuncio in scadenza"),
+        Some((_, scadenza)) if scadenza.saturating_sub(ora) < dm::RINNOVO_ANNUNCIO => Some(RAGIONE_IN_SCADENZA),
         Some(_) => None,
     }
 }
@@ -195,8 +234,9 @@ pub fn da_rinnovare(rete: Rete, miei: &[Value], identita: &str, dm_mia: &str, or
 /// Legge la mia posta dal nodo: buste per la mia chiave DM, annunci per attribuirle, profili per i nomi.
 pub async fn leggi<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, p: &dyn Portachiavi, budget: Duration, avanza: impl Fn(Fase)) -> Result<Posta, ErrorePosta> {
     let chi = io(p)?;
+    let mie_pub = dm_pubbliche(p).map_err(pk)?;
     let filtri = [
-        json!({ "kinds": [dm::KIND_BUSTA], "#p": [chi.dm], "limit": MASSIMO_BUSTE }),
+        json!({ "kinds": [dm::KIND_BUSTA], "#p": mie_pub, "limit": MASSIMO_BUSTE }),
         json!({ "kinds": [dm::KIND_ANNUNCIO_DM], "limit": MASSIMO_ANNUNCI }),
         json!({ "kinds": [dm::KIND_ANNUNCIO_DM], "authors": [chi.identity], "limit": 10 }),
     ];
@@ -246,7 +286,7 @@ pub async fn invia<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, p: &dyn Port
     assicura_annuncio(t, nodo, rete, p, &miei, budget, &avanza).await?;
     let ora = adesso();
     let buste = {
-        let mia = carica(p, Ruolo::Dm, 1).map_err(|e| ErrorePosta::Portachiavi(e.to_string()))?.ok_or(ErrorePosta::SenzaIdentita)?;
+        let mia = chiave_dm_corrente(p).map_err(pk)?;
         dm::incarta(rete, &mia, &dm_destinatario, testo, ora, &mut dm::EntropiaSistema)?
         // `mia` esce di scena qui, prima di ogni attesa di rete
     };

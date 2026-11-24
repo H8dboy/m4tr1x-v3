@@ -45,6 +45,7 @@
 ### K1d — Chiave DM
 - **Scopo:** ricevere e decifrare i DM; annunciata da K1 in un evento firmato. Separata per poterla ruotare spesso (es. ogni 30 giorni) senza cambiare identità.
 - **Se rubata:** espone i DM del periodo in cui era attiva.
+- **Rotazione (attiva dal 24/11/2026):** `dm-v1` si ricava dal seme e resta sempre; a ogni rinnovo dell'annuncio per scadenza (circa ogni 20 giorni, quando l'utente apre i messaggi) l'app crea una chiave DM nuova CASUALE (`dm-v2`, `dm-v3`, …: il seme non si salva, quindi non si ricavano da lì) e la annuncia per prima. Si tengono la corrente e le 2 precedenti (`DM_TENUTE` = 3), dichiarate anche nell'annuncio per riconoscere i mittenti dei messaggi recenti; quelle più vecchie si cancellano dal portachiavi e i messaggi arrivati a loro non si aprono più (è il senso della rotazione). Il numero della corrente sta nella voce `dm-corrente`. Recuperare la stessa identità sullo stesso dispositivo tiene le chiavi ruotate; un'identità diversa non le eredita. Su un dispositivo NUOVO, con le 24 parole si ritrova solo `dm-v1`: i messaggi arrivati alle chiavi ruotate restano sul dispositivo vecchio.
 
 ### K1r — Revoca
 - **Scopo:** dichiarare morta K1 anche se il ladro la possiede.

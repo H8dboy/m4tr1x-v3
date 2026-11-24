@@ -7,7 +7,7 @@
 //! Recupero: dalle 24 parole si ricavano e si salvano le stesse chiavi.
 
 use crate::portachiavi::{self, Portachiavi, RUOLI_SALVATI};
-use crate::{deriva, genera_parole, seme_da_parole, IdentityError, Parole};
+use crate::{deriva, genera_parole, seme_da_parole, IdentityError, Parole, Ruolo};
 
 /// Quante parole l'utente deve riscrivere (decisione del fondatore, 16/10/2026).
 pub const POSIZIONI_DA_VERIFICARE: usize = 3;
@@ -89,6 +89,12 @@ fn salva_da_parole(parole: &str, p: &dyn Portachiavi) -> Result<IdentitaPubblica
     let mut pubbliche = Vec::with_capacity(3);
     // prima si ricava tutto, poi si scrive: o tutte e tre le chiavi o nessuna
     let chiavi = RUOLI_SALVATI.iter().map(|&r| deriva(&seme, r, 1)).collect::<Result<Vec<_>, _>>()?;
+    // un'identità DIVERSA da quella già nel portachiavi non eredita le sue chiavi DM ruotate; la stessa (recupero
+    // sullo stesso dispositivo) le tiene, così i messaggi recenti restano leggibili
+    let stessa = matches!(portachiavi::carica(p, Ruolo::Identity, 1)?, Some(k) if k.pubblica_hex() == chiavi[0].pubblica_hex());
+    if !stessa {
+        portachiavi::dimentica_dm_ruotate(p)?;
+    }
     for k in &chiavi {
         portachiavi::salva(p, k)?;
         pubbliche.push(k.pubblica_hex());

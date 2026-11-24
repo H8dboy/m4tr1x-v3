@@ -2,12 +2,13 @@
 //! (semi PUBBLICI di prova) si scrivono passando dalle stesse funzioni che usa il guscio.
 //! Cosa si prova: al nodo arrivano solo buste 1059 e annunci 10477, mai il testo (I-19); un mittente
 //! senza annuncio valido resta sconosciuto (I-60); le buste forgiate si contano e non si mostrano (I-61);
-//! un nodo malevolo che risponde con l'annuncio di un altro non fa cifrare per la chiave sbagliata.
+//! un nodo malevolo che risponde con l'annuncio di un altro non fa cifrare per la chiave sbagliata;
+//! la chiave DM ruota a ogni rinnovo per scadenza, i messaggi recenti restano leggibili e attribuiti.
 
 use m4tr1x_dm::prova::{incarta_difettosa, Difetto};
 use m4tr1x_dm::{annuncio_dm, incarta, Entropia, DURATA_ANNUNCIO, KIND_ANNUNCIO_DM, KIND_BUSTA, RINNOVO_ANNUNCIO};
 use m4tr1x_identity::creazione::recupera;
-use m4tr1x_identity::portachiavi::Memoria;
+use m4tr1x_identity::portachiavi::{dm_pubbliche, ruota_dm, Memoria, DM_TENUTE};
 use m4tr1x_identity::{deriva, seme_da_parole, ChiaveRuolo, Ruolo};
 use m4tr1x_posta::{chiave_dm_di, da_rinnovare, invia, leggi, ErrorePosta, MASSIMO_TESTO};
 use m4tr1x_protocol::Rete;
@@ -263,7 +264,11 @@ async fn l_annuncio_in_scadenza_si_rinnova_da_solo_quello_fresco_no() {
     leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
     let annunci = annunci_di(&nodo, &bruno.identita);
     assert_eq!(annunci.len(), 2, "annuncio in scadenza non rinnovato");
-    assert_eq!(da_rinnovare(RETE, &annunci, &bruno.identita, &bruno.dm, adesso()), None, "il nuovo vale 30 giorni");
+    // con il rinnovo per scadenza la chiave DM ruota: la corrente non è più quella del seme
+    let corrente = dm_pubbliche(&bruno.portachiavi).unwrap()[0].clone();
+    assert_ne!(corrente, bruno.dm, "rinnovo per scadenza senza rotazione della chiave DM");
+    assert_eq!(chiave_dm_di(RETE, &annunci, &bruno.identita, adesso()), Some(corrente.clone()), "l'annuncio nuovo non dichiara per prima la chiave nuova");
+    assert_eq!(da_rinnovare(RETE, &annunci, &bruno.identita, &corrente, adesso()), None, "il nuovo vale 30 giorni");
 }
 
 #[tokio::test]
@@ -291,4 +296,53 @@ async fn a_chi_ha_l_annuncio_scaduto_non_si_scrive() {
     let e = invia(&nodo, &onion(), RETE, &anna.portachiavi, &bruno.identita, SEGRETO, BUDGET, |_| {}).await.unwrap_err();
     assert_eq!(e, ErrorePosta::SenzaAnnuncio);
     assert!(nodo.eventi().iter().all(|e| e["kind"] != KIND_BUSTA as u64));
+}
+
+/// Destinatari (tag `p`) delle buste sul nodo.
+fn destinatari_buste(nodo: &Nodo) -> Vec<String> {
+    nodo.eventi().iter().filter(|e| e["kind"] == KIND_BUSTA).filter_map(|e| e["tags"].as_array()?.iter().find(|t| t[0] == "p").and_then(|t| t[1].as_str()).map(String::from)).collect()
+}
+
+#[tokio::test]
+async fn dopo_la_rotazione_i_messaggi_recenti_si_leggono_e_quelli_nuovi_vanno_alla_chiave_nuova() {
+    let (nodo, anna, bruno) = (Nodo::nuovo(), utente(&parole_anna()), utente(&parole_bruno()));
+    leggi(&nodo, &onion(), RETE, &anna.portachiavi, BUDGET, |_| {}).await.unwrap();
+    // l'annuncio di Bruno (chiave del seme) sta per scadere: Anna gli scrive ancora alla chiave vecchia, e Bruno
+    // scrive ad Anna sigillando con la chiave vecchia
+    let (id_b, dm_b) = chiavi(&parole_bruno(), 1);
+    let vecchio = adesso() - (DURATA_ANNUNCIO - RINNOVO_ANNUNCIO) - 60;
+    nodo.aggiungi(serde_json::to_value(annuncio_dm(RETE, &id_b, &[&dm_b], &[], vecchio).unwrap()).unwrap());
+    invia(&nodo, &onion(), RETE, &anna.portachiavi, &bruno.identita, "prima della rotazione", BUDGET, |_| {}).await.unwrap();
+    let buste_di_bruno = incarta(RETE, &dm_b, &anna.dm, "sigillato con la chiave vecchia", adesso(), &mut Contatore(9)).unwrap();
+    nodo.aggiungi(serde_json::to_value(&buste_di_bruno.per_destinatario).unwrap());
+    // Bruno apre la posta: la chiave ruota, il messaggio di prima si legge ed è di Anna
+    let posta = leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
+    let nuova = dm_pubbliche(&bruno.portachiavi).unwrap()[0].clone();
+    assert_ne!(nuova, bruno.dm, "la chiave DM non è ruotata");
+    assert_eq!(posta.conversazioni.len(), 1);
+    assert_eq!(posta.conversazioni[0].identita.as_deref(), Some(anna.identita.as_str()));
+    assert_eq!(posta.conversazioni[0].messaggi[0].testo, "prima della rotazione");
+    // Anna ora scrive alla chiave nuova (la prima dell'annuncio nuovo), e Bruno legge tutti e due i messaggi
+    invia(&nodo, &onion(), RETE, &anna.portachiavi, &bruno.identita, "dopo la rotazione", BUDGET, |_| {}).await.unwrap();
+    assert!(destinatari_buste(&nodo).contains(&nuova), "il messaggio nuovo non va alla chiave nuova");
+    let posta = leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
+    let testi: Vec<&str> = posta.conversazioni[0].messaggi.iter().map(|m| m.testo.as_str()).collect();
+    assert_eq!(testi, ["prima della rotazione", "dopo la rotazione"]);
+    // Bruno risponde con la chiave nuova: per Anna è Bruno (la chiave nuova è nel suo annuncio più recente)
+    invia(&nodo, &onion(), RETE, &bruno.portachiavi, &anna.identita, "ricevuto", BUDGET, |_| {}).await.unwrap();
+    let di_anna = leggi(&nodo, &onion(), RETE, &anna.portachiavi, BUDGET, |_| {}).await.unwrap();
+    let con_bruno = di_anna.conversazioni.iter().find(|c| c.messaggi.iter().any(|m| m.testo == "ricevuto")).expect("risposta di Bruno non arrivata");
+    assert_eq!(con_bruno.identita.as_deref(), Some(bruno.identita.as_str()), "dopo la rotazione Bruno non è più riconosciuto");
+    // il messaggio che Bruno aveva sigillato con la chiave vecchia è ancora suo (la chiave vecchia è nel suo
+    // annuncio nuovo), e sta nella STESSA conversazione: una persona, una conversazione, anche dopo la rotazione
+    assert_eq!(di_anna.conversazioni.len(), 1, "dopo la rotazione Bruno è diventato due conversazioni: {:?}", di_anna.conversazioni.iter().map(|c| (&c.identita, c.messaggi.len())).collect::<Vec<_>>());
+    assert!(con_bruno.messaggi.iter().any(|m| m.testo == "sigillato con la chiave vecchia"), "il messaggio di Bruno con la chiave vecchia è diventato di uno sconosciuto");    // dopo DM_TENUTE rotazioni ancora, la chiave che ha ricevuto "dopo la rotazione" è cancellata: quel
+    // messaggio non si apre più (è il senso della rotazione); quello alla chiave del seme sì
+    for _ in 0..DM_TENUTE {
+        ruota_dm(&bruno.portachiavi).unwrap();
+    }
+    assert!(!dm_pubbliche(&bruno.portachiavi).unwrap().contains(&nuova), "la chiave uscita dalla finestra è ancora tenuta");
+    let posta = leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
+    let testi: Vec<&str> = posta.conversazioni.iter().flat_map(|c| c.messaggi.iter().map(|m| m.testo.as_str())).collect();
+    assert!(testi.contains(&"prima della rotazione") && !testi.contains(&"dopo la rotazione"), "messaggi leggibili dopo la finestra: {testi:?}");
 }
