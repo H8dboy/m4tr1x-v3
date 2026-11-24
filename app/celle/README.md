@@ -189,6 +189,6 @@ Con 4 tratti lavorano 4 fili: il guadagno cresce con la durata (un reel di 30 s 
 3. Reel: siamo a ~1,1–1,4× x264 medium a pari PSNR (vedi sopra). Da provare: un secondo livello di divisione (7×7:
    con il raggio automatico a 48 le celle divise sono ancora da 18 px), pesi diversi da ½ nella media dei due
    riferimenti (dissolvenze), un passo più grosso sulle celle che l'occhio segue meno, meno ricerche per chi scrive.
-4. Collegamento al trasporto: FATTO il 16/11 (`pacchetto.rs`, comandi `celle_*`). Da provare sul nodo Oracle via Tor
-   con una foto e un reel veri; poi: più fotogrammi al secondo e più lato per i reel (oggi la codifica costa ~0,3 s a
-   fotogramma a 480 px), audio nei reel (oggi solo immagini), le schede a celle anche tra i Film.
+4. Collegamento al trasporto: FATTO il 16/11 (`pacchetto.rs`, comandi `celle_*`) e PROVATO sul nodo Oracle via Tor
+   (sopra). Codifica a tratti su più core FATTA il 24/11 (sopra). Poi: più fotogrammi al secondo e più lato per i
+   reel, audio nei reel (oggi solo immagini), le schede a celle anche tra i Film (aspettano più nodi Elea).
