@@ -465,10 +465,13 @@ async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'
     }
     let esito = async {
         attendi_tor(&tor, op).await?;
-        m4tr1x_feed::leggi_media(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, sez, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let g = m4tr1x_feed::leggi_media(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, sez, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
-            .map(Galleria::from)
-            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
+        // bandierine (I-65) sulle schede: se il nodo non le dà, si vede lo stesso, senza veli, e lo si dice
+        let ids: Vec<String> = g.media.iter().map(|m| m.id.clone()).collect();
+        let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
+        Ok(Galleria::from(g).con_bandierine(veli.as_ref()))
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
@@ -577,7 +580,7 @@ async fn media_pubblica(sezione: String, titolo: String, testo: String, rete: ta
     esito?;
     *scelto.0.lock().unwrap() = None;
     let file = m4tr1x_protocol::file_da_evento(&scheda).ok_or("scheda non leggibile")?;
-    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into() })
+    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into(), bandierine: vec![] })
 }
 
 /// Fase dell'operazione sui file in corso, per l'interfaccia.
@@ -729,7 +732,7 @@ async fn celle_pubblica(sezione: String, titolo: String, testo: String, rete: ta
     esito?;
     *alveare.pronto.lock().unwrap() = None;
     let file = m4tr1x_protocol::file_da_evento(&scheda).ok_or("scheda non leggibile")?;
-    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into() })
+    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into(), bandierine: vec![] })
 }
 
 /// Gruppi di un reel tenuti come pixel: quello che si guarda e il prossimo. Il resto del reel resta a pezzi
@@ -1039,10 +1042,13 @@ async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -
     }
     let esito = async {
         attendi_tor(&tor, op).await?;
-        m4tr1x_feed::leggi_forum(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let f = m4tr1x_feed::leggi_forum(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
-            .map(Forum::from)
-            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
+        // bandierine (I-65) sulle discussioni (titolo e testo)
+        let ids: Vec<String> = f.discussioni.iter().map(|d| d.id.clone()).collect();
+        let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
+        Ok(Forum::from(f).con_bandierine(veli.as_ref()))
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
@@ -1063,10 +1069,13 @@ async fn forum_discussione(id: String, rete: tauri::State<'_, Rete>, op: tauri::
     }
     let esito = async {
         attendi_tor(&tor, op).await?;
-        m4tr1x_feed::leggi_discussione(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &id, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let d = m4tr1x_feed::leggi_discussione(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &id, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
-            .map(|d| d.map(DiscussioneAperta::from))
-            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
+        let Some(d) = d.map(DiscussioneAperta::from) else { return Ok(None) };
+        // bandierine (I-65) sulla discussione e su ogni risposta
+        let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &d.ids()).await.ok();
+        Ok(Some(d.con_bandierine(veli.as_ref())))
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
@@ -1084,7 +1093,7 @@ async fn forum_pubblica(titolo: String, testo: String, rete: tauri::State<'_, Re
     let evento = firma_con_la_mia_identita(&chiavi, 1, &testo, &tags).map_err(|e| format!("discussione non firmata: {e}"))?;
     pubblica_nel_forum(&rete, &op.forum, &evento).await?;
     let titolo = m4tr1x_protocol::discussione_da_evento(&evento).unwrap_or_default();
-    Ok(Discussione { id: evento.id, autore: evento.pubkey, nome: None, titolo, testo: evento.content, creato: evento.created_at, risposte: 0, attivita: evento.created_at })
+    Ok(Discussione { id: evento.id, autore: evento.pubkey, nome: None, titolo, testo: evento.content, creato: evento.created_at, risposte: 0, attivita: evento.created_at, bandierine: vec![] })
 }
 
 /// Risponde alla discussione `id`, con la TUA identità.

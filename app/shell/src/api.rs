@@ -59,6 +59,14 @@ pub struct Post {
     pub bandierine: Vec<Bandierina>,
 }
 
+/// Bandierine per id di contenuto, come arrivano dal nodo (m4tr1x-feed, già controllate dal trasporto).
+pub type Veli = std::collections::HashMap<String, Vec<m4tr1x_feed::Bandierina>>;
+
+/// Le bandierine del contenuto `id` (nessuna se il nodo non ne ha date per lui).
+fn bandierine_di(b: &Veli, id: &str) -> Vec<Bandierina> {
+    b.get(id).map(|l| l.iter().map(Bandierina::from).collect()).unwrap_or_default()
+}
+
 /// Una bandierina della moderazione (I-65): solo categoria (da un elenco chiuso), peso e «scritto in codice».
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Bandierina {
@@ -189,11 +197,13 @@ pub struct Media {
     pub testo: String,
     pub creato: u64,
     pub file: FileMedia,
+    /// bandierine della moderazione del nodo (I-65): con almeno una, la tessera resta coperta da un velo
+    pub bandierine: Vec<Bandierina>,
 }
 
 impl From<m4tr1x_feed::Media> for Media {
     fn from(m: m4tr1x_feed::Media) -> Self {
-        Self { id: m.id, autore: m.autore, nome: m.nome, testo: m.testo, creato: m.creato, file: m.file.into() }
+        Self { id: m.id, autore: m.autore, nome: m.nome, testo: m.testo, creato: m.creato, file: m.file.into(), bandierine: vec![] }
     }
 }
 
@@ -202,11 +212,26 @@ impl From<m4tr1x_feed::Media> for Media {
 pub struct Galleria {
     pub media: Vec<Media>,
     pub scartati: u32,
+    /// le bandierine sono arrivate dal nodo? (I-65)
+    pub bandierine_disponibili: bool,
+}
+
+impl Galleria {
+    /// Attacca a ogni scheda le sue bandierine (I-65). `None`: il nodo non le ha date.
+    pub fn con_bandierine(mut self, b: Option<&Veli>) -> Self {
+        self.bandierine_disponibili = b.is_some();
+        if let Some(b) = b {
+            for m in &mut self.media {
+                m.bandierine = bandierine_di(b, &m.id);
+            }
+        }
+        self
+    }
 }
 
 impl From<m4tr1x_feed::Galleria> for Galleria {
     fn from(g: m4tr1x_feed::Galleria) -> Self {
-        Self { media: g.media.into_iter().map(Media::from).collect(), scartati: u32::try_from(g.scartati).unwrap_or(u32::MAX) }
+        Self { media: g.media.into_iter().map(Media::from).collect(), scartati: u32::try_from(g.scartati).unwrap_or(u32::MAX), bandierine_disponibili: false }
     }
 }
 
@@ -230,11 +255,13 @@ pub struct Discussione {
     pub creato: u64,
     pub risposte: u32,
     pub attivita: u64,
+    /// bandierine della moderazione del nodo (I-65), sul titolo o sul testo
+    pub bandierine: Vec<Bandierina>,
 }
 
 impl From<m4tr1x_feed::Discussione> for Discussione {
     fn from(d: m4tr1x_feed::Discussione) -> Self {
-        Self { id: d.id, autore: d.autore, nome: d.nome, titolo: d.titolo, testo: d.testo, creato: d.creato, risposte: d.risposte, attivita: d.attivita }
+        Self { id: d.id, autore: d.autore, nome: d.nome, titolo: d.titolo, testo: d.testo, creato: d.creato, risposte: d.risposte, attivita: d.attivita, bandierine: vec![] }
     }
 }
 
@@ -243,11 +270,26 @@ impl From<m4tr1x_feed::Discussione> for Discussione {
 pub struct Forum {
     pub discussioni: Vec<Discussione>,
     pub scartati: u32,
+    /// le bandierine sono arrivate dal nodo? (I-65)
+    pub bandierine_disponibili: bool,
+}
+
+impl Forum {
+    /// Attacca a ogni discussione le sue bandierine (I-65). `None`: il nodo non le ha date.
+    pub fn con_bandierine(mut self, b: Option<&Veli>) -> Self {
+        self.bandierine_disponibili = b.is_some();
+        if let Some(b) = b {
+            for d in &mut self.discussioni {
+                d.bandierine = bandierine_di(b, &d.id);
+            }
+        }
+        self
+    }
 }
 
 impl From<m4tr1x_feed::Forum> for Forum {
     fn from(f: m4tr1x_feed::Forum) -> Self {
-        Self { discussioni: f.discussioni.into_iter().map(Discussione::from).collect(), scartati: u32::try_from(f.scartati).unwrap_or(u32::MAX) }
+        Self { discussioni: f.discussioni.into_iter().map(Discussione::from).collect(), scartati: u32::try_from(f.scartati).unwrap_or(u32::MAX), bandierine_disponibili: false }
     }
 }
 
@@ -256,6 +298,27 @@ impl From<m4tr1x_feed::Forum> for Forum {
 pub struct DiscussioneAperta {
     pub discussione: Discussione,
     pub risposte: Vec<Post>,
+    /// le bandierine sono arrivate dal nodo? (I-65)
+    pub bandierine_disponibili: bool,
+}
+
+impl DiscussioneAperta {
+    /// Bandierine sulla discussione e su ogni risposta (I-65). `None`: il nodo non le ha date.
+    pub fn con_bandierine(mut self, b: Option<&Veli>) -> Self {
+        self.bandierine_disponibili = b.is_some();
+        if let Some(b) = b {
+            self.discussione.bandierine = bandierine_di(b, &self.discussione.id);
+            for r in &mut self.risposte {
+                r.bandierine = bandierine_di(b, &r.id);
+            }
+        }
+        self
+    }
+
+    /// Gli id di cui chiedere le bandierine: la discussione e le sue risposte.
+    pub fn ids(&self) -> Vec<String> {
+        std::iter::once(self.discussione.id.clone()).chain(self.risposte.iter().map(|r| r.id.clone())).collect()
+    }
 }
 
 impl From<m4tr1x_feed::DiscussioneAperta> for DiscussioneAperta {
@@ -263,6 +326,7 @@ impl From<m4tr1x_feed::DiscussioneAperta> for DiscussioneAperta {
         Self {
             discussione: d.discussione.into(),
             risposte: d.risposte.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![] }).collect(),
+            bandierine_disponibili: false,
         }
     }
 }
@@ -385,5 +449,31 @@ mod prove_bandierine {
         // il nodo non le ha date: niente veli, e si sa
         let f = feed.con_bandierine(None);
         assert!(!f.bandierine_disponibili && f.post.iter().all(|p| p.bandierine.is_empty()));
+    }
+
+    #[test]
+    fn forum_discussioni_risposte_e_schede_ricevono_solo_le_loro() {
+        let mut b = Veli::new();
+        b.insert("a".repeat(64), vec![m4tr1x_feed::Bandierina { categoria: "spam", peso: 1, codice: false }]);
+        b.insert("c".repeat(64), vec![m4tr1x_feed::Bandierina { categoria: "odio", peso: 2, codice: true }]);
+        let disc = |id: &str| Discussione { id: id.repeat(64), autore: "f".repeat(64), nome: None, titolo: "t".into(), testo: "x".into(), creato: 1, risposte: 0, attivita: 1, bandierine: vec![] };
+        let f = Forum { discussioni: vec![disc("a"), disc("b")], scartati: 0, bandierine_disponibili: false }.con_bandierine(Some(&b));
+        assert!(f.bandierine_disponibili);
+        assert_eq!(f.discussioni[0].bandierine[0].categoria, "spam");
+        assert!(f.discussioni[1].bandierine.is_empty());
+        let aperta = DiscussioneAperta { discussione: disc("b"), risposte: vec![post("c"), post("d")], bandierine_disponibili: false };
+        assert_eq!(aperta.ids(), vec!["b".repeat(64), "c".repeat(64), "d".repeat(64)]);
+        let aperta = aperta.con_bandierine(Some(&b));
+        assert!(aperta.discussione.bandierine.is_empty());
+        assert_eq!(aperta.risposte[0].bandierine[0].categoria, "odio");
+        assert!(aperta.risposte[1].bandierine.is_empty());
+        let scheda = |id: &str| Media {
+            id: id.repeat(64), autore: "f".repeat(64), nome: None, testo: "x".into(), creato: 1, bandierine: vec![],
+            file: FileMedia { sha256: "e".repeat(64), mime: "video/mp4".into(), dimensione: 1, sezione: "signal".into(), titolo: "t".into(), pezzi: vec![], misure: vec![], celle: false },
+        };
+        let g = Galleria { media: vec![scheda("b"), scheda("a")], scartati: 0, bandierine_disponibili: false }.con_bandierine(Some(&b));
+        assert!(g.media[0].bandierine.is_empty());
+        assert_eq!(g.media[1].bandierine[0].categoria, "spam");
+        assert!(!Galleria { media: vec![], scartati: 0, bandierine_disponibili: true }.con_bandierine(None).bandierine_disponibili);
     }
 }

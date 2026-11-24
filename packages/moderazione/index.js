@@ -15,8 +15,9 @@
  * L'elenco vero delle regole NON sta nel repo: arriva a chi lo usa (validaRegole). Nessuna dipendenza, nessuna rete.
  */
 
-/** Kind analizzati: post, commenti/topic (NIP-22), articoli (NIP-23). Nient'altro. */
-const KIND_PUBBLICI = Object.freeze([1, 1111, 30023])
+/** Kind analizzati: post, schede dei file pubblici (reel, film, musica: NIP-94), commenti/topic (NIP-22), articoli
+ * (NIP-23). Nient'altro. */
+const KIND_PUBBLICI = Object.freeze([1, 1063, 1111, 30023])
 /** Categorie delle regole. `offuscamento` è riservata ai segnali senza elenco. */
 const CATEGORIE = Object.freeze(['truffa', 'spam', 'odio', 'violenza', 'armi', 'droga', 'sfruttamento-minori', 'terrorismo', 'altro'])
 const OFFUSCAMENTO = 'offuscamento'

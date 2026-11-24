@@ -22,7 +22,9 @@ class El {
   get textContent() { return this._t + this.children.map(c => c.textContent).join('') }
   set textContent(v) { this._t = String(v); this.children = [] }
   set innerHTML(_v) { throw new Error('innerHTML usato') }
-  append(/** @type {El[]} */ ...c) { for (const x of c) { x.parent = this; this.children.push(x) } }
+  append(/** @type {Array<El|string>} */ ...c) {
+    for (const y of c) { const x = typeof y === 'string' ? Object.assign(new El('#testo'), { _t: y }) : y; x.parent = this; this.children.push(x) }
+  }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this) }
   setAttribute(/** @type {string} */ k, /** @type {string} */ v) { /** @type {any} */ (this.attrs)[k] = v }
   addEventListener(/** @type {string} */ e, /** @type {Function} */ f) { this.on[e] = f }
@@ -71,8 +73,36 @@ test('I-65 app: il possibile sfruttamento di minori non si apre; categorie scono
   assert.ok(!velo(ignota).textContent.includes('<img'), 'una categoria del nodo finisce nel testo')
 })
 
-test('I-65 app: se il nodo non dà le bandierine, il feed lo dice', () => {
+test('I-65 app: forum e reel — titolo, anteprima e apertura sotto il velo finché non lo apri', () => {
+  const disc = (/** @type {any} */ bandierine) => /** @type {El} */ (ctx.voceDiscussione({ id: 'a'.repeat(64), autore: 'f'.repeat(64), nome: null, titolo: 'TITOLO DISC', testo: 'TESTO DISC', creato: 1, risposte: 2, attivita: 1, bandierine }))
+  const reel = (/** @type {any} */ bandierine) => /** @type {El} */ (ctx.voceMedia({ id: 'b'.repeat(64), autore: 'f'.repeat(64), nome: null, testo: 'TESTO REEL', creato: 1, bandierine,
+    file: { sha256: 'e'.repeat(64), mime: 'video/mp4', dimensione: 1000, sezione: 'signal', titolo: 'TITOLO REEL', pezzi: [], misure: [], celle: false } }))
+  for (const [cosa, fai, titolo] of /** @type {Array<[string, (b: any) => El, string]>} */ ([['discussione', disc, 'TITOLO DISC'], ['reel', reel, 'TITOLO REEL']])) {
+    const tessera = (/** @type {El} */ li) => li.children.find(c => c.tag === 'button')
+    const pulita = fai([])
+    assert.equal(velo(pulita), undefined, `${cosa} senza bandierine coperta`)
+    assert.equal(/** @type {El} */ (tessera(pulita)).hidden, false)
+    const coperta = fai([{ categoria: 'spam', peso: 1, codice: false }])
+    const t = /** @type {El} */ (tessera(coperta))
+    assert.equal(t.hidden, true, `${cosa} con bandierina: titolo e apertura visibili`)
+    assert.ok(!velo(coperta).textContent.includes(titolo), `${cosa}: il velo mostra il titolo`)
+    assert.match(velo(coperta).textContent, /Coperto dal nodo: possibile spam\./)
+    velo(coperta).trova(e => e.tag === 'button')[0].on.click()
+    assert.equal(t.hidden, false, `${cosa}: «Mostra comunque» non apre`)
+    const chiusa = fai([{ categoria: 'sfruttamento-minori', peso: 3, codice: false }])
+    assert.equal(/** @type {El} */ (tessera(chiusa)).hidden, true)
+    assert.equal(velo(chiusa).trova(e => e.tag === 'button').length, 0, `${cosa}: il possibile sfruttamento di minori si apre`)
+  }
+})
+
+test('I-65 app: le risposte del forum passano dal velo come i post', () => {
+  assert.match(JS, /document\.getElementById\('disc-risposte'\)\?\.replaceChildren\(\.\.\.d\.risposte\.map\(voce\)\)/, 'le risposte non passano da voce()')
+})
+
+test('I-65 app: se il nodo non dà le bandierine, feed, forum e reel lo dicono', () => {
   assert.match(JS, /f\.bandierine_disponibili \? '' : ' · bandierine del nodo non disponibili'/)
+  assert.match(JS, /g\.bandierine_disponibili \? '' : ' · bandierine del nodo non disponibili'/)
+  assert.match(JS, /d\.bandierine_disponibili \? '' : ' · bandierine del nodo non disponibili'/)
 })
 
 const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8' })
@@ -80,6 +110,7 @@ test('I-65 app (Rust): risposta del nodo controllata campo per campo, bandierine
   for (const [pacchetto, filtro, prova] of [
     ['m4tr1x-transport', 'http::', 'bandierine_solo_categoria_peso_e_codice_e_solo_per_gli_id_chiesti'],
     ['m4tr1x-shell', 'prove_bandierine', 'con_bandierine_attacca_solo_quelle_del_post_giusto'],
+    ['m4tr1x-shell', 'prove_bandierine', 'forum_discussioni_risposte_e_schede_ricevono_solo_le_loro'],
   ]) {
     const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(ROOT, 'app', 'Cargo.toml'), '-p', pacchetto, '--lib', filtro], { encoding: 'utf8', maxBuffer: 64 << 20 })
     assert.equal(r.status, 0, `${pacchetto}: ${r.stdout.slice(-3000)}${r.stderr.slice(-3000)}`)

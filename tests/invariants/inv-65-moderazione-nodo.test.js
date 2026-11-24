@@ -28,7 +28,10 @@ before(async () => {
   ev.codice = protocol.buildEvent({ kind: 1, content: 'ecco s0ld1 f4c1l1 per te', tags: [] }, anna, NET)
   ev.pulito = protocol.buildEvent({ kind: 1, content: 'una bella giornata al mare', tags: [] }, anna, NET)
   ev.busta = protocol.buildEvent({ kind: 1059, content: 'soldi facili', tags: [['p', 'd'.repeat(64)]] }, anna, NET)
-  for (const e of [ev.codice, ev.pulito, ev.busta]) await manda(e)
+  // titoli: una discussione del forum con il titolo in codice, una scheda di reel (kind 1063) con il titolo in chiaro
+  ev.discussione = protocol.buildEvent({ kind: 1, content: 'ciao a tutti', tags: [['t', 'm4tr1x-forum'], ['subject', 'S0LDI FACIL1']] }, anna, NET)
+  ev.reel = protocol.buildEvent({ kind: 1063, content: 'il mio reel', tags: [['x', 'e'.repeat(64)], ['m', 'video/mp4'], ['size', '1000'], ['title', 'soldi facili']] }, anna, NET)
+  for (const e of [ev.codice, ev.pulito, ev.busta, ev.discussione, ev.reel]) await manda(e)
   // due persone segnalano il post pulito (una due volte): contano 2
   for (const [chi, n] of [[bruno, 0], [bruno, 1], [carla, 0]])
     await manda(protocol.buildEvent({ kind: 1984, content: '', tags: [['e', ev.pulito.id, 'spam']], created_at: Math.floor(Date.now() / 1000) - /** @type {number} */ (n) }, chi, NET))
@@ -46,6 +49,8 @@ test('I-65 nodo: bandierine solo sui contenuti pubblici, segnalazioni per person
   assert.deepEqual(per[ev.pulito.id].bandierine, [])
   assert.equal(per[ev.pulito.id].segnalazioni, 2, 'segnalazioni non contate per persona')
   assert.ok(!per[ev.busta.id], 'una busta (messaggio privato) ha una bandierina')
+  assert.deepEqual(per[ev.discussione.id]?.bandierine, [{ categoria: 'truffa', peso: 3, regole: ['r1'], codice: true }], 'titolo della discussione non analizzato')
+  assert.deepEqual(per[ev.reel.id]?.bandierine, [{ categoria: 'truffa', peso: 2, regole: ['r1'], codice: false }], 'scheda del reel non analizzata')
 })
 
 test('I-65 nodo: nella risposta niente chi scrive, niente chi segnala, niente testo', async () => {
@@ -62,7 +67,8 @@ test('I-65 nodo: la tabella delle bandierine non ha colonne per persona, e il re
   db.close()
   assert.deepEqual(colonne, ['categoria', 'codice', 'event_id', 'peso', 'regole'])
   const relay = fs.readFileSync(path.join(__dirname, '..', '..', 'node', 'src', 'relay.js'), 'utf8')
-  assert.match(relay, /ctx\.moderazione\(\{ kind: clean\.kind, content: clean\.content \}\)/, 'il relay passa all\'analizzatore più di kind e testo')
+  assert.match(relay, /ctx\.moderazione\(\{ kind: clean\.kind, content: testoPubblico\(clean\) \}\)/, 'il relay passa all\'analizzatore più di kind e testo')
+  assert.match(relay, /\[e\.content, \.\.\.e\.tags\.filter\(t => \(t\[0\] === 'subject' \|\| t\[0\] === 'title'\) && typeof t\[1\] === 'string'\)\.map\(t => t\[1\]\)\]\.join/, 'il testo pubblico prende altro oltre a testo e titoli')
 })
 
 test('I-65 nodo: solo il proprietario con K13 (401 senza chiave, 404 dall\'onion)', async () => {
