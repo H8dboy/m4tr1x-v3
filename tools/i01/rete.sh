@@ -21,8 +21,17 @@ passo() { echo "passo $(date +%T.%3N): $*" >&2; }
 
 case "${1:-}" in
   prepara)
-    passo "utente $UTENTE"
-    id -u "$UTENTE" >/dev/null 2>&1 || useradd --create-home --shell /usr/sbin/nologin "$UTENTE"
+    passo "utente $UTENTE: c'è già?"
+    if ! timeout 20 id -u "$UTENTE" >/dev/null 2>&1; then
+      passo "utente $UTENTE: useradd"
+      # in CI (24/11/2026) questo passo è rimasto appeso 60 s: con un tetto, chi tiene i file degli utenti, e un secondo tentativo
+      if ! timeout 20 useradd --create-home --shell /usr/sbin/nologin "$UTENTE"; then
+        echo "useradd non riuscito o appeso; processi e blocchi:" >&2
+        ps -eo pid,etime,cmd | grep -E 'useradd|passwd|shadow|dpkg|apt|nscd|userdb|sssd|cloud-init|waagent' | grep -v grep >&2 || true
+        ls -la /etc/*.lock /etc/.pwd.lock 2>/dev/null >&2 || true
+        id -u "$UTENTE" >/dev/null 2>&1 || timeout 30 useradd --create-home --shell /usr/sbin/nologin "$UTENTE"
+      fi
+    fi
     passo "ACL sui socket dei resolver"
     # resolver via socket UNIX: negati solo a $UTENTE (connect su un socket UNIX richiede la scrittura)
     for sock in /run/systemd/resolve/io.systemd.Resolve /run/systemd/resolve/io.systemd.Resolve.Monitor \
