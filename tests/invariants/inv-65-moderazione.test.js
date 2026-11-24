@@ -27,7 +27,7 @@ const ev = (/** @type {number} */ kind, /** @type {string} */ content) => ({ kin
 test('I-65 (1): fuori dai kind pubblici niente bandierine, anche con il testo di una regola', () => {
   for (const kind of [1059, 13, 14, 4, 10477, 0, 3, 7, 1984, 24242, 30000])
     assert.deepEqual(analizza(ev(kind, 'soldi facili, clicca qui'), REGOLE), [], `kind ${kind} analizzato`)
-  assert.deepEqual([...KIND_PUBBLICI].sort((a, b) => a - b), [1, 1111, 30023], 'elenco dei kind pubblici cambiato senza rivedere I-65')
+  assert.deepEqual([...KIND_PUBBLICI].sort((a, b) => a - b), [1, 1063, 1111, 30023], 'elenco dei kind pubblici cambiato senza rivedere I-65')
   // un evento "busta" con un contenuto che, se letto, farebbe scattare la regola: getter che registra la lettura
   let letto = false
   const busta = { kind: 1059, get content() { letto = true; return 'soldi facili' } }

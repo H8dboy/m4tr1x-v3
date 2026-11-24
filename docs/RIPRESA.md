@@ -165,6 +165,8 @@
 
 103. **I-27 attiva (processi esterni).** Riscritta sulla realtà: niente programmi esterni per i file (pulizia e codifica in Rust), l'unico processo è tor. `inv-27-processi`: statico (solo tor.js e tor_process.rs avviano processi; nessun ffmpeg/exiftool), dal vivo un tor finto che non parte → fermato a 1,5 s e ucciso (solo Linux/macOS: CI), app con kill_on_drop/__OwningControllerProcess/30 s porta di controllo/bootstrap, file a celle "bomba" rifiutato prima di allocare. 7 sabotaggi (2 solo Linux, nel job sabotaggio-linux). Tetto di memoria per tor: no, dichiarato.
 
+104. **Velo su forum e reel (I-65).** Il fondatore: «va bene così, metti il velo anche su forum e reel». Nodo: analizzati anche i kind 1063 (schede di reel/film/musica) e i titoli (`subject` delle discussioni, `title` delle schede) con `testoPubblico()` nel relay (solo testo + quei due tag). Shell: `Forum`, `DiscussioneAperta`, `Galleria` con `con_bandierine` e `bandierine_disponibili` (helper `bandierine_di`, tipo `Veli`). UI: `velo(p, ...coperti)` generico; tessera del reel e voce della discussione restano coperte (titolo e apertura) finché non si apre il velo; risposte già via `voce()`. Prove: inv-65-moderazione-nodo (discussione con titolo in codice, scheda reel), inv-65-velo-app (DOM finto su voceDiscussione/voceMedia, prova Rust), 7 sabotaggi nuovi + 2 aggiornati. Il velo dei reel guarda il testo della scheda, non i fotogrammi.
+
 ## Prossimo (dal 12/11/2026)
 
 **Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 12/11 pomeriggio in `app/celle/README.md`: foto a

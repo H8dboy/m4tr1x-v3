@@ -180,8 +180,9 @@ const MOTIVI = /** @type {Record<string, string>} */ ({
 })
 const MAI_APRIBILE = new Set(['sfruttamento-minori'])
 
-/** Il velo su un testo con bandierine; `null` se non ne ha. @param {any} p @param {HTMLElement} testo */
-function velo(p, testo) {
+/** Il velo su un contenuto con bandierine (post, discussione, scheda di un file); `null` se non ne ha. Gli
+ * elementi `coperti` restano nascosti finché non lo apri. @param {any} p @param {HTMLElement[]} coperti */
+function velo(p, ...coperti) {
   const b = Array.isArray(p.bandierine) ? p.bandierine : []
   if (!b.length) return null
   const motivi = [...new Set(b.map((/** @type {any} */ x) => MOTIVI[String(x.categoria)] || MOTIVI.altro))]
@@ -191,7 +192,7 @@ function velo(p, testo) {
   const perche = document.createElement('p')
   perche.textContent = `Coperto dal nodo: ${motivi.join(', ')}${codice ? ' · scritto in codice' : ''}.`
   v.append(perche)
-  testo.hidden = true
+  for (const c of coperti) c.hidden = true
   if (b.some((/** @type {any} */ x) => MAI_APRIBILE.has(String(x.categoria)))) {
     const n = document.createElement('p')
     n.className = 'nota'
@@ -201,7 +202,7 @@ function velo(p, testo) {
     const apri = document.createElement('button')
     apri.type = 'button'
     apri.textContent = 'Mostra comunque'
-    apri.addEventListener('click', () => { testo.hidden = false; v.remove() })
+    apri.addEventListener('click', () => { for (const c of coperti) c.hidden = false; v.remove() })
     v.append(apri)
   }
   return v
@@ -405,7 +406,9 @@ function voceMedia(m) {
   meta.textContent = `${m.nome ? String(m.nome) : String(m.autore).slice(0, 12) + '…'} · ${quando(Number(m.creato))} · ${mega(Number(m.file.dimensione))}`
   b.append(cop, t, meta)
   b.addEventListener('click', () => apriMedia(m))
-  li.append(b)
+  // I-65: con una bandierina la tessera (titolo e apertura) resta sotto il velo finché non lo apri
+  const coperto = velo(m, b)
+  li.append(...(coperto ? [coperto] : []), b)
   return li
 }
 
@@ -457,7 +460,8 @@ async function caricaMedia() {
     document.getElementById('media-lista')?.replaceChildren(...lista.map(voceMedia))
     nascondi('media-vuoto', lista.length > 0)
     const scartati = Number(g.scartati) ? ` · ${Number(g.scartati)} scartati (non validi)` : ''
-    mostra('media-stato', `${lista.length} contenuti${scartati}`)
+    const veli = g.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
+    mostra('media-stato', `${lista.length} contenuti${scartati}${veli}`)
   })
 }
 
@@ -715,7 +719,9 @@ function voceDiscussione(d) {
   m.append(`${chiDi(d)} · ${quando(Number(d.attivita))} · `, n)
   b.append(t, a, m)
   b.addEventListener('click', () => apriDiscussione(String(d.id)))
-  li.append(b)
+  // I-65: con una bandierina titolo, anteprima e apertura restano sotto il velo finché non lo apri
+  const coperto = velo(d, b)
+  li.append(...(coperto ? [coperto] : []), b)
   return li
 }
 
@@ -751,7 +757,8 @@ async function caricaForum() {
     document.getElementById('forum-lista')?.replaceChildren(...lista.map(voceDiscussione))
     nascondi('forum-vuoto', lista.length > 0)
     const scartati = Number(f.scartati) ? ` · ${Number(f.scartati)} scartati (non validi)` : ''
-    mostra('forum-stato', `${lista.length} discussioni${scartati}`)
+    const veli = f.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
+    mostra('forum-stato', `${lista.length} discussioni${scartati}${veli}`)
     vediElenco()
   })
 }
@@ -765,7 +772,8 @@ async function apriDiscussione(/** @type {string} */ id) {
     mostra('disc-chi', `${chiDi(d.discussione)} · ${quando(Number(d.discussione.creato))}`)
     mostra('disc-testo', String(d.discussione.testo))
     document.getElementById('disc-risposte')?.replaceChildren(...d.risposte.map(voce))
-    mostra('forum-stato', d.risposte.length === 1 ? '1 risposta' : `${d.risposte.length} risposte`)
+    const veli = d.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
+    mostra('forum-stato', (d.risposte.length === 1 ? '1 risposta' : `${d.risposte.length} risposte`) + veli)
     nascondi('forum-elenco', true)
     nascondi('forum-aperta', false)
   })

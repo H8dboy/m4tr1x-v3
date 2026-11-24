@@ -90,6 +90,10 @@ function createRelay(ctx) {
   const delEv = db.prepare('DELETE FROM events WHERE id = ?')
   const purgeStmt = db.prepare('DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?')
   const insTag = db.prepare('INSERT INTO event_tags (event_id,name,value) VALUES (?,?,?)')
+  // I-65: il testo PUBBLICO di un contenuto per l'analizzatore: il testo e i titoli (subject delle discussioni del
+  // forum, title delle schede di reel/film/musica). Nessun altro tag, mai chi ha scritto.
+  const testoPubblico = (/** @type {{ content: string, tags: string[][] }} */ e) =>
+    [e.content, ...e.tags.filter(t => (t[0] === 'subject' || t[0] === 'title') && typeof t[1] === 'string').map(t => t[1])].join('\n')
   const insFlag = db.prepare('INSERT OR REPLACE INTO event_flags (event_id,categoria,peso,regole,codice) VALUES (?,?,?,?,?)')
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD })
   /** @type {Map<string, { ws: import('ws').WebSocket, sid: string, filters: Record<string, any>[] }>} */
@@ -161,7 +165,7 @@ function createRelay(ctx) {
     if (fresh && ctx.moderazione) {
       // I-65: all'analizzatore solo kind e testo, mai chi ha scritto; le bandierine restano legate all'evento
       try {
-        for (const b of ctx.moderazione({ kind: clean.kind, content: clean.content })) insFlag.run(clean.id, b.categoria, b.peso, b.regole.join(','), b.codice ? 1 : 0)
+        for (const b of ctx.moderazione({ kind: clean.kind, content: testoPubblico(clean) })) insFlag.run(clean.id, b.categoria, b.peso, b.regole.join(','), b.codice ? 1 : 0)
       } catch (e) { log(`moderazione: analisi non riuscita (${/** @type {Error} */ (e).message})`) }
     }
     if (fresh) broadcast(clean, source)

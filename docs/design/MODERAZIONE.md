@@ -8,7 +8,7 @@
 
 | Domanda | Scelta | Perché |
 |---|---|---|
-| Che cosa si guarda | **Solo eventi pubblici** di testo: post (kind 1), commenti/topic (kind 1111), articoli (kind 30023) | I messaggi privati sono cifrati e devono restarlo: nessuno li può leggere, e nessun codice ci prova |
+| Che cosa si guarda | **Solo eventi pubblici** di testo: post e discussioni del forum (kind 1), schede di reel, film e musica (kind 1063: descrizione e titolo), commenti/topic (kind 1111), articoli (kind 30023); con il testo anche i **titoli** (`subject`, `title`) | I messaggi privati sono cifrati e devono restarlo: nessuno li può leggere, e nessun codice ci prova |
 | Su chi va la bandierina | **Sul contenuto**, mai sulla persona | Un registro di "persone sospette" su un nodo è esattamente ciò che M4TR1X promette di non diventare (stesso motivo di I-43): chi sequestra il nodo se lo porterebbe via. Una persona che scrive in codice si vede dai suoi contenuti con la bandierina, uno per uno |
 | Che cosa fa una bandierina | **Niente da sola**: l'app mostra un velo con il motivo («segnalato: possibile truffa») e chi guarda sceglie se aprirlo | Togliere un contenuto è una decisione di una persona, con la procedura DSA (elenco di rimozione firmato, I-51…I-56). Un algoritmo sbaglia, e il DSA chiede comunque motivazione e ricorso |
 | Linguaggio in codice | Il testo si **normalizza** prima del confronto: lettere sostituite da numeri e simboli (`s0ld1`), lettere separate (`s.o.l.d.i`), lettere di altri alfabeti uguali a vista (`ѕоldi` cirillico), caratteri invisibili, lettere ripetute. Se una regola si trova solo nella forma normalizzata, la bandierina dice «scritto in codice» e pesa di più | Chi scrive in codice lo fa per sfuggire: il trucco stesso è un segnale |
@@ -34,7 +34,7 @@
    - Il nodo dà alle app `GET /moderazione?ids=…` (al massimo 100 id): per ogni contenuto con bandierine, solo categoria, peso e «scritto in codice». Mai gli id delle regole (direbbero com'è fatto l'elenco), mai chi scrive o chi segnala.
    - L'app controlla la risposta campo per campo (categorie da un elenco chiuso, solo gli id chiesti, niente campi in più); se il nodo non le dà, il feed si vede senza veli e lo dice.
    - Il velo dice il motivo in parole e si apre con «Mostra comunque»; **il possibile sfruttamento di minori non si apre** (resta coperto finché un moderatore non lo valuta): scelta prudente, un falso allarme costa poco, un'apertura sbagliata no.
-   - Da fare: lo stesso velo nel forum e nei reel.
+   - **Forum e reel, 24/11 sera:** velo sulla voce della discussione (titolo, anteprima e apertura), su ogni risposta e sulla tessera di reel/film/musica (titolo e apertura). Il velo dei reel si basa sul TESTO della scheda (titolo e descrizione), non sui fotogrammi: i gesti nei video restano per l'hub.
 4. Hub: lo stesso sui reel (fotogrammi) quando c'è l'AI.
 
 ## Compromessi dichiarati
