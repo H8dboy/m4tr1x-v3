@@ -25,6 +25,11 @@ ignore = [
   # proc-macro-error 1.0.4: macro di compilazione di glib-macros (stesso stack GTK di Tauri, solo Linux).
   # Gira solo durante la compilazione, non finisce nell'app.
   { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: solo compilazione, via glib-macros (GTK di Tauri, Linux)" },
+  # chrono 0.4.45 "non più mantenuto" (avviso, non vulnerabilità; 24/11/2026): sta nel Cargo.lock solo come
+  # dipendenza FACOLTATIVA di serde_with (via Tauri), la funzione non è accesa e chrono non si compila
+  # (`cargo tree -i chrono --target all -e all` vuoto). cargo audit legge il lock alla lettera, cargo deny il grafo vero.
+  # Da togliere quando serde_with non lo elenca più; serde_with 3.25 non basta (porta jiff in più).
+  { id = "RUSTSEC-2026-0543", reason = "chrono: solo facoltativo di serde_with nel lock, non compilato (cargo tree vuoto)" },
 ]
 
 [licenses]
