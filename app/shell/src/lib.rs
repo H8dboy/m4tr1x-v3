@@ -153,13 +153,20 @@ struct Visto {
     larghezza: u32,
     altezza: u32,
     pezzi_totali: u32,
-    /// i pezzi arrivati e verificati, in ordine
-    pezzi: Vec<Vec<u8>>,
-    /// quanti pezzi il filo che decodifica ha già usato
+    /// i pezzi arrivati e verificati, in ordine (compressi: sono piccoli)
+    pezzi: Vec<Arc<Vec<u8>>>,
+    /// quanti pezzi il filo che decodifica ha già usato (foto) o contato (reel)
     decodificati: usize,
     byte_arrivati: u64,
-    /// i fotogrammi decodificati (uno per una foto, rifatto a ogni pezzo), RGBA
-    fotogrammi: Vec<Vec<u8>>,
+    /// reel: il primo fotogramma di ogni pezzo contato, e quanti fotogrammi in tutto
+    inizio: Vec<u32>,
+    fotogrammi: u32,
+    /// i fotogrammi tenuti come pixel RGBA: (pezzo, fotogrammi). Una foto: uno solo, rifatto a ogni pezzo. Un reel:
+    /// al massimo `CELLE_GRUPPI_IN_MEMORIA` gruppi (quello che si guarda e il prossimo), mai tutto il reel
+    in_memoria: Vec<(usize, Vec<Vec<u8>>)>,
+    /// l'ultimo fotogramma chiesto dall'interfaccia, e quando
+    voluto: u32,
+    chiesto: Option<std::time::Instant>,
     fps: u8,
     /// tutti i pezzi sono scesi e decodificati (o si è fermato per un errore)
     finito: bool,
@@ -720,83 +727,141 @@ async fn celle_pubblica(sezione: String, titolo: String, testo: String, rete: ta
     Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into() })
 }
 
-/// Decodifica i pezzi arrivati e non ancora usati di `visto` (chiamato da un filo a parte): una foto si rifà da
-/// tutti i pezzi che ci sono; di un reel ogni pezzo aggiunge i suoi fotogrammi.
-fn decodifica_pezzi_arrivati(visto: &Mutex<Visto>, generazione: u32) -> bool {
-    let (mime, pezzi, da) = {
-        let v = visto.lock().unwrap();
-        if v.generazione != generazione {
-            return false;
-        }
-        if v.decodificati == v.pezzi.len() {
-            return true;
-        }
-        (v.mime.clone(), v.pezzi.clone(), v.decodificati)
-    };
-    // i pezzi arrivano dalla rete firmati da chiunque: un decodificatore che va in panico non deve portarsi via
-    // l'app né lasciare l'interfaccia ad aspettare per sempre; e quello che si tiene in memoria ha gli stessi
-    // limiti di quello che si codifica (misura della foto, numero di fotogrammi)
-    let gia = { visto.lock().unwrap().fotogrammi.len() };
-    let decodifica = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(Vec<Vec<u8>>, u32, u32, u8, bool), String> {
-        if mime == m4tr1x_protocol::MIME_CELLE_FOTO {
-            let viste: Vec<&[u8]> = pezzi.iter().map(|p| p.as_slice()).collect();
-            m4tr1x_celle::pacchetto::apri_foto(&viste).map(|img| (vec![rgba_da_rgb(&img.rgb)], img.larghezza, img.altezza, 0, true)).map_err(|e| e.to_string())
-        } else {
-            let mut nuovi = Vec::new();
-            let mut misura = (0, 0, 0);
-            let mut r = Ok(());
-            for p in &pezzi[da..] {
-                match m4tr1x_celle::pacchetto::apri_reel(p) {
-                    Ok((fotogrammi, fps)) => {
-                        for f in fotogrammi {
-                            if (gia + nuovi.len()) as u32 >= CELLE_FOTOGRAMMI_MAX || f.larghezza as u64 * f.altezza as u64 > CELLE_PIXEL_FOTOGRAMMA_MAX {
-                                r = Err("reel troppo lungo o troppo grande".to_string());
-                                break;
-                            }
-                            misura = (f.larghezza, f.altezza, fps);
-                            nuovi.push(rgba_da_rgb(&f.rgb));
-                        }
-                    }
-                    Err(e) => r = Err(e.to_string()),
-                }
-                if r.is_err() {
-                    break;
-                }
-            }
-            r.map(|_| (nuovi, misura.0, misura.1, misura.2, false))
-        }
-    }));
-    let esito: Result<(Vec<Vec<u8>>, u32, u32, u8, bool), String> = match decodifica {
-        Ok(r) => r,
-        Err(_) => Err("decodifica interrotta".to_string()),
-    };
+/// Gruppi di un reel tenuti come pixel: quello che si guarda e il prossimo. Il resto del reel resta a pezzi
+/// compressi e si ridecodifica quando ci si torna (30 s a 480 px erano ~330 MB di pixel; ora ~2 gruppi da 48).
+const CELLE_GRUPPI_IN_MEMORIA: usize = 2;
+/// Fotogrammi al massimo in UN pezzo di reel (l'app ne mette `CELLE_CHIAVE_OGNI`): senza, un pezzo ostile da 600
+/// fotogrammi 720×720 chiederebbe da solo 1,2 GB di pixel.
+const CELLE_FOTOGRAMMI_GRUPPO_MAX: usize = 2 * CELLE_CHIAVE_OGNI as usize;
+/// Sceso tutto, se l'interfaccia non chiede fotogrammi da tanto il visore è chiuso: il filo si ferma e libera i pixel.
+const CELLE_VISORE_INATTIVO: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Cosa ha fatto un giro del filo che decodifica.
+#[derive(Debug, PartialEq)]
+enum Passo {
+    Lavorato,
+    Niente,
+    Fine,
+}
+
+/// I pezzi arrivano dalla rete firmati da chiunque: un decodificatore che va in panico non deve portarsi via l'app
+/// né lasciare l'interfaccia ad aspettare per sempre.
+fn senza_panico<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|_| Err("decodifica interrotta".into()))
+}
+
+fn visore_fallito(v: &mut Visto, e: String) -> Passo {
+    v.errore = Some(format!("il contenuto non si legge: {e}"));
+    v.finito = true;
+    Passo::Fine
+}
+
+/// Un giro del filo che decodifica (mai con il lucchetto preso mentre lavora). Foto: si rifà da tutti i pezzi che
+/// ci sono. Reel: prima si contano i pezzi nuovi senza decodificarli (dove cade ogni gruppo), poi si tengono come
+/// pixel solo il gruppo del fotogramma chiesto e il prossimo (il primo, a fine reel), gli altri si buttano.
+fn passo_visore(visto: &Mutex<Visto>, generazione: u32) -> Passo {
     let mut v = visto.lock().unwrap();
     if v.generazione != generazione {
-        return false;
+        return Passo::Fine;
     }
-    match esito {
-        Ok((fotogrammi, w, h, fps, sostituisci)) => {
-            if sostituisci {
-                v.fotogrammi = fotogrammi;
-            } else {
-                v.fotogrammi.extend(fotogrammi);
+    if v.mime == m4tr1x_protocol::MIME_CELLE_FOTO {
+        if v.decodificati == v.pezzi.len() {
+            return if v.finito { Passo::Fine } else { Passo::Niente };
+        }
+        let pezzi = v.pezzi.clone();
+        drop(v);
+        let esito = senza_panico(|| {
+            let viste: Vec<&[u8]> = pezzi.iter().map(|p| p.as_slice()).collect();
+            m4tr1x_celle::pacchetto::apri_foto(&viste).map(|img| (img.larghezza, img.altezza, rgba_da_rgb(&img.rgb))).map_err(|e| e.to_string())
+        });
+        let mut v = visto.lock().unwrap();
+        if v.generazione != generazione {
+            return Passo::Fine;
+        }
+        return match esito {
+            Ok((w, h, f)) => {
+                v.in_memoria = vec![(0, vec![f])];
+                (v.larghezza, v.altezza, v.fotogrammi, v.inizio) = (w, h, 1, vec![0]);
+                v.decodificati = pezzi.len();
+                Passo::Lavorato
             }
-            if w > 0 {
-                v.larghezza = w;
-                v.altezza = h;
-            }
-            if fps > 0 {
+            Err(e) => visore_fallito(&mut v, e),
+        };
+    }
+    // reel, 1: contare i pezzi nuovi
+    if v.decodificati < v.pezzi.len() {
+        let i = v.decodificati;
+        let p = v.pezzi[i].clone();
+        drop(v);
+        let conto = senza_panico(|| m4tr1x_celle::pacchetto::conta_reel(&p).map_err(|e| e.to_string()));
+        let mut v = visto.lock().unwrap();
+        if v.generazione != generazione {
+            return Passo::Fine;
+        }
+        return match conto {
+            Ok((n, fps)) if n <= CELLE_FOTOGRAMMI_GRUPPO_MAX && v.fotogrammi as usize + n <= CELLE_FOTOGRAMMI_MAX as usize => {
+                let primo = v.fotogrammi;
+                v.inizio.push(primo);
+                v.fotogrammi += n as u32;
                 v.fps = fps;
+                v.decodificati = i + 1;
+                Passo::Lavorato
             }
-            v.decodificati = pezzi.len();
-            true
-        }
-        Err(e) => {
-            v.errore = Some(format!("il contenuto non si legge: {e}"));
-            v.finito = true;
-            false
+            Ok(_) => visore_fallito(&mut v, "reel troppo lungo o gruppo troppo grande".into()),
+            Err(e) => visore_fallito(&mut v, e),
+        };
+    }
+    // reel, 2: il gruppo che si guarda e il prossimo come pixel, nient'altro
+    let contati = v.inizio.len();
+    let sceso_tutto = v.finito && contati == v.pezzi.len();
+    if contati > 0 {
+        let voluto = v.voluto;
+        let g = v.inizio.partition_point(|&s| s <= voluto).saturating_sub(1);
+        let prossimo = if g + 1 < contati {
+            Some(g + 1)
+        } else if sceso_tutto && contati == v.pezzi_totali as usize && g != 0 {
+            Some(0)
+        } else {
+            None
+        };
+        let voluti: Vec<usize> = std::iter::once(g).chain(prossimo).take(CELLE_GRUPPI_IN_MEMORIA).collect();
+        v.in_memoria.retain(|(i, _)| voluti.contains(i));
+        if let Some(&manca) = voluti.iter().find(|&&i| !v.in_memoria.iter().any(|(j, _)| *j == i)) {
+            let p = v.pezzi[manca].clone();
+            let attesi = v.inizio.get(manca + 1).copied().unwrap_or(v.fotogrammi) - v.inizio[manca];
+            drop(v);
+            let esito = senza_panico(|| {
+                let (fotogrammi, _) = m4tr1x_celle::pacchetto::apri_reel(&p).map_err(|e| e.to_string())?;
+                if fotogrammi.len() != attesi as usize {
+                    return Err("il gruppo non ha i fotogrammi che dichiara".into());
+                }
+                let (w, h) = fotogrammi.first().map(|f| (f.larghezza, f.altezza)).unwrap_or((0, 0));
+                if fotogrammi.iter().any(|f| (f.larghezza, f.altezza) != (w, h)) || w as u64 * h as u64 > CELLE_PIXEL_FOTOGRAMMA_MAX {
+                    return Err("fotogrammi troppo grandi o di misure diverse".into());
+                }
+                Ok((w, h, fotogrammi.iter().map(|f| rgba_da_rgb(&f.rgb)).collect::<Vec<_>>()))
+            });
+            let mut v = visto.lock().unwrap();
+            if v.generazione != generazione {
+                return Passo::Fine;
+            }
+            return match esito {
+                Ok((w, h, _)) if v.larghezza != 0 && (v.larghezza, v.altezza) != (w, h) => visore_fallito(&mut v, "gruppi di misure diverse".into()),
+                Ok((w, h, f)) => {
+                    (v.larghezza, v.altezza) = (w, h);
+                    v.in_memoria.push((manca, f));
+                    Passo::Lavorato
+                }
+                Err(e) => visore_fallito(&mut v, e),
+            };
         }
     }
+    // tutto sceso e nessuno guarda più: il visore è chiuso, i pixel si liberano
+    if sceso_tutto && v.chiesto.is_none_or(|t| t.elapsed() > CELLE_VISORE_INATTIVO) {
+        v.in_memoria.clear();
+        return Passo::Fine;
+    }
+    Passo::Niente
 }
 
 /// Apre una foto o un reel a celle dalla sua scheda: i pezzi scendono via Tor uno alla volta (prima dal nodo dei
@@ -818,25 +883,22 @@ async fn celle_apri(sha256: String, mime: String, dimensione: u64, pezzi: Vec<St
     let generazione = {
         let mut v = alveare.visto.lock().unwrap();
         let g = v.generazione.wrapping_add(1);
-        *v = Visto { generazione: g, mime: mime.clone(), pezzi_totali: u32::try_from(pezzi.len()).unwrap_or(u32::MAX), ..Visto::default() };
+        *v = Visto { generazione: g, mime: mime.clone(), pezzi_totali: u32::try_from(pezzi.len()).unwrap_or(u32::MAX), chiesto: Some(std::time::Instant::now()), ..Visto::default() };
         g
     };
     let attesi: Vec<(String, usize)> = pezzi.iter().cloned().zip(misure.iter().map(|&m| usize::try_from(m).unwrap_or(usize::MAX))).collect();
     let visto = alveare.visto.clone();
     let fase = alveare.fase.clone();
     let in_corso = alveare.in_corso.clone();
-    // filo che decodifica i pezzi man mano che arrivano
+    // filo che decodifica i pezzi man mano che arrivano e, per un reel, tiene come pixel solo il gruppo che si
+    // guarda e il prossimo finché il visore è aperto (si ferma da solo a una nuova apertura o se nessuno guarda)
     let visto_dec = visto.clone();
-    let decodifica = tauri::async_runtime::spawn_blocking(move || loop {
-        if !decodifica_pezzi_arrivati(&visto_dec, generazione) {
-            break;
+    tauri::async_runtime::spawn_blocking(move || loop {
+        match passo_visore(&visto_dec, generazione) {
+            Passo::Lavorato => {}
+            Passo::Niente => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Passo::Fine => break,
         }
-        let v = visto_dec.lock().unwrap();
-        if v.generazione != generazione || (v.finito && v.decodificati == v.pezzi.len()) {
-            break;
-        }
-        drop(v);
-        std::thread::sleep(std::time::Duration::from_millis(50));
     });
     tauri::async_runtime::spawn(async move {
         let op = Operazione { in_corso: AtomicBool::new(true), fase: Mutex::new(None) };
@@ -848,7 +910,7 @@ async fn celle_apri(sha256: String, mime: String, dimensione: u64, pezzi: Vec<St
                 let mut v = visto.lock().unwrap();
                 if v.generazione == generazione {
                     v.byte_arrivati += b.len() as u64;
-                    v.pezzi.push(b.to_vec());
+                    v.pezzi.push(Arc::new(b.to_vec()));
                 }
             })
             .await
@@ -869,7 +931,6 @@ async fn celle_apri(sha256: String, mime: String, dimensione: u64, pezzi: Vec<St
                 v.finito = true;
             }
         }
-        let _ = decodifica.await;
         *fase.lock().unwrap() = None;
         in_corso.store(false, Ordering::SeqCst);
     });
@@ -886,20 +947,33 @@ fn celle_stato(alveare: tauri::State<'_, Alveare>) -> CelleStato {
         pezzi_arrivati: u32::try_from(v.pezzi.len()).unwrap_or(u32::MAX),
         pezzi_totali: v.pezzi_totali,
         byte_arrivati: v.byte_arrivati,
-        fotogrammi: u32::try_from(v.fotogrammi.len()).unwrap_or(u32::MAX),
+        fotogrammi: v.fotogrammi,
         fps: v.fps,
         finito: v.finito && (v.decodificati == v.pezzi.len() || v.errore.is_some()),
         errore: v.errore.clone(),
     }
 }
 
+/// I pixel del fotogramma `indice` se il suo gruppo è tra quelli tenuti in memoria.
+fn quadro_in_memoria(v: &Visto, indice: u32) -> Option<&Vec<u8>> {
+    if indice >= v.fotogrammi {
+        return None;
+    }
+    let g = v.inizio.partition_point(|&s| s <= indice).checked_sub(1)?;
+    let (_, f) = v.in_memoria.iter().find(|(i, _)| *i == g)?;
+    f.get((indice - v.inizio[g]) as usize)
+}
+
 /// I pixel RGBA del fotogramma `indice` di quello che si sta guardando (0 per una foto), grezzi, preceduti da
-/// larghezza e altezza (32 bit, poco significativo prima). Vuoto se quel fotogramma non c'è ancora.
+/// larghezza e altezza (32 bit, poco significativo prima). Vuoto se quel fotogramma non c'è ancora o se il suo
+/// gruppo non è ancora tra i pixel in memoria: la richiesta stessa dice al filo che decodifica quale gruppo serve.
 #[tauri::command]
 fn celle_quadro(indice: u32, alveare: tauri::State<'_, Alveare>) -> tauri::ipc::Response {
-    let v = alveare.visto.lock().unwrap();
+    let mut v = alveare.visto.lock().unwrap();
+    v.voluto = indice;
+    v.chiesto = Some(std::time::Instant::now());
     let mut b = Vec::new();
-    if let Some(f) = v.fotogrammi.get(indice as usize) {
+    if let Some(f) = quadro_in_memoria(&v, indice) {
         b.reserve(8 + f.len());
         b.extend_from_slice(&v.larghezza.to_le_bytes());
         b.extend_from_slice(&v.altezza.to_le_bytes());
@@ -1223,4 +1297,124 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod prove_visore {
+    use super::*;
+    use m4tr1x_celle::reel::{codifica_reel, ParametriReel};
+    use m4tr1x_celle::{Immagine, Parametri};
+
+    fn scena(i: u32) -> Immagine {
+        let (w, h) = (64u32, 48u32);
+        let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                rgb.extend_from_slice(&[((x + 3 * i) * 4) as u8, (y * 5) as u8, ((x + y + i) * 2) as u8]);
+            }
+        }
+        Immagine { larghezza: w, altezza: h, rgb }
+    }
+
+    /// Un reel di `n` fotogrammi con una chiave ogni `chiave`: i suoi pezzi, uno per gruppo.
+    fn pezzi(n: u32, chiave: u16) -> Vec<Vec<u8>> {
+        let f: Vec<Immagine> = (0..n).map(scena).collect();
+        let p = ParametriReel { foto: Parametri { raggio: 8, ..Parametri::default() }, chiave_ogni: chiave, fps: 12, ..ParametriReel::default() };
+        m4tr1x_celle::pacchetto::pezzi_reel(&codifica_reel(&f, p).unwrap())
+    }
+
+    fn visto(pezzi: &[Vec<u8>]) -> Mutex<Visto> {
+        Mutex::new(Visto {
+            generazione: 1,
+            mime: m4tr1x_protocol::MIME_CELLE_REEL.into(),
+            pezzi_totali: pezzi.len() as u32,
+            pezzi: pezzi.iter().map(|p| Arc::new(p.clone())).collect(),
+            finito: true,
+            chiesto: Some(std::time::Instant::now()),
+            ..Visto::default()
+        })
+    }
+
+    /// Fa girare il filo finché non ha più niente da fare.
+    fn gira(v: &Mutex<Visto>) -> Passo {
+        for _ in 0..100 {
+            match passo_visore(v, 1) {
+                Passo::Lavorato => {}
+                altro => return altro,
+            }
+        }
+        panic!("il filo non si ferma");
+    }
+
+    #[test]
+    fn il_reel_resta_in_memoria_solo_a_due_gruppi() {
+        let p = pezzi(20, 4);
+        assert_eq!(p.len(), 5);
+        let v = visto(&p);
+        assert_eq!(gira(&v), Passo::Niente);
+        {
+            let g = v.lock().unwrap();
+            assert_eq!(g.fotogrammi, 20, "contati senza decodificare");
+            assert_eq!(g.inizio, vec![0, 4, 8, 12, 16]);
+            let gruppi: Vec<usize> = g.in_memoria.iter().map(|(i, _)| *i).collect();
+            assert_eq!(gruppi, vec![0, 1], "il primo gruppo e il prossimo");
+            assert!(quadro_in_memoria(&g, 0).is_some() && quadro_in_memoria(&g, 7).is_some() && quadro_in_memoria(&g, 8).is_none());
+        }
+        // chi guarda arriva al fotogramma 13: in memoria il suo gruppo e il prossimo, gli altri buttati
+        v.lock().unwrap().voluto = 13;
+        assert_eq!(gira(&v), Passo::Niente);
+        {
+            let g = v.lock().unwrap();
+            let mut gruppi: Vec<usize> = g.in_memoria.iter().map(|(i, _)| *i).collect();
+            gruppi.sort();
+            assert_eq!(gruppi, vec![3, 4]);
+            assert!(g.in_memoria.len() <= CELLE_GRUPPI_IN_MEMORIA);
+            assert!(quadro_in_memoria(&g, 0).is_none() && quadro_in_memoria(&g, 19).is_some());
+        }
+        // all'ultimo gruppo il prossimo è il primo (il reel ricomincia)
+        v.lock().unwrap().voluto = 18;
+        assert_eq!(gira(&v), Passo::Niente);
+        let mut gruppi: Vec<usize> = v.lock().unwrap().in_memoria.iter().map(|(i, _)| *i).collect();
+        gruppi.sort();
+        assert_eq!(gruppi, vec![0, 4]);
+    }
+
+    #[test]
+    fn i_fotogrammi_della_finestra_sono_quelli_del_reel_intero() {
+        let p = pezzi(12, 4);
+        let tutti: Vec<Vec<u8>> = p.iter().flat_map(|pz| m4tr1x_celle::pacchetto::apri_reel(pz).unwrap().0).map(|f| rgba_da_rgb(&f.rgb)).collect();
+        let v = visto(&p);
+        for i in 0..12u32 {
+            v.lock().unwrap().voluto = i;
+            gira(&v);
+            assert_eq!(quadro_in_memoria(&v.lock().unwrap(), i), Some(&tutti[i as usize]), "fotogramma {i}");
+        }
+    }
+
+    #[test]
+    fn nessuno_guarda_piu_e_il_filo_libera_i_pixel() {
+        let v = visto(&pezzi(8, 4));
+        gira(&v);
+        assert!(!v.lock().unwrap().in_memoria.is_empty());
+        v.lock().unwrap().chiesto = std::time::Instant::now().checked_sub(CELLE_VISORE_INATTIVO + std::time::Duration::from_secs(1));
+        assert_eq!(gira(&v), Passo::Fine);
+        assert!(v.lock().unwrap().in_memoria.is_empty());
+    }
+
+    #[test]
+    fn un_gruppo_troppo_lungo_si_rifiuta_senza_decodificarlo() {
+        let n = CELLE_FOTOGRAMMI_GRUPPO_MAX as u32 + 1;
+        let v = visto(&pezzi(n, 0));
+        assert_eq!(gira(&v), Passo::Fine);
+        let g = v.lock().unwrap();
+        assert!(g.errore.as_deref().unwrap_or("").contains("troppo"));
+        assert!(g.in_memoria.is_empty());
+    }
+
+    #[test]
+    fn una_nuova_apertura_ferma_il_filo_vecchio() {
+        let v = visto(&pezzi(8, 4));
+        v.lock().unwrap().generazione = 2;
+        assert_eq!(passo_visore(&v, 1), Passo::Fine);
+    }
 }
