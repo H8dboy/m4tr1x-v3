@@ -8,6 +8,9 @@
  *  (3) un mittente senza annuncio valido resta sconosciuto: nessuna identità, nessun nome;
  *  (4) la chiave DM si legge dal portachiavi solo dentro m4tr1x-posta: il guscio non la tocca e
  *      all'interfaccia arrivano solo testi e chiavi pubbliche (con I-31).
+ *  (5) un annuncio vale solo con UNA scadenza (NIP-40) entro 90 giorni dalla sua data e fino a quella (l'app ne
+ *      firma da 30 e li rinnova da sola sotto i 10): un nodo che ripropone un annuncio vecchio lo fa al massimo
+ *      fino alla sua scadenza (24/11/2026, chiude il limite dichiarato).
  * Parte dinamica: app/posta/tests/posta.rs (nodo finto, portachiavi in memoria). Parte statica: qui.
  */
 const { test } = require('node:test')
@@ -62,6 +65,8 @@ test('posta (Rust): solo buste e annunci al nodo, destinatario dall\'annuncio gi
   assert.equal(r.status, 0, out.slice(-4000))
   for (const t of ['due_utenti_si_scrivono_e_al_nodo_arrivano_solo_buste_e_annunci', 'senza_annuncio_del_destinatario_non_parte_niente',
     'testo_o_destinatario_non_validi_si_fermano_prima_della_rete', 'mittente_senza_annuncio_resta_sconosciuto_e_le_buste_forgiate_non_si_mostrano',
-    'un_annuncio_che_rivendica_la_chiave_di_un_altro_non_ruba_il_nome', 'un_nodo_che_risponde_con_l_annuncio_di_un_altro_non_fa_cifrare_per_la_chiave_sbagliata'])
+    'un_annuncio_che_rivendica_la_chiave_di_un_altro_non_ruba_il_nome', 'un_nodo_che_risponde_con_l_annuncio_di_un_altro_non_fa_cifrare_per_la_chiave_sbagliata',
+    // scadenza degli annunci (24/11/2026): rinnovo da solo, annunci senza scadenza o scaduti non valgono
+    'l_annuncio_in_scadenza_si_rinnova_da_solo_quello_fresco_no', 'un_annuncio_senza_scadenza_di_prima_si_rifa_e_non_vale_per_chi_scrive', 'a_chi_ha_l_annuncio_scaduto_non_si_scrive'])
     assert.match(out, new RegExp(`${t} \\.\\.\\. ok`), `manca o fallisce la prova ${t}`)
 })

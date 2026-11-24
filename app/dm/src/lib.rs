@@ -22,6 +22,15 @@ const KIND_SIGILLO: u16 = 13;
 const KIND_MESSAGGIO: u16 = 14;
 /// La data della busta è sfalsata indietro fino a 2 giorni (I-20).
 pub const SFASAMENTO_MASSIMO: u64 = 2 * 24 * 3600;
+/// Un annuncio della chiave DM vale 30 giorni (tag NIP-40 `expiration`): un nodo malevolo che ripropone un annuncio
+/// VECCHIO della stessa identità (chiave DM già ruotata) può farlo al massimo fino alla sua scadenza (limite di I-62).
+/// L'app lo rinnova da sola quando mancano meno di `RINNOVO_ANNUNCIO` (decisione del fondatore, 24/11/2026).
+pub const DURATA_ANNUNCIO: u64 = 30 * 24 * 3600;
+/// Quanto prima della scadenza l'app ripubblica il suo annuncio.
+pub const RINNOVO_ANNUNCIO: u64 = 10 * 24 * 3600;
+/// Durata massima che si accetta in un annuncio altrui: oltre, l'annuncio non vale (un annuncio "eterno" riaprirebbe
+/// la finestra della riproposta).
+pub const DURATA_ANNUNCIO_MASSIMA: u64 = 90 * 24 * 3600;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ErroreDm {
@@ -430,15 +439,37 @@ pub fn annuncio_dm_con(rete: Rete, identita_pubblica: &str, firma: impl FnOnce(&
     for r in relay {
         tags.push(vec!["relay".to_string(), r.clone()]);
     }
+    tags.push(vec!["expiration".to_string(), (ora + DURATA_ANNUNCIO).to_string()]);
     firma_evento(KIND_ANNUNCIO_DM, "", &tags, ora, rete, &id_pub, firma).map_err(|r| ErroreDm::Protocollo(r.to_string()))
 }
 
+/// Fino a quando vale un annuncio: UN tag `expiration` intero, dopo la data dell'annuncio e non oltre
+/// `DURATA_ANNUNCIO_MASSIMA` da essa. Senza (annunci di prima del 24/11/2026), o fuori forma: non vale.
+pub fn scadenza_annuncio(ev: &Evento) -> Option<u64> {
+    let mut exp = ev.tags.iter().filter(|t| t[0] == "expiration");
+    let t = exp.next()?;
+    if exp.next().is_some() || t.len() != 2 {
+        return None;
+    }
+    let s: u64 = t[1].parse().ok().filter(|_| t[1].bytes().all(|c| c.is_ascii_digit()))?;
+    (s > ev.created_at && s - ev.created_at <= DURATA_ANNUNCIO_MASSIMA).then_some(s)
+}
+
 /// Le chiavi DM che un annuncio dichiara valide per la sua identità: solo quelle con una prova di possesso
-/// giusta PER QUELL'IDENTITÀ (le altre si ignorano).
-pub fn dm_dichiarate(rete: Rete, annuncio: &Value) -> Result<(String, Vec<String>), ErroreDm> {
+/// giusta PER QUELL'IDENTITÀ (le altre si ignorano), e solo se l'annuncio non è scaduto a `ora`.
+pub fn dm_dichiarate(rete: Rete, annuncio: &Value, ora: u64) -> Result<(String, Vec<String>), ErroreDm> {
+    dm_dichiarate_con_scadenza(rete, annuncio, ora).map(|(i, k, _)| (i, k))
+}
+
+/// Come [`dm_dichiarate`], con la scadenza dell'annuncio.
+pub fn dm_dichiarate_con_scadenza(rete: Rete, annuncio: &Value, ora: u64) -> Result<(String, Vec<String>, u64), ErroreDm> {
     let ev = verifica(annuncio, rete).map_err(|r| ErroreDm::Protocollo(r.to_string()))?;
     if ev.kind != KIND_ANNUNCIO_DM {
         return Err(ErroreDm::Scartata("non è un annuncio DM"));
+    }
+    let scadenza = scadenza_annuncio(&ev).ok_or(ErroreDm::Scartata("annuncio senza scadenza valida"))?;
+    if scadenza <= ora {
+        return Err(ErroreDm::Scartata("annuncio scaduto"));
     }
     let mut chiavi: Vec<String> = Vec::new();
     for t in ev.tags.iter().filter(|t| t[0] == "dm") {
@@ -451,18 +482,18 @@ pub fn dm_dichiarate(rete: Rete, annuncio: &Value) -> Result<(String, Vec<String
             chiavi.push(dm.clone());
         }
     }
-    Ok((ev.pubkey, chiavi))
+    Ok((ev.pubkey, chiavi, scadenza))
 }
 
 /// L'identità a cui attribuire un messaggio sigillato da `dm_mittente`: solo se l'annuncio PIÙ RECENTE di
 /// un'identità elenca quella chiave con la prova di possesso. Altrimenti `None` (I-60). Se due identità la
 /// rivendicano, `None`: nessun nome inventato.
-pub fn identita_del_mittente(rete: Rete, annunci: &[Value], dm_mittente: &str) -> Option<String> {
+pub fn identita_del_mittente(rete: Rete, annunci: &[Value], dm_mittente: &str, ora: u64) -> Option<String> {
     use std::collections::HashMap;
     // per ogni identità, l'annuncio valido più recente (a pari data, l'id maggiore: ordine stabile)
     let mut recenti: HashMap<String, (u64, String, Vec<String>)> = HashMap::new();
     for a in annunci {
-        let Ok((identita, chiavi)) = dm_dichiarate(rete, a) else { continue };
+        let Ok((identita, chiavi)) = dm_dichiarate(rete, a, ora) else { continue };
         let (Some(ora), Some(id)) = (a.get("created_at").and_then(Value::as_u64), a.get("id").and_then(Value::as_str)) else { continue };
         let nuovo = (ora, id.to_string(), chiavi);
         match recenti.get(&identita) {

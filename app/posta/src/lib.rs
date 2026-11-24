@@ -36,7 +36,7 @@ pub enum ErrorePosta {
     Portachiavi(String),
     #[error("destinatario non valido: serve la sua chiave pubblica (64 caratteri esadecimali)")]
     Destinatario,
-    #[error("questa persona non ha ancora attivato i messaggi privati")]
+    #[error("questa persona non può ricevere messaggi privati adesso: non li ha mai aperti, o non apre M4TR1X da più di 30 giorni. Appena torna, potrai scriverle")]
     SenzaAnnuncio,
     #[error("{0}")]
     Testo(&'static str),
@@ -106,19 +106,24 @@ fn io(p: &dyn Portachiavi) -> Result<IdentitaPubblica, ErrorePosta> {
     identita_salvata(p).map_err(|e| ErrorePosta::Portachiavi(e.to_string()))?.ok_or(ErrorePosta::SenzaIdentita)
 }
 
-/// La chiave DM corrente dichiarata da `identita`: dal suo annuncio VALIDO più recente (a pari data, id
-/// maggiore), ignorando gli annunci di altri autori che un nodo malevolo potrebbe mandare al loro posto.
-pub fn chiave_dm_di(rete: Rete, annunci: &[Value], identita: &str) -> Option<String> {
+/// La chiave DM corrente dichiarata da `identita`: dal suo annuncio VALIDO e NON SCADUTO a `ora` più recente (a
+/// pari data, id maggiore), ignorando gli annunci di altri autori che un nodo malevolo potrebbe mandare al loro posto.
+pub fn chiave_dm_di(rete: Rete, annunci: &[Value], identita: &str, ora: u64) -> Option<String> {
+    annuncio_corrente(rete, annunci, identita, ora).map(|(k, _)| k)
+}
+
+/// Chiave DM e scadenza dell'annuncio corrente di `identita` (vedi [`chiave_dm_di`]).
+fn annuncio_corrente(rete: Rete, annunci: &[Value], identita: &str, ora: u64) -> Option<(String, u64)> {
     annunci
         .iter()
         .filter_map(|a| {
-            let (autore, chiavi) = dm::dm_dichiarate(rete, a).ok()?;
-            let ora = a.get("created_at").and_then(Value::as_u64)?;
+            let (autore, chiavi, scadenza) = dm::dm_dichiarate_con_scadenza(rete, a, ora).ok()?;
+            let creato = a.get("created_at").and_then(Value::as_u64)?;
             let id = a.get("id").and_then(Value::as_str)?.to_string();
-            (autore == identita).then_some((ora, id, chiavi))
+            (autore == identita).then_some((creato, id, chiavi, scadenza))
         })
         .max_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)))
-        .and_then(|(_, _, chiavi)| chiavi.into_iter().next())
+        .and_then(|(_, _, chiavi, scadenza)| chiavi.into_iter().next().map(|k| (k, scadenza)))
 }
 
 /// Il mio annuncio (firmato dall'identità, con la prova di possesso della chiave DM), pronto da pubblicare.
@@ -131,7 +136,7 @@ pub fn mio_annuncio(rete: Rete, p: &dyn Portachiavi, ora: u64) -> Result<Evento,
 
 /// Apre le buste con la mia chiave DM e le raggruppa per interlocutore. Nessuna rete qui.
 /// Le buste non apribili o non valide si contano e basta.
-pub fn apri_tutte(rete: Rete, p: &dyn Portachiavi, buste: &[Value], annunci: &[Value]) -> Result<Posta, ErrorePosta> {
+pub fn apri_tutte(rete: Rete, p: &dyn Portachiavi, buste: &[Value], annunci: &[Value], ora: u64) -> Result<Posta, ErrorePosta> {
     let chi = io(p)?;
     let mut scartate = 0;
     let mut per_chiave: BTreeMap<String, Vec<Messaggio>> = BTreeMap::new();
@@ -157,23 +162,34 @@ pub fn apri_tutte(rete: Rete, p: &dyn Portachiavi, buste: &[Value], annunci: &[V
         .into_iter()
         .map(|(chiave, mut messaggi)| {
             messaggi.sort_by(|a, b| a.creato.cmp(&b.creato));
-            Conversazione { identita: dm::identita_del_mittente(rete, annunci, &chiave), dm: chiave, nome: None, messaggi }
+            Conversazione { identita: dm::identita_del_mittente(rete, annunci, &chiave, ora), dm: chiave, nome: None, messaggi }
         })
         .collect();
     conversazioni.sort_by(|a, b| b.messaggi.last().map(|m| m.creato).cmp(&a.messaggi.last().map(|m| m.creato)).then_with(|| a.dm.cmp(&b.dm)));
     Ok(Posta { conversazioni, scartate })
 }
 
-/// Pubblica il mio annuncio se il nodo non ne ha uno valido che rivendica la mia chiave DM attuale:
-/// senza, chi riceve un mio messaggio non può sapere che è mio.
+/// Pubblica il mio annuncio se il nodo non ne ha uno valido che rivendica la mia chiave DM attuale, o se il suo
+/// scade entro `dm::RINNOVO_ANNUNCIO`: senza, chi riceve un mio messaggio non può sapere che è mio.
 async fn assicura_annuncio<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, p: &dyn Portachiavi, miei: &[Value], budget: Duration, avanza: &impl Fn(Fase)) -> Result<(), ErrorePosta> {
     let chi = io(p)?;
-    if chiave_dm_di(rete, miei, &chi.identity).as_deref() == Some(chi.dm.as_str()) {
+    let ora = adesso();
+    if da_rinnovare(rete, miei, &chi.identity, &chi.dm, ora).is_none() {
         return Ok(());
     }
-    let annuncio = mio_annuncio(rete, p, adesso())?;
+    let annuncio = mio_annuncio(rete, p, ora)?;
     m4tr1x_feed::pubblica(t, nodo, &annuncio, budget, avanza).await?;
     Ok(())
+}
+
+/// Perché il mio annuncio va (ri)pubblicato, o `None` se quello sul nodo va ancora bene.
+pub fn da_rinnovare(rete: Rete, miei: &[Value], identita: &str, dm_mia: &str, ora: u64) -> Option<&'static str> {
+    match annuncio_corrente(rete, miei, identita, ora) {
+        None => Some("nessun annuncio valido"),
+        Some((k, _)) if k != dm_mia => Some("l'annuncio non ha la mia chiave DM attuale"),
+        Some((_, scadenza)) if scadenza.saturating_sub(ora) < dm::RINNOVO_ANNUNCIO => Some("annuncio in scadenza"),
+        Some(_) => None,
+    }
 }
 
 /// Legge la mia posta dal nodo: buste per la mia chiave DM, annunci per attribuirle, profili per i nomi.
@@ -190,7 +206,7 @@ pub async fn leggi<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, p: &dyn Port
     let buste = risposte.pop().unwrap_or_default();
     assicura_annuncio(t, nodo, rete, p, &miei, budget, &avanza).await?;
     annunci.extend(miei);
-    let mut posta = apri_tutte(rete, p, &buste, &annunci)?;
+    let mut posta = apri_tutte(rete, p, &buste, &annunci, adesso())?;
     let conosciuti: Vec<&str> = posta.conversazioni.iter().filter_map(|c| c.identita.as_deref()).collect();
     if !conosciuti.is_empty() {
         // i nomi sono un di più: se il nodo non risponde a questa richiesta la posta si mostra lo stesso
@@ -226,7 +242,7 @@ pub async fn invia<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, p: &dyn Port
     let mut risposte = m4tr1x_feed::richiedi(t, nodo, &filtri, budget, &avanza).await?;
     let miei = risposte.pop().unwrap_or_default();
     let suoi = risposte.pop().unwrap_or_default();
-    let dm_destinatario = chiave_dm_di(rete, &suoi, destinatario).ok_or(ErrorePosta::SenzaAnnuncio)?;
+    let dm_destinatario = chiave_dm_di(rete, &suoi, destinatario, adesso()).ok_or(ErrorePosta::SenzaAnnuncio)?;
     assicura_annuncio(t, nodo, rete, p, &miei, budget, &avanza).await?;
     let ora = adesso();
     let buste = {
