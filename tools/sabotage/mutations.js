@@ -435,6 +435,15 @@ module.exports = [
     find: 'const TENTATIVI_BLOB = 3', replace: 'const TENTATIVI_BLOB = 1', test: 'tests/integration/blob-replica.test.js' },
   { id: 'blob-senza-fine', rule: 'blob', name: 'tentativi senza fine', file: 'node/src/peers.js',
     find: '    for (let n = 1; n <= TENTATIVI_BLOB && !stopped; n++) {', replace: '    for (let n = 1; !stopped; n++) {', test: 'tests/integration/blob-replica.test.js' },
+  // coda della replica (24/11/2026, RIPRESA 91 f e 93)
+  { id: 'coda-non-lascia-perdere', rule: 'blob', name: 'un evento con pezzi inventati si chiede pezzo per pezzo fino in fondo', file: 'node/src/coda-replica.js',
+    find: '        if (!preso && !fermo) {', replace: '        if (false && !preso && !fermo) {', test: 'tests/integration/blob-replica.test.js' },
+  { id: 'coda-tutti-insieme', rule: 'blob', name: 'i file di tutti gli eventi in arrivo si scaricano insieme', file: 'node/src/coda-replica.js',
+    find: '    while (!fermo && attivi < insieme && coda.length) {', replace: '    while (!fermo && coda.length) {', test: 'tests/unit/coda-replica.test.js' },
+  { id: 'coda-senza-tetto', rule: 'blob', name: 'la coda della replica cresce senza tetto', file: 'node/src/coda-replica.js',
+    find: '      if (inAttesa + da.length > massimo) {', replace: '      if (false) {', test: 'tests/unit/coda-replica.test.js' },
+  { id: 'coda-nel-nodo', rule: 'blob', name: 'il nodo replica i file senza passare dalla coda', file: 'node/src/peers.js',
+    find: '    coda.accoda(pezzi.length ? pezzi : interi, { pubkey: ev.pubkey, target })', replace: '    for (const sha of pezzi.length ? pezzi : interi) scaricaConTentativi(sha, ev.pubkey, target)', test: 'tests/integration/blob-replica.test.js' },
   // cancello del merge su main (22/10/2026): GitHub gratuito non ha check obbligatori sui repo privati
   { id: 'merge-saltato-ok', rule: 'strumenti', name: 'merge con un job obbligatorio saltato o neutro', file: 'tools/merge.js',
     find: "    else if (ultimo.conclusion !== 'success')", replace: "    else if (ultimo.conclusion === 'failure')", test: 'tests/unit/merge.test.js' },

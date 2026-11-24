@@ -143,3 +143,21 @@ test("un file a pezzi (tag pezzo, ADR-0005) si replica pezzo per pezzo: l'hash i
     assert.ok(!b.logs.some(l => l.includes('non replicato')), b.logs.join('\n'))
   } finally { await b.close(); await a.close() }
 })
+
+test('un evento con 300 pezzi inventati costa i tentativi di UN pezzo, non di 300 (coda di replica, RIPRESA 91 f)', async () => {
+  const owner = testIdentity()
+  const a = await startTestNode({ uploaders: [owner.publicKey] })
+  const b = await startTestNode({ peers: [`http://127.0.0.1:${a.node.port}`], allowLoopbackPeersForTests: true })
+  try {
+    const finti = Array.from({ length: 300 }, () => ['pezzo', crypto.randomBytes(32).toString('hex'), '1000'])
+    const ev = protocol.buildEvent({ kind: 1063, content: 'pezzi inventati', tags: [['x', crypto.randomBytes(32).toString('hex')], ['m', 'image/vnd.m4tr1x.celle'], ['size', '300000'], ['t', 'm4tr1x-signal'], ...finti] }, owner, NET)
+    const ws = await wsOpen(a.node.port)
+    const ok = await wsExchange(ws, ['EVENT', ev], m => m[0] === 'OK')
+    ws.close()
+    assert.equal(ok.at(-1)[2], true, JSON.stringify(ok.at(-1)))
+    assert.ok(await waitFor(() => b.logs.some(l => l.includes('299 non chiesti')), ATTESA_BLOB_MS * 3 + 10000), b.logs.join('\n'))
+    // nessun altro pezzo si chiede dopo
+    await new Promise(r => setTimeout(r, 1500))
+    assert.equal(b.logs.filter(l => l.startsWith('peer: file richiesto')).length, TENTATIVI_BLOB, b.logs.join('\n'))
+  } finally { await b.close(); await a.close() }
+})
