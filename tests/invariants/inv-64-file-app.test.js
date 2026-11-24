@@ -50,7 +50,7 @@ test('guscio: si pulisce prima di tutto, si tiene e si carica solo il file pulit
   const feed = read(path.join(APP, 'feed', 'src', 'lib.rs'))
   assert.match(corpo(feed, 'scarica_file_a_pezzi'), /if file\.len\(\) as u64 != dimensione \|\| m4tr1x_transport::http::sha256_hex\(&file\) != sha256 \{/, 'il file ricomposto non si controlla contro la scheda')
   assert.match(corpo(feed, 'scarica_file_a_pezzi'), /scarica_pezzi\(t, fonti, &attesi, &avanza,/, 'il file non scende pezzo per pezzo da scarica_pezzi')
-  assert.match(corpo(feed, 'scarica_pezzi'), /Scaricato::HashDiverso, _, _\)\) => \{[\s\S]*?morte\.push\(f\);/, 'una fonte che manda un pezzo con hash diverso non si lascia perdere')
+  assert.match(corpo(feed, 'scarica_pezzi'), /Scaricato::HashDiverso, _, _\)\) => \{[^}]*?morte\.push\(f\);[^}]*\}/, 'una fonte che manda un pezzo con hash diverso non si lascia perdere')
   assert.match(corpo(feed, 'scarica_pezzi'), /if b\.len\(\) != quanto \{/, 'un pezzo con la misura sbagliata passa')
   // alveare (foto e reel a celle): all'interfaccia arrivano e tornano SOLO pixel grezzi; i pezzi si accettano solo
   // con hash e misura della scheda (la scheda a celle firma ogni pezzo); niente file dal disco
