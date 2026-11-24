@@ -163,6 +163,8 @@
 
 102. **Moderazione, passo 3: velo nell'app (I-65).** Nodo: `GET /moderazione?ids=` pubblico (anche dall'onion), max 100 id, solo categoria/peso/codice. Trasporto: `http::bandierine` (risposta controllata campo per campo, categorie da elenco chiuso, solo id chiesti). Feed: `m4tr1x_feed::bandierine` (budget 60 s, a gruppi di 100); shell: dopo il feed, `Feed::con_bandierine` (se il nodo non risponde: niente veli e `bandierine_disponibili: false`, l'interfaccia lo scrive). UI: `velo()` con motivo in parole, «Mostra comunque», `sfruttamento-minori` non si apre. `inv-65-velo-app` (DOM finto con il main.js vero + prove Rust), 8 sabotaggi presi. Nodo Oracle aggiornato a af7ddbc prima di questo passo (va rifatto per avere la rotta pubblica). Da fare: velo in forum e reel.
 
+103. **I-27 attiva (processi esterni).** Riscritta sulla realtà: niente programmi esterni per i file (pulizia e codifica in Rust), l'unico processo è tor. `inv-27-processi`: statico (solo tor.js e tor_process.rs avviano processi; nessun ffmpeg/exiftool), dal vivo un tor finto che non parte → fermato a 1,5 s e ucciso (solo Linux/macOS: CI), app con kill_on_drop/__OwningControllerProcess/30 s porta di controllo/bootstrap, file a celle "bomba" rifiutato prima di allocare. 7 sabotaggi (2 solo Linux, nel job sabotaggio-linux). Tetto di memoria per tor: no, dichiarato.
+
 ## Prossimo (dal 12/11/2026)
 
 **Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 12/11 pomeriggio in `app/celle/README.md`: foto a

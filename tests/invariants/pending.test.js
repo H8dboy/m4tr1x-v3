@@ -17,7 +17,6 @@ const PENDING = [
   ['I-21', 'aggiornamento con firma non valida rifiutato', 'F8'],
   ['I-22', 'niente rollback di versione o seq', 'F8'],
   ['I-24', 'build riproducibile dove possibile', 'F8'],
-  ['I-27', 'processi esterni con timeout', 'F6'],
   ['I-32', 'buoni offline entro il tetto', 'F10'],
   ['I-34', 'nessun trasferimento tra utenti; split della mancia', 'F7'],
   ['I-35', 'buono cieco non collegabile al bonifico', 'F7b'],
