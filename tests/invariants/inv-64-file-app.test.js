@@ -11,6 +11,8 @@
  *  (4) l'interfaccia mostra i file solo da indirizzi blob: (CSP: blob: SOLO per immagini e audio/video, con I-01);
  *  (5) alveare: una foto o un reel a celle si codifica e si decodifica nel lato Rust; all'interfaccia vanno e tornano
  *      solo pixel grezzi; ogni pezzo si accetta solo con hash e misura firmati nella scheda.
+ *      Chi guarda un reel tiene come pixel solo il gruppo che si vede e il prossimo (un pezzo con troppi fotogrammi
+ *      si rifiuta prima di decodificarlo); a visore chiuso i pixel si liberano.
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -84,6 +86,7 @@ test('file (Rust): client HTTP del trasporto e schede della sezione', { skip: ca
   for (const [pacchetto, argomenti, prove] of /** @type {[string, string[], string[]][]} */ ([
     ['m4tr1x-transport', ['--lib', 'http::'], ['scarica_solo_il_file_con_l_hash_chiesto', 'risposte_strane_si_rifiutano', 'un_nodo_che_non_risponde_scade', 'carica_manda_l_autorizzazione_e_legge_il_motivo_di_un_no', 'esiste_chiede_con_head_e_legge_solo_le_intestazioni', 'scarica_se_ce_distingue_il_404_dagli_errori']],
     ['m4tr1x-feed', ['--test', 'media'], ['in_ogni_sezione_solo_schede_valide_dalla_piu_recente', 'schede_e_autorizzazioni_si_scrivono_solo_nella_forma_giusta', 'le_schede_a_celle_portano_hash_e_misura_di_ogni_pezzo']],
+    ['m4tr1x-shell', ['--lib', 'prove_visore'], ['il_reel_resta_in_memoria_solo_a_due_gruppi', 'i_fotogrammi_della_finestra_sono_quelli_del_reel_intero', 'nessuno_guarda_piu_e_il_filo_libera_i_pixel', 'un_gruppo_troppo_lungo_si_rifiuta_senza_decodificarlo', 'una_nuova_apertura_ferma_il_filo_vecchio']],
     ['m4tr1x-feed', ['--test', 'pezzi'], ['fette_hash_e_forme_delle_schede', 'si_carica_a_pezzi_e_la_seconda_volta_si_saltano_quelli_che_il_nodo_ha_gia', 'un_no_del_nodo_ferma_il_caricamento_senza_ritentare', 'si_scarica_a_pezzi_dalle_fonti_in_ordine_e_si_ricompone_solo_il_file_giusto', 'un_nodo_che_sostituisce_o_accorcia_un_pezzo_non_passa']],
   ])) {
     const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(APP, 'Cargo.toml'), '-p', pacchetto, ...argomenti],

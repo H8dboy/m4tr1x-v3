@@ -559,6 +559,13 @@ module.exports = [
     find: "    if sha256_hex(&r.corpo) != sha256 {\n        return Ok(Scaricato::HashDiverso);\n    }", replace: "", test: T("inv-64-file-app"), timeoutMs: 900000 },
   { id: "pezzi-head-ignorata", rule: "I-64", name: "i pezzi già sul nodo si ricaricano (e si rifirmano) comunque", file: "app/feed/src/lib.rs",
     find: "        if c_e {\n            continue;\n        }\n", replace: "        let _ = c_e;\n", test: T("inv-64-file-app"), timeoutMs: 900000 },
+  // I-64, alveare: chi guarda un reel tiene come pixel solo il gruppo che si vede e il prossimo
+  { id: "celle-visore-tutto-in-memoria", rule: "I-64", name: "il visore tiene come pixel tutti i gruppi del reel", file: "app/shell/src/lib.rs",
+    find: "        v.in_memoria.retain(|(i, _)| voluti.contains(i));\n", replace: "", test: T("inv-64-file-app"), timeoutMs: 900000 },
+  { id: "celle-gruppo-senza-tetto", rule: "I-64", name: "un pezzo di reel con troppi fotogrammi si decodifica lo stesso", file: "app/shell/src/lib.rs",
+    find: "Ok((n, fps)) if n <= CELLE_FOTOGRAMMI_GRUPPO_MAX && ", replace: "Ok((n, fps)) if ", test: T("inv-64-file-app"), timeoutMs: 900000 },
+  { id: "celle-visore-non-libera", rule: "I-64", name: "a visore chiuso i pixel del reel restano in memoria", file: "app/shell/src/lib.rs",
+    find: "        v.in_memoria.clear();\n        return Passo::Fine;", replace: "        return Passo::Fine;", test: T("inv-64-file-app"), timeoutMs: 900000 },
   { id: "nodo-blob-50mb", rule: "I-64", name: "il nodo torna ad accettare blob da 50 MB in un pezzo", file: "node/src/config.js",
     find: "    maxBlobBytes: c.maxBlobBytes ?? PEZZO_BYTES,", replace: "    maxBlobBytes: c.maxBlobBytes ?? 50 * 1024 * 1024,", test: "tests/unit/node-config.test.js" },
   // I-63: forum (schema della v2, verificato nel lato Rust)
