@@ -29,6 +29,8 @@ function hostName(h) {
  * @param {string} ctx.adminKey
  * @param {() => string | null} ctx.onion
  * @param {string} ctx.version
+ * @param {ReturnType<typeof import('./metriche').creaMetriche>} [ctx.metriche]
+ * @param {() => number} [ctx.connessioni]
  */
 function createHttp(ctx) {
   const { cfg, db, log } = ctx
@@ -105,19 +107,27 @@ function createHttp(ctx) {
         const auth = blobs.checkUploadAuth(/** @type {string} */ (req.headers.authorization), cfg)
         const r = await blobs.receiveUpload(req, { dataDir: cfg.dataDir, maxBlobBytes: cfg.maxBlobBytes, quotaBytes: cfg.quotaBytes, db }, auth)
         log(`blob ricevuto (${r.size} byte)`)
+        ctx.metriche?.blobRicevuto(r.size)
         return json(res, 201, r)
       } catch (e) {
         req.resume()
+        ctx.metriche?.blobRifiutato()
         const err = /** @type {Error & {status?: number}} */ (e)
         return json(res, err.status || 500, { error: err.status ? err.message : 'errore interno' })
       }
     }
 
-    // Admin e onion: esistono solo sul listener del proprietario (I-30, I-33)
-    if (p === '/admin/status' || p === '/node/onion') {
+    // Admin, metriche e onion: esistono solo sul listener del proprietario (I-30, I-33, I-43)
+    if (p === '/admin/status' || p === '/admin/metrics' || p === '/node/onion') {
       if (isPublic) return json(res, 404, { error: 'non trovato' })
       if (!isAdmin(req)) return json(res, 401, { error: 'chiave admin richiesta' })
       if (p === '/node/onion') return json(res, 200, { onion: ctx.onion() })
+      if (p === '/admin/metrics') {
+        if (!ctx.metriche) return json(res, 404, { error: 'non trovato' })
+        const b = /** @type {any} */ (db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS s FROM blobs').get())
+        const ev = /** @type {any} */ (db.prepare('SELECT COUNT(*) AS n FROM events').get()).n
+        return json(res, 200, ctx.metriche.istantanea({ eventi: ev, blob: b.n, byteBlob: b.s, connessioni: ctx.connessioni ? ctx.connessioni() : 0, tor: !!ctx.onion() }))
+      }
       const events = /** @type {any} */ (db.prepare('SELECT COUNT(*) AS n FROM events').get()).n
       const blobCount = /** @type {any} */ (db.prepare('SELECT COUNT(*) AS n FROM blobs').get()).n
       return json(res, 200, { role: cfg.role, network: cfg.network, events, blobs: blobCount, tor: !!ctx.onion() })

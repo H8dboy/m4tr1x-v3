@@ -12,6 +12,7 @@ const { makeLogger } = require('./log')
 const { openDb } = require('./db')
 const { createRelay } = require('./relay')
 const { createHttp } = require('./http')
+const { creaMetriche } = require('./metriche')
 const { startPeers } = require('./peers')
 const { startTor, attendiAnnuncio } = require('./tor')
 const { assertPinnedNode } = require('./runtime')
@@ -97,8 +98,9 @@ async function startNode(input) {
 
   const nodeKey = secrets.nodeKey
   const policy = cfg.role === 'anchor' ? directory.anchorPolicy({ db, network: cfg.network, limits: cfg.anchorLimits }) : undefined
-  const relay = createRelay({ db, network: cfg.network, log, policy, limits: cfg.relayLimits, trusted: cfg.uploaders })
-  const web = createHttp({ cfg, db, log, adminKey, onion: () => onion, version: VERSION })
+  const metriche = creaMetriche()
+  const relay = createRelay({ db, network: cfg.network, log, policy, limits: cfg.relayLimits, trusted: cfg.uploaders, metriche })
+  const web = createHttp({ cfg, db, log, adminKey, onion: () => onion, version: VERSION, metriche, connessioni: relay.connessioni })
 
   /** @param {boolean} isPublic */
   const makeServer = isPublic => {

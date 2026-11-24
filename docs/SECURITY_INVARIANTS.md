@@ -99,7 +99,7 @@
 | # | Invariante | Test | Fase |
 |---|---|---|---|
 | I-42 | **Un'approvazione di topic conta solo se firmata da un moderatore della versione corrente della comunità** (NIP-72); nessuna comunità privata. | `inv-42-topic-approvals`: approvazione di una chiave non in elenco → non conta; moderatore tolto → non approva più | F6b |
-| I-43 | **Le metriche del nodo non contengono IP, pubkey, onion o id di contenuti** e rispondono solo su loopback con K13. | `inv-43-metrics`: traffico di prova con valori riconoscibili → assenti dalle metriche; listener pubblico → 404 | F2b |
+| I-43 | **Le metriche del nodo non contengono IP, pubkey, onion o id di contenuti** e rispondono solo su loopback con K13. | `inv-43-metrics`: traffico di prova con valori riconoscibili → assenti dalle metriche, che contengono SOLO numeri e booleani (motivi di rifiuto solo come categoria fissa); senza K13 → 401; listener pubblico → 404. Attiva dal 24/11/2026: `GET /admin/metrics` | F2b |
 | I-44 | **Il riepilogo di raggiungibilità che paga i nodi è firmato da almeno 2 ancore su 3** (6 prove al giorno per nodo, orari casuali). | `inv-44-reachability`: riepilogo con una sola firma → rifiutato dal calcolo del fondo | F3b |
 | I-45 | **La registrazione di un creator richiede entrambe le firme** (identità e K2) sullo stesso testo e la stessa rete. | `inv-45-creator-register`: firma K2 di un altro conto → rifiutata; testo cambiato → rifiutato | F7 |
 | I-46 | **Né la pubkey del creator né l'id del conto compaiono negli eventi Nostr o nelle righe pubbliche delle mance.** | `inv-46-tip-privacy`: statico + dinamico sulla riga generata | F7 |
