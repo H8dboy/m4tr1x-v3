@@ -57,24 +57,34 @@ test('I-27 (3): il tor dell\'app ha tempi massimi, muore con l\'app e viene ucci
 })
 
 test('I-27 (2): nodo — un tor che non finisce l\'avvio viene fermato al tempo massimo e ucciso', { skip: process.platform === 'win32' ? 'tor finto come script: Linux/macOS (la CI)' : false, timeout: 60000 }, async () => {
-  const { startTor } = require('../../node/src/tor')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm4i27-'))
+  const pidFile = path.join(dir, 'pid')
+  /** @type {number|null} */ let pid = null
   try {
-    const pidFile = path.join(dir, 'pid')
     const finto = path.join(dir, 'tor-finto.sh')
     // scrive il suo pid e poi non fa niente: niente "Bootstrapped 100%"
     fs.writeFileSync(finto, `#!/bin/sh\necho $$ > '${pidFile}'\nexec sleep 600\n`, { mode: 0o755 })
+    // il nodo gira in un processo a parte con un SUO tempo massimo: un avvio che aspetta per sempre fa fallire
+    // la prova invece di bloccarla
+    const codice = `require(${JSON.stringify(path.join(ROOT, 'node', 'src', 'tor.js'))}).startTor({ bin: ${JSON.stringify(finto)}, dataDir: ${JSON.stringify(dir)}, ingressPort: 9, log: () => {}, timeoutMs: 1500 })
+      .then(() => { console.log('PARTITO'); process.exit(2) }, e => { console.log('NO ' + e.message); process.exit(0) })`
     const t0 = Date.now()
-    await assert.rejects(startTor({ bin: finto, dataDir: dir, ingressPort: 9, log: () => {}, timeoutMs: 1500 }), /avvio non completato in tempo/)
+    const r = spawnSync(process.execPath, ['-e', codice], { encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL' })
     const durata = Date.now() - t0
-    assert.ok(durata >= 1400 && durata < 15000, `fermato dopo ${durata} ms`)
-    const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+    if (fs.existsSync(pidFile)) pid = Number(fs.readFileSync(pidFile, 'utf8'))
+    assert.equal(r.signal, null, `l'avvio di tor non si è fermato da solo entro 20 s (${durata} ms)`)
+    assert.match(r.stdout, /NO Tor: avvio non completato in tempo/, r.stdout + r.stderr)
+    assert.ok(durata >= 1400, `fermato troppo presto: ${durata} ms`)
+    assert.ok(pid, 'il tor finto non è partito')
     let vivo = true
     for (let i = 0; i < 50 && vivo; i++) {
-      try { process.kill(pid, 0); await new Promise(r => setTimeout(r, 100)) } catch { vivo = false }
+      try { process.kill(/** @type {number} */ (pid), 0); await new Promise(res => setTimeout(res, 100)) } catch { vivo = false }
     }
     assert.equal(vivo, false, 'il tor che non partiva è ancora vivo')
-  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  } finally {
+    if (pid) try { process.kill(pid, 'SIGKILL') } catch {}
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 const cargo = spawnSync('cargo', ['--version'], { encoding: 'utf8' })
