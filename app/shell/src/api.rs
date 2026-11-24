@@ -55,6 +55,22 @@ pub struct Post {
     pub testo: String,
     /// nome dal profilo dell'autore, già pulito nel lato Rust (niente caratteri invisibili o di direzione)
     pub nome: Option<String>,
+    /// bandierine della moderazione del nodo (I-65): con almeno una, l'interfaccia copre il testo con un velo
+    pub bandierine: Vec<Bandierina>,
+}
+
+/// Una bandierina della moderazione (I-65): solo categoria (da un elenco chiuso), peso e «scritto in codice».
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Bandierina {
+    pub categoria: String,
+    pub peso: u8,
+    pub codice: bool,
+}
+
+impl From<&m4tr1x_feed::Bandierina> for Bandierina {
+    fn from(b: &m4tr1x_feed::Bandierina) -> Self {
+        Self { categoria: b.categoria.to_string(), peso: b.peso, codice: b.codice }
+    }
 }
 
 /// Profilo pubblico: SOLO nome e descrizione (decisione del fondatore, 20/10/2026; immagine in F6).
@@ -78,15 +94,31 @@ pub struct Feed {
     pub scartati: u32,
     pub secondi: u64,
     pub tentativi: u32,
+    /// le bandierine sono arrivate dal nodo? Se no, i post si vedono senza veli e l'interfaccia lo dice
+    pub bandierine_disponibili: bool,
+}
+
+impl Feed {
+    /// Attacca a ogni post le sue bandierine (I-65). `None`: il nodo non le ha date.
+    pub fn con_bandierine(mut self, b: Option<&std::collections::HashMap<String, Vec<m4tr1x_feed::Bandierina>>>) -> Self {
+        self.bandierine_disponibili = b.is_some();
+        if let Some(b) = b {
+            for p in &mut self.post {
+                p.bandierine = b.get(&p.id).map(|l| l.iter().map(Bandierina::from).collect()).unwrap_or_default();
+            }
+        }
+        self
+    }
 }
 
 impl From<m4tr1x_feed::Feed> for Feed {
     fn from(f: m4tr1x_feed::Feed) -> Self {
         Self {
-            post: f.post.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome }).collect(),
+            post: f.post.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![] }).collect(),
             scartati: u32::try_from(f.scartati).unwrap_or(u32::MAX),
             secondi: f.secondi,
             tentativi: f.tentativi,
+            bandierine_disponibili: false,
         }
     }
 }
@@ -230,7 +262,7 @@ impl From<m4tr1x_feed::DiscussioneAperta> for DiscussioneAperta {
     fn from(d: m4tr1x_feed::DiscussioneAperta) -> Self {
         Self {
             discussione: d.discussione.into(),
-            risposte: d.risposte.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome }).collect(),
+            risposte: d.risposte.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![] }).collect(),
         }
     }
 }
@@ -330,5 +362,28 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("Users"), "{json}");
         assert_eq!(s.trasporto, "errore");
+    }
+}
+
+#[cfg(test)]
+mod prove_bandierine {
+    use super::*;
+
+    fn post(id: &str) -> Post {
+        Post { id: id.repeat(64), autore: "f".repeat(64), creato: 1, testo: "ciao".into(), nome: None, bandierine: vec![] }
+    }
+
+    #[test]
+    fn con_bandierine_attacca_solo_quelle_del_post_giusto() {
+        let feed = Feed { post: vec![post("a"), post("b")], scartati: 0, secondi: 1, tentativi: 1, bandierine_disponibili: false };
+        let mut b = std::collections::HashMap::new();
+        b.insert("a".repeat(64), vec![m4tr1x_feed::Bandierina { categoria: "truffa", peso: 3, codice: true }]);
+        let f = feed.clone().con_bandierine(Some(&b));
+        assert!(f.bandierine_disponibili);
+        assert_eq!(f.post[0].bandierine, vec![Bandierina { categoria: "truffa".into(), peso: 3, codice: true }]);
+        assert!(f.post[1].bandierine.is_empty());
+        // il nodo non le ha date: niente veli, e si sa
+        let f = feed.con_bandierine(None);
+        assert!(!f.bandierine_disponibili && f.post.iter().all(|p| p.bandierine.is_empty()));
     }
 }

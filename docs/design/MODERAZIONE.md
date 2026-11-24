@@ -30,7 +30,11 @@
 2. Nodo: bandierine calcolate all'arrivo degli eventi pubblici, salvate per id di evento (mai per autore), conteggio delle segnalazioni NIP-56 per evento (persone diverse); il proprietario le vede dal listener locale con K13. **Fatto il 24/11.**
    - Le regole: in `/etc/m4tr1x/node.json` la voce `"regoleModerazioneFile": "/etc/m4tr1x/regole-moderazione.json"`, file con `{ "versione": N, "regole": [{ "id", "categoria", "schema", "peso" }] }`. Senza: solo i segnali senza elenco. Un elenco storto ferma il nodo all'avvio (meglio saperlo subito che moderare a metà).
    - Vederle: `curl -s -H "X-Admin-Key: <chiave>" http://127.0.0.1:<porta>/admin/bandierine` → contenuti (id, kind, data), bandierine e numero di persone che li hanno segnalati; mai chi scrive, chi segnala o il testo.
-3. App: velo con il motivo sui contenuti con bandierina.
+3. App: velo con il motivo sui contenuti con bandierina. **Fatto il 24/11** (feed).
+   - Il nodo dà alle app `GET /moderazione?ids=…` (al massimo 100 id): per ogni contenuto con bandierine, solo categoria, peso e «scritto in codice». Mai gli id delle regole (direbbero com'è fatto l'elenco), mai chi scrive o chi segnala.
+   - L'app controlla la risposta campo per campo (categorie da un elenco chiuso, solo gli id chiesti, niente campi in più); se il nodo non le dà, il feed si vede senza veli e lo dice.
+   - Il velo dice il motivo in parole e si apre con «Mostra comunque»; **il possibile sfruttamento di minori non si apre** (resta coperto finché un moderatore non lo valuta): scelta prudente, un falso allarme costa poco, un'apertura sbagliata no.
+   - Da fare: lo stesso velo nel forum e nei reel.
 4. Hub: lo stesso sui reel (fotogrammi) quando c'è l'AI.
 
 ## Compromessi dichiarati

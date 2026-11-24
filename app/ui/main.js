@@ -170,6 +170,43 @@ function quando(/** @type {number} */ creato) {
   return new Date(creato * 1000).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// Bandierine della moderazione del nodo (I-65): il motivo in parole, da un elenco chiuso (categorie sconosciute:
+// "segnalato dal nodo"). Il velo copre il testo; si apre con un tocco, TRANNE per il possibile sfruttamento di
+// minori, che resta chiuso finché un moderatore non lo valuta (docs/design/MODERAZIONE.md).
+const MOTIVI = /** @type {Record<string, string>} */ ({
+  truffa: 'possibile truffa', spam: 'possibile spam', odio: "possibili contenuti d'odio", violenza: 'possibile violenza',
+  armi: 'riferimenti ad armi', droga: 'riferimenti a droghe', 'sfruttamento-minori': 'possibile sfruttamento di minori',
+  terrorismo: 'possibile terrorismo', altro: 'segnalato dal nodo', offuscamento: 'testo camuffato (caratteri nascosti o alfabeti mischiati)',
+})
+const MAI_APRIBILE = new Set(['sfruttamento-minori'])
+
+/** Il velo su un testo con bandierine; `null` se non ne ha. @param {any} p @param {HTMLElement} testo */
+function velo(p, testo) {
+  const b = Array.isArray(p.bandierine) ? p.bandierine : []
+  if (!b.length) return null
+  const motivi = [...new Set(b.map((/** @type {any} */ x) => MOTIVI[String(x.categoria)] || MOTIVI.altro))]
+  const codice = b.some((/** @type {any} */ x) => x.codice === true)
+  const v = document.createElement('div')
+  v.className = 'velo'
+  const perche = document.createElement('p')
+  perche.textContent = `Coperto dal nodo: ${motivi.join(', ')}${codice ? ' · scritto in codice' : ''}.`
+  v.append(perche)
+  testo.hidden = true
+  if (b.some((/** @type {any} */ x) => MAI_APRIBILE.has(String(x.categoria)))) {
+    const n = document.createElement('p')
+    n.className = 'nota'
+    n.textContent = 'Questo contenuto non si apre: lo valuterà un moderatore.'
+    v.append(n)
+  } else {
+    const apri = document.createElement('button')
+    apri.type = 'button'
+    apri.textContent = 'Mostra comunque'
+    apri.addEventListener('click', () => { testo.hidden = false; v.remove() })
+    v.append(apri)
+  }
+  return v
+}
+
 /** @param {any} p */
 function voce(p) {
   const autore = String(p.autore)
@@ -203,7 +240,8 @@ function voce(p) {
   const testo = document.createElement('p')
   testo.className = 'testo'
   testo.textContent = String(p.testo)
-  corpo.append(chi, testo)
+  const coperto = velo(p, testo)
+  corpo.append(chi, ...(coperto ? [coperto] : []), testo)
   li.append(av, corpo)
   return li
 }
@@ -231,7 +269,8 @@ async function aggiornaFeed() {
     const lista = document.getElementById('feed-lista')
     if (lista) lista.replaceChildren(...f.post.map(voce))
     const scartati = Number(f.scartati) ? ` · ${Number(f.scartati)} scartati (non validi)` : ''
-    mostra('feed-stato', `${f.post.length} post in ${Number(f.secondi)} s${scartati}`)
+    const veli = f.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
+    mostra('feed-stato', `${f.post.length} post in ${Number(f.secondi)} s${scartati}${veli}`)
   } catch (e) {
     mostra('feed-stato', String(e))
   } finally {

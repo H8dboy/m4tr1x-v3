@@ -261,10 +261,13 @@ async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) ->
     let esito = async {
         attendi_tor(&tor, op).await?;
         // budget scaduto → attesa di un minuto con conto alla rovescia → una ripresa (fondatore, 20/10/2026)
-        m4tr1x_feed::leggi_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let f = m4tr1x_feed::leggi_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
-            .map(Feed::from)
-            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
+        // bandierine della moderazione (I-65): se il nodo non le dà, il feed si vede lo stesso, senza veli, e lo si dice
+        let ids: Vec<String> = f.post.iter().map(|p| p.id.clone()).collect();
+        let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
+        Ok(Feed::from(f).con_bandierine(veli.as_ref()))
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
@@ -385,7 +388,7 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
-    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None })
+    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![] })
 }
 
 /// Il TUO profilo com'è sul nodo (per precompilare il modulo). Ok(None): non ne hai ancora uno.
@@ -1091,7 +1094,7 @@ async fn forum_rispondi(id: String, testo: String, rete: tauri::State<'_, Rete>,
     let tags = m4tr1x_protocol::tag_risposta(&id).map_err(|e| e.to_string())?;
     let evento = firma_con_la_mia_identita(&chiavi, 1, &testo, &tags).map_err(|e| format!("risposta non firmata: {e}"))?;
     pubblica_nel_forum(&rete, &op.forum, &evento).await?;
-    Ok(Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None })
+    Ok(Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![] })
 }
 
 /// Fase del forum in corso, per l'interfaccia.

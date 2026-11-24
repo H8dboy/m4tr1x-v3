@@ -277,3 +277,9 @@ button, input, textarea { font: inherit; color: inherit; }
   .spia.avvio { animation: none; }
   .tasto { transition: none; }
 }
+
+/* velo della moderazione (I-65): il testo resta coperto finché non lo apri */
+.velo { margin-top: 8px; padding: 10px 12px; border: 1px dashed rgba(245, 196, 81, 0.45); border-radius: 12px; color: var(--amber); font-size: 13px; }
+.velo .nota { margin-top: 4px; opacity: .8; }
+.velo button { margin-top: 8px; padding: 4px 10px; border: 1px solid rgba(245, 196, 81, 0.45); border-radius: 8px; background: transparent; color: var(--amber); cursor: pointer; }
+.velo button:hover { background: rgba(245, 196, 81, 0.08); }

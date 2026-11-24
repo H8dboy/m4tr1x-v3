@@ -73,3 +73,15 @@ test('I-65 nodo: solo il proprietario con K13 (401 senza chiave, 404 dall\'onion
 test('I-65 nodo: un elenco di regole storto ferma il nodo invece di moderare a metà', async () => {
   await assert.rejects(() => startTestNode({ regoleModerazione: { versione: 1, regole: [{ id: 'x', categoria: 'opinioni', schema: 'qualcosa', peso: 1 }] } }), /regole non valide/)
 })
+
+test('I-65 nodo: le app vedono le bandierine dei contenuti (dall\'onion), solo categoria, peso e codice', async () => {
+  const ids = [ev.codice.id, ev.pulito.id, ev.busta.id].join(',')
+  const r = await request(t.node.ingressPort, `/moderazione?ids=${ids}`, { headers: { Host: FAKE_ONION } })
+  assert.equal(r.status, 200, r.body.toString())
+  assert.deepEqual(r.json, { bandierine: { [ev.codice.id]: [{ categoria: 'truffa', peso: 3, codice: true }] } })
+  const testo = r.body.toString('utf8')
+  for (const s of ['r1', anna.publicKey, bruno.publicKey, 's0ld1', 'segnalazioni']) assert.ok(!testo.includes(s), `nella risposta pubblica: ${s.slice(0, 12)}`)
+  // richieste storte: niente
+  for (const q of ['', '?ids=', '?ids=../admin', `?ids=${Array(101).fill(ev.codice.id).join(',')}`])
+    assert.equal((await request(t.node.ingressPort, `/moderazione${q}`, { headers: { Host: FAKE_ONION } })).status, 400, q.slice(0, 20))
+})

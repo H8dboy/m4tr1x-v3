@@ -132,6 +132,25 @@ pub async fn leggi_con_ripresa<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, 
     con_ripresa(&avanza, || leggi(t, nodo, rete, budget, &avanza)).await
 }
 
+pub use m4tr1x_transport::http::Bandierina;
+
+/// Tempo per chiedere le bandierine (I-65): sono un di più, il feed è già arrivato.
+pub const BUDGET_BANDIERINE: Duration = Duration::from_secs(60);
+
+/// Bandierine della moderazione (I-65) per i contenuti `ids`, a gruppi di 100: solo quelli che ne hanno.
+pub async fn bandierine<T: Transport>(t: &T, nodo: &OnionV3, ids: &[String]) -> Result<std::collections::HashMap<String, Vec<Bandierina>>, NonRaggiungibile> {
+    let mut tutte = std::collections::HashMap::new();
+    for gruppo in ids.chunks(m4tr1x_transport::http::MASSIMO_ID_BANDIERINE) {
+        let (r, _, _) = con_tentativi(BUDGET_BANDIERINE, &|_| {}, |_, _| async move {
+            let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
+            m4tr1x_transport::http::bandierine(flusso, nodo, gruppo).await
+        })
+        .await?;
+        tutte.extend(r);
+    }
+    Ok(tutte)
+}
+
 /// Post pubblicato: quanto ci è voluto.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pubblicato {
