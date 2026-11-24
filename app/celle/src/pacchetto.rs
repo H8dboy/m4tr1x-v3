@@ -121,6 +121,16 @@ pub fn apri_reel(pezzo: &[u8]) -> Result<(Vec<Immagine>, u8), Errore> {
     Ok((decodifica_reel(&r)?, r.fps))
 }
 
+/// Quanti fotogrammi porta UN pezzo di reel e a quanti al secondo, SENZA decodificarlo: serve a chi guarda per
+/// sapere dove cade ogni gruppo e tenere in memoria come pixel solo quello che si sta guardando.
+pub fn conta_reel(pezzo: &[u8]) -> Result<(usize, u8), Errore> {
+    let r = Reel::da_byte(pezzo)?;
+    if !matches!(r.fotogrammi.first(), Some(Fotogramma::Chiave(_))) {
+        return Err(Errore::Formato("un pezzo di reel parte da una chiave"));
+    }
+    Ok((r.fotogrammi.len(), r.fps))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,8 +194,11 @@ mod tests {
         for pz in &pezzi {
             let (fotogrammi, fps) = apri_reel(pz).unwrap();
             assert_eq!(fps, 12);
+            assert_eq!(conta_reel(pz).unwrap(), (fotogrammi.len(), 12), "il conto senza decodificare torna con la decodifica");
             visti.extend(fotogrammi);
         }
+        assert!(conta_reel(&Reel { fotogrammi: r.fotogrammi[1..3].to_vec(), fps: 12 }.in_byte()).is_err());
+        assert!(conta_reel(b"M4CF").is_err());
         assert_eq!(visti, tutti, "gruppo per gruppo si vede lo stesso reel");
         assert!(r.fotogrammi.iter().any(|f| matches!(f, Fotogramma::Previsto(p) if p.bidirezionale())), "i bidirezionali restano anche con le chiavi programmate");
         // un pezzo che non parte da una chiave non si apre
