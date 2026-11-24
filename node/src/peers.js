@@ -11,6 +11,7 @@ const fs = require('fs')
 const WebSocket = require('ws')
 const blobs = require('./blobs')
 const { isOnionV3, TorAgent } = require('./socks')
+const { creaCoda } = require('./coda-replica')
 
 /** Scaricamento di un file da un peer: 3 tentativi, attese di 2 s e 4 s tra uno e l'altro (fondatore, 20/10/2026). */
 const TENTATIVI_BLOB = 3
@@ -40,21 +41,22 @@ function startPeers(ctx) {
     return p ? new TorAgent(p) : null
   }
 
-  /** file in scaricamento: un evento rimandato dal peer durante i tentativi non ne apre altri in parallelo */
-  /** @type {Set<string>} */ const inCorso = new Set()
+  /** coda della replica (coda-replica.js): pochi eventi insieme, tetto ai file in attesa, un evento si lascia
+   *  perdere al primo file che non arriva; un file già in scaricamento non si chiede due volte */
+  const coda = creaCoda({
+    scarica: (sha, /** @type {{ pubkey: string, target: {base: string, loop: boolean, hostHeader: string} }} */ l) => scaricaConTentativi(sha, l.pubkey, l.target),
+    ce: sha => fs.existsSync(blobs.blobPath(cfg.dataDir, sha)),
+    log,
+  })
 
-  /** @param {string} peer @param {any} ev @param {{base: string, loop: boolean, hostHeader: string}} target */
-  async function replicateBlobs(peer, ev, target) {
+  /** @param {any} ev @param {{base: string, loop: boolean, hostHeader: string}} target */
+  function replicateBlobs(ev, target) {
     // un file a pezzi (ADR-0005, tag `pezzo`: anche le foto e i reel a celle, che portano la misura in più) viaggia
     // come blob separati: si replicano i pezzi, uno dopo l'altro. L'hash intero `x` è un blob solo quando non ci
     // sono pezzi (fino al 16/11 si chiedeva sempre e solo `x`: i file a pezzi non si replicavano mai).
     const pezzi = ev.tags.filter((/** @type {string[]} */ t) => t[0] === 'pezzo' && blobs.SHA_RE.test(t[1] || '')).map((/** @type {string[]} */ t) => t[1])
     const interi = ev.tags.filter((/** @type {string[]} */ t) => t[0] === 'x' && blobs.SHA_RE.test(t[1] || '')).map((/** @type {string[]} */ t) => t[1])
-    for (const sha of pezzi.length ? pezzi : interi) {
-      if (fs.existsSync(blobs.blobPath(cfg.dataDir, sha)) || inCorso.has(sha)) continue
-      inCorso.add(sha)
-      try { await scaricaConTentativi(sha, ev.pubkey, target) } finally { inCorso.delete(sha) }
-    }
+    coda.accoda(pezzi.length ? pezzi : interi, { pubkey: ev.pubkey, target })
   }
 
   /**
@@ -62,7 +64,9 @@ function startPeers(ctx) {
    * (decisione del fondatore, 20/10/2026). Non si ritenta un file arrivato sbagliato (hash diverso o troppo
    * grande): il peer ha mandato quei dati, rimandarli non cambia niente.
    * Nel log: fasi con i tempi, mai indirizzi né hash (I-18, I-59).
+   * Torna true se il file è arrivato e verificato.
    * @param {string} sha @param {string} pubkey @param {{base: string, loop: boolean, hostHeader: string}} target
+   * @returns {Promise<boolean>}
    */
   async function scaricaConTentativi(sha, pubkey, target) {
     for (let n = 1; n <= TENTATIVI_BLOB && !stopped; n++) {
@@ -73,18 +77,19 @@ function startPeers(ctx) {
           log(`peer: file richiesto (tentativo ${n}/${TENTATIVI_BLOB})`)
           const data = await blobs.fetchVerified(target.base, sha, { agent, allowLoopbackForTests: target.loop, headers: { Host: target.hostHeader }, maxBytes: cfg.maxBlobBytes,
             onFase: (f, ms) => log(`peer: file, ${f} (${ms} ms)`) })
-          if (stopped) return
+          if (stopped) return false
           blobs.storeVerified({ dataDir: cfg.dataDir, db }, sha, data, pubkey)
           log('peer: file replicato e verificato')
-          return
+          return true
         } catch (e) {
           const msg = /** @type {Error} */ (e).message
           log(`peer: file non replicato, tentativo ${n}/${TENTATIVI_BLOB} (${msg})`)
-          if (/hash non corrispondente|troppo grande/.test(msg)) return
+          if (/hash non corrispondente|troppo grande/.test(msg)) return false
         }
       }
       if (n < TENTATIVI_BLOB) await attendi(ATTESA_BLOB_MS * 2 ** (n - 1))
     }
+    return false
   }
 
   /** attesa che si interrompe alla chiusura del nodo */
@@ -117,7 +122,7 @@ function startPeers(ctx) {
       const [ok] = relay.ingest(ev, null, { fromPeer: true, peer })
       if (!ok) return
       setSince.run(peer, ev.created_at)
-      replicateBlobs(peer, ev, target)
+      replicateBlobs(ev, target)
     })
     ws.on('error', () => {})
     ws.on('close', () => { sockets.delete(ws); schedule(peer, attempt + 1) })
@@ -136,6 +141,7 @@ function startPeers(ctx) {
     add(list) { for (const p of list) if (!cfg.peers.includes(p)) { cfg.peers.push(p); connect(p) } },
     stop() {
       stopped = true
+      coda.ferma()
       for (const t of timers) clearTimeout(t)
       for (const ws of sockets) { try { ws.terminate() } catch {} }
     },
