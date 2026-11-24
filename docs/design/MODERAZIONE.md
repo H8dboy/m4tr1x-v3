@@ -27,7 +27,9 @@
 ## Pezzi
 
 1. `packages/moderazione`: analizzatore puro (nessuna dipendenza, nessuna rete), normalizzazione, controllo delle regole. **Fatto il 24/11.**
-2. Nodo: bandierine calcolate all'arrivo degli eventi pubblici, salvate per id di evento (mai per autore), conteggio delle segnalazioni NIP-56 per evento; il proprietario le vede dal listener locale con K13.
+2. Nodo: bandierine calcolate all'arrivo degli eventi pubblici, salvate per id di evento (mai per autore), conteggio delle segnalazioni NIP-56 per evento (persone diverse); il proprietario le vede dal listener locale con K13. **Fatto il 24/11.**
+   - Le regole: in `/etc/m4tr1x/node.json` la voce `"regoleModerazioneFile": "/etc/m4tr1x/regole-moderazione.json"`, file con `{ "versione": N, "regole": [{ "id", "categoria", "schema", "peso" }] }`. Senza: solo i segnali senza elenco. Un elenco storto ferma il nodo all'avvio (meglio saperlo subito che moderare a metà).
+   - Vederle: `curl -s -H "X-Admin-Key: <chiave>" http://127.0.0.1:<porta>/admin/bandierine` → contenuti (id, kind, data), bandierine e numero di persone che li hanno segnalati; mai chi scrive, chi segnala o il testo.
 3. App: velo con il motivo sui contenuti con bandierina.
 4. Hub: lo stesso sui reel (fotogrammi) quando c'è l'AI.
 

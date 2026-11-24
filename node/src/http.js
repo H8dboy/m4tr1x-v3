@@ -31,6 +31,7 @@ function hostName(h) {
  * @param {string} ctx.version
  * @param {ReturnType<typeof import('./metriche').creaMetriche>} [ctx.metriche]
  * @param {() => number} [ctx.connessioni]
+ * @param {number} [ctx.versioneRegole]
  */
 function createHttp(ctx) {
   const { cfg, db, log } = ctx
@@ -42,6 +43,25 @@ function createHttp(ctx) {
     if (!name) return false
     if (isPublic) return name === ctx.onion() || cfg.allowedHosts.includes(name)
     return LOCAL_NAMES.has(name) || cfg.allowedHosts.includes(name)
+  }
+
+  // Moderazione (I-65): contenuti con bandierine o segnalati (NIP-56, kind 1984), i più recenti per primi. Per ogni
+  // contenuto: id, kind, data, bandierine e QUANTE persone diverse l'hanno segnalato. Mai chi ha scritto, mai chi
+  // ha segnalato, mai il testo.
+  const qBandierine = db.prepare(`
+    SELECT e.id, e.kind, e.created_at FROM events e
+    WHERE e.id IN (SELECT event_id FROM event_flags)
+       OR e.id IN (SELECT t.value FROM event_tags t JOIN events r ON r.id = t.event_id WHERE r.kind = 1984 AND t.name = 'e')
+    ORDER BY e.created_at DESC LIMIT 200`)
+  const qFlag = db.prepare('SELECT categoria, peso, regole, codice FROM event_flags WHERE event_id = ? ORDER BY peso DESC, categoria')
+  const qSegnalazioni = db.prepare(`SELECT COUNT(DISTINCT r.pubkey) AS n FROM events r JOIN event_tags t ON t.event_id = r.id
+    WHERE r.kind = 1984 AND t.name = 'e' AND t.value = ?`)
+  function bandierine() {
+    return qBandierine.all().map((/** @type {any} */ e) => ({
+      id: e.id, kind: e.kind, creato: e.created_at,
+      bandierine: qFlag.all(e.id).map((/** @type {any} */ f) => ({ categoria: f.categoria, peso: f.peso, regole: f.regole ? f.regole.split(',') : [], codice: !!f.codice })),
+      segnalazioni: /** @type {any} */ (qSegnalazioni.get(e.id)).n,
+    }))
   }
 
   /** @param {import('http').IncomingMessage} req */
@@ -118,10 +138,11 @@ function createHttp(ctx) {
     }
 
     // Admin, metriche e onion: esistono solo sul listener del proprietario (I-30, I-33, I-43)
-    if (p === '/admin/status' || p === '/admin/metrics' || p === '/node/onion') {
+    if (p === '/admin/status' || p === '/admin/metrics' || p === '/admin/bandierine' || p === '/node/onion') {
       if (isPublic) return json(res, 404, { error: 'non trovato' })
       if (!isAdmin(req)) return json(res, 401, { error: 'chiave admin richiesta' })
       if (p === '/node/onion') return json(res, 200, { onion: ctx.onion() })
+      if (p === '/admin/bandierine') return json(res, 200, { versione_regole: ctx.versioneRegole ?? null, contenuti: bandierine() })
       if (p === '/admin/metrics') {
         if (!ctx.metriche) return json(res, 404, { error: 'non trovato' })
         const b = /** @type {any} */ (db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS s FROM blobs').get())

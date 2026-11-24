@@ -49,6 +49,8 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
  * @property {(line: string) => void} [log]
  * @property {string} [adminKey]
  * @property {boolean} [allowNodeVersionMismatch]
+ * @property {string} [regoleModerazioneFile]  file con l'elenco delle regole di moderazione (I-65), fuori dal repo
+ * @property {any} [regoleModerazione]         lo stesso elenco come oggetto (prove)
  */
 
 /** @param {Partial<NodeConfig>} c @returns {NodeConfig} */
@@ -100,6 +102,9 @@ function normalize(c) {
     log: c.log,
     adminKey: c.adminKey,
     allowNodeVersionMismatch: !!c.allowNodeVersionMismatch,
+    // moderazione (I-65): l'elenco vero delle regole NON sta nel repo; lo mette chi gestisce il nodo
+    regoleModerazioneFile: typeof c.regoleModerazioneFile === 'string' ? c.regoleModerazioneFile : undefined,
+    regoleModerazione: c.regoleModerazione && typeof c.regoleModerazione === 'object' ? c.regoleModerazione : undefined,
   }
   if (!(cfg.descriptorTtlSec >= 1 && cfg.descriptorTtlSec <= 7 * 86400)) throw new Error('descriptorTtlSec: da 1 secondo a 7 giorni')
   if (!(cfg.descriptorRenewSec >= 1 && cfg.descriptorRenewSec < cfg.descriptorTtlSec)) throw new Error('descriptorRenewSec deve essere minore della scadenza')

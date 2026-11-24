@@ -74,7 +74,8 @@ function matches(ev, f) {
  *   regole aggiuntive del ruolo (es. ancora): chiamata dopo la verifica di base
  * @typedef {{ maxEventBytes: number, perAuthorMaxEvents: number, perAuthorMaxBytes: number, maxTotalEvents: number, maxTotalBytes: number }} SpaceLimits
  * @param {{ db: import('node:sqlite').DatabaseSync, network: string, log: (s: string) => void, policy?: RelayPolicy,
- *           limits?: SpaceLimits, trusted?: string[], metriche?: ReturnType<typeof import('./metriche').creaMetriche> }} ctx
+ *           limits?: SpaceLimits, trusted?: string[], metriche?: ReturnType<typeof import('./metriche').creaMetriche>,
+ *           moderazione?: (contenuto: { kind: number, content: string }) => Array<{ categoria: string, peso: number, regole: string[], codice: boolean }> }} ctx
  *   limits: spazio (I-41); trusted: autori esenti da quote e tetto (il proprietario del nodo)
  */
 function createRelay(ctx) {
@@ -89,6 +90,7 @@ function createRelay(ctx) {
   const delEv = db.prepare('DELETE FROM events WHERE id = ?')
   const purgeStmt = db.prepare('DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?')
   const insTag = db.prepare('INSERT INTO event_tags (event_id,name,value) VALUES (?,?,?)')
+  const insFlag = db.prepare('INSERT OR REPLACE INTO event_flags (event_id,categoria,peso,regole,codice) VALUES (?,?,?,?,?)')
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD })
   /** @type {Map<string, { ws: import('ws').WebSocket, sid: string, filters: Record<string, any>[] }>} */
   const subs = new Map()
@@ -156,6 +158,12 @@ function createRelay(ctx) {
     const clean = { id: ev.id, pubkey: ev.pubkey, created_at: ev.created_at, kind: ev.kind, tags: ev.tags, content: ev.content, sig: ev.sig }
     if (isEphemeral(clean.kind)) { broadcast(clean, source); return [true, ''] }
     const fresh = store(clean)
+    if (fresh && ctx.moderazione) {
+      // I-65: all'analizzatore solo kind e testo, mai chi ha scritto; le bandierine restano legate all'evento
+      try {
+        for (const b of ctx.moderazione({ kind: clean.kind, content: clean.content })) insFlag.run(clean.id, b.categoria, b.peso, b.regole.join(','), b.codice ? 1 : 0)
+      } catch (e) { log(`moderazione: analisi non riuscita (${/** @type {Error} */ (e).message})`) }
+    }
     if (fresh) broadcast(clean, source)
     return [true, fresh ? '' : 'duplicate: già presente']
   }
