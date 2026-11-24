@@ -31,6 +31,8 @@ struct Nodo {
     inganno: Inganno,
     /// quanti PUT sono arrivati (anche rifiutati)
     put: Arc<Mutex<u32>>,
+    /// quante connessioni ha ricevuto (una per richiesta)
+    connessioni: Arc<Mutex<u32>>,
 }
 
 async fn servi(mut s: tokio::io::DuplexStream, blob: Blob, inganno: Inganno, put: Arc<Mutex<u32>>) {
@@ -113,6 +115,7 @@ impl Transport for Rete {
     }
     fn connect_onion(&self, h: &OnionV3, _p: u16, _i: Isolation) -> impl Future<Output = m4tr1x_transport::Result<Stream>> + Send {
         let n = if h.host() == HUB.host() { &self.hub } else { &self.nodo };
+        *n.connessioni.lock().unwrap() += 1;
         let (blob, inganno, put) = (n.blob.clone(), n.inganno, n.put.clone());
         async move {
             let (client, server) = tokio::io::duplex(1 << 23);
@@ -132,7 +135,7 @@ static HUB: std::sync::LazyLock<OnionV3> = std::sync::LazyLock::new(|| OnionV3::
 static NODO: std::sync::LazyLock<OnionV3> = std::sync::LazyLock::new(|| OnionV3::from_pubkey([2; 32]));
 
 fn nodo(inganno: Inganno) -> Nodo {
-    Nodo { blob: Arc::new(Mutex::new(HashMap::new())), inganno, put: Arc::new(Mutex::new(0)) }
+    Nodo { blob: Arc::new(Mutex::new(HashMap::new())), inganno, put: Arc::new(Mutex::new(0)), connessioni: Arc::new(Mutex::new(0)) }
 }
 
 /// Un file di 2 pezzi e mezzo: ogni pezzo comincia con il suo indice (0, 1, 2), così si riconosce.
@@ -296,6 +299,18 @@ async fn un_nodo_che_sostituisce_o_accorcia_un_pezzo_non_passa() {
         }
         assert_eq!(scarica_file_a_pezzi(&rete, &[HUB.clone(), NODO.clone()], &sha, dim, &h, |_| {}).await.unwrap(), f, "{inganno:?}");
     }
+    // la fonte che mente si lascia perdere DAVVERO: dopo il pezzo sostituito non le si chiede più niente (prima
+    // fonte: pezzo 1 giusto, pezzo 2 falso → fuori; il pezzo 3 si chiede solo all'altra). Sfuggito alla campagna
+    // di sabotaggio del 24/11/2026: il file arrivava lo stesso e nessuno contava le richieste
+    let rete = Rete { hub: nodo(Inganno::SostituisceUnPezzo), nodo: nodo(Inganno::Nessuno) };
+    for (p, s) in fette(&f).iter().zip(&h) {
+        rete.hub.blob.lock().unwrap().insert(s.clone(), p.to_vec());
+        rete.nodo.blob.lock().unwrap().insert(s.clone(), p.to_vec());
+    }
+    assert_eq!(scarica_file_a_pezzi(&rete, &[HUB.clone(), NODO.clone()], &sha, dim, &h, |_| {}).await.unwrap(), f);
+    assert_eq!(*rete.hub.connessioni.lock().unwrap(), 2, "alla fonte che ha mentito si sono chiesti altri pezzi");
+    assert_eq!(*rete.nodo.connessioni.lock().unwrap(), 2, "l'altra fonte non ha dato i pezzi 2 e 3");
+
     // la scheda mente sull'hash intero: i pezzi tornano uno per uno ma il file ricomposto no → scartato
     let rete = Rete { hub: nodo(Inganno::Nessuno), nodo: nodo(Inganno::Nessuno) };
     for (p, s) in fette(&f).iter().zip(&h) {

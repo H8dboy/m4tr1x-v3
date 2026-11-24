@@ -96,4 +96,6 @@ test('residui: contano solo i file non tracciati comparsi DOPO la prova; il runn
   assert.match(src, /ripulisciResidui\(m\.id\)/, 'dopo la prova non si cercano i residui')
   assert.match(src, /ripulisciResidui\(`base /, 'dopo la base non si cercano i residui')
   assert.match(src, /residuiTotali\.length \? 1 : 0/, 'un residuo non fa fallire la campagna')
+  // l'eccezione dei file generati: solo quelli dichiarati dalla prova, solo se non c'erano prima
+  assert.match(src, /for \(const g of m\.genera \|\| \[\]\) if \(!prima\.includes\(g\)\)/, 'i file generati si tolgono senza controllare che prima non ci fossero')
 })

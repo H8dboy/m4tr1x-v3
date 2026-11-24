@@ -121,6 +121,9 @@ for (const m of scelte) {
     pending.delete(file)
   }
   if (sha(fs.readFileSync(file, 'utf8')) !== sha(orig)) throw new Error(`ripristino fallito: ${m.file}`)
+  // file che la build genera APPOSTA per il codice sabotato (dichiarati nella prova, solo i permessi
+  // autogenerati di Tauri): si tolgono e non contano come residui; ogni altro file nuovo resta un residuo
+  for (const g of m.genera || []) if (!prima.includes(g)) { try { fs.rmSync(path.join(ROOT, g), { force: true }) } catch {} }
   const residui = ripulisciResidui(m.id)
   results.push({ ...pick(m), outcome, detail, ...(residui.length ? { residui } : {}) })
   console.log(`${outcome === 'presa' ? 'PRESA     ' : outcome === 'interrotta' ? 'INTERROTTA' : outcome === 'non-compila' ? 'NON COMPILA' : 'SFUGGITA  '}  ${m.rule} ${m.name} — ${detail}`)
