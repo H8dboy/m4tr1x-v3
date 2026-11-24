@@ -786,6 +786,48 @@ pub fn codifica_reel_con(fotogrammi: &[Immagine], p: ParametriReel, mut avanza: 
     Ok(Reel { fotogrammi: out, fps: p.fps })
 }
 
+/// Come `codifica_reel_con`, su più fili: con `chiave_ogni` > 0 il reel si taglia in tratti da `chiave_ogni`
+/// fotogrammi, ognuno parte da una chiave e non guarda gli altri, quindi si codificano insieme (un filo per tratto,
+/// al massimo `fili`) e si rimettono in fila. Ogni tratto è un reel completo: è anche un pezzo per la rete
+/// (`pacchetto::pezzi_reel`). L'ultimo fotogramma di ogni tratto diventa un'àncora (bidirezionali fino alla fine
+/// del tratto) invece della coda in catena prima della chiave dopo. Con `chiave_ogni` = 0 o `fili` ≤ 1 è
+/// `codifica_reel_con`. `avanza(fotogrammi codificati finora, in tutto)` arriva da più fili.
+pub fn codifica_reel_parallela(fotogrammi: &[Immagine], p: ParametriReel, fili: usize, avanza: impl Fn(usize) + Sync) -> Result<Reel, Errore> {
+    let tratto = p.chiave_ogni as usize;
+    if tratto == 0 || fili <= 1 || fotogrammi.len() <= tratto {
+        return codifica_reel_con(fotogrammi, p, avanza);
+    }
+    let primo = fotogrammi.first().ok_or(Errore::Immagine("nessun fotogramma"))?;
+    if fotogrammi.iter().any(|f| f.larghezza != primo.larghezza || f.altezza != primo.altezza) {
+        return Err(Errore::Immagine("fotogrammi di misure diverse"));
+    }
+    let tratti: Vec<&[Immagine]> = fotogrammi.chunks(tratto).collect();
+    let prossimo = std::sync::atomic::AtomicUsize::new(0);
+    let fatti = std::sync::atomic::AtomicUsize::new(0);
+    let esiti: Vec<std::sync::Mutex<Option<Result<Reel, Errore>>>> = tratti.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|s| {
+        for _ in 0..fili.min(tratti.len()) {
+            s.spawn(|| loop {
+                let t = prossimo.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(f) = tratti.get(t) else { break };
+                let mut ultimo = 0;
+                let r = codifica_reel_con(f, p, |n| {
+                    let tot = fatti.fetch_add(n - ultimo, std::sync::atomic::Ordering::Relaxed) + n - ultimo;
+                    ultimo = n;
+                    avanza(tot);
+                });
+                *esiti[t].lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+            });
+        }
+    });
+    let mut out = Vec::with_capacity(fotogrammi.len());
+    for e in esiti {
+        let r = e.into_inner().unwrap_or_else(|e| e.into_inner()).ok_or(Errore::Immagine("tratto non codificato"))??;
+        out.extend(r.fotogrammi);
+    }
+    Ok(Reel { fotogrammi: out, fps: p.fps })
+}
+
 /// Codifica un previsto (semplice o bidirezionale) dato lo stato, l'originale, i riferimenti e gli spostamenti;
 /// aggiorna lo stato con la ricostruzione.
 #[allow(clippy::too_many_arguments)]
@@ -1258,5 +1300,37 @@ mod tests {
         assert!(decodifica_reel(&orfano).is_err());
         let senza_ancora = Reel { fotogrammi: vec![r.fotogrammi[0].clone(), r.fotogrammi[2].clone()], fps: 24 };
         assert!(decodifica_reel(&senza_ancora).is_err());
+    }
+
+    #[test]
+    fn a_tratti_su_piu_fili_e_un_reel_valido_e_sempre_lo_stesso() {
+        let f: Vec<Immagine> = (0..22).map(|i| scena(96, 64, 2 * i, i / 2, 0)).collect();
+        let p = ParametriReel { chiave_ogni: 6, bidirezionali: 3, fps: 12, ..par() };
+        // un filo solo (o niente chiavi programmate): identico alla codifica di sempre
+        let uno = codifica_reel_con(&f, p, |_| {}).unwrap();
+        assert_eq!(codifica_reel_parallela(&f, p, 1, |_| {}).unwrap().in_byte(), uno.in_byte());
+        let p0 = ParametriReel { chiave_ogni: 0, ..p };
+        assert_eq!(codifica_reel_parallela(&f, p0, 4, |_| {}).unwrap().in_byte(), codifica_reel(&f, p0).unwrap().in_byte());
+        // più fili: stesso risultato qualunque sia il numero di fili (l'ordine dei tratti non dipende da chi finisce prima)
+        let fatti = std::sync::atomic::AtomicUsize::new(0);
+        let due = codifica_reel_parallela(&f, p, 2, |n| { fatti.fetch_max(n, std::sync::atomic::Ordering::Relaxed); }).unwrap();
+        assert_eq!(fatti.into_inner(), 22, "l'avanzamento arriva a tutti i fotogrammi");
+        let quattro = codifica_reel_parallela(&f, p, 4, |_| {}).unwrap();
+        assert_eq!(due.in_byte(), quattro.in_byte());
+        // ogni tratto parte da una chiave: un pezzo per tratto, e pezzo per pezzo si vede lo stesso reel
+        let tipi_: String = due.fotogrammi.iter().map(|x| if matches!(x, Fotogramma::Chiave(_)) { 'C' } else { '.' }).collect();
+        assert_eq!(tipi_.match_indices('C').map(|(i, _)| i).collect::<Vec<_>>(), vec![0, 6, 12, 18]);
+        let tutti = decodifica_reel(&due).unwrap();
+        assert_eq!(tutti.len(), 22);
+        let mut visti = Vec::new();
+        for pz in crate::pacchetto::pezzi_reel(&due) {
+            visti.extend(crate::pacchetto::apri_reel(&pz).unwrap().0);
+        }
+        assert_eq!(visti, tutti);
+        assert!(psnr_minimo(&f, &tutti) > 3000, "qualità come a un filo: {}", psnr_minimo(&f, &tutti));
+        // misure diverse si rifiutano anche a tratti
+        let mut storti = f.clone();
+        storti[13] = scena(64, 64, 0, 0, 0);
+        assert!(codifica_reel_parallela(&storti, p, 4, |_| {}).is_err());
     }
 }

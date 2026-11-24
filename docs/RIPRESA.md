@@ -142,6 +142,10 @@
 
 93. **Coda di replica a budget nel nodo (chiude 91 f):** prima ogni evento ricevuto da un peer faceva partire subito la replica dei suoi file, tutti gli eventi insieme (una sincronizzazione da 500 eventi = centinaia di richieste via Tor) e un evento con ~700 tag `pezzo` inventati costava ~700 × 3 tentativi. Ora `node/src/coda-replica.js`: i file di ogni evento in coda, `INSIEME` = 2 eventi alla volta, tetto `MASSIMO` = 4096 file in attesa (oltre, l'evento resta ma i suoi file non si replicano: si scaricano dal nodo d'origine), e un evento si lascia perdere al primo file che non arriva dopo i 3 tentativi (il peer non ce l'ha o manda dati sbagliati). Log solo con conti, niente hash. I 3 tentativi con attesa crescente per file restano (decisione del 20/10). Prove: `tests/unit/coda-replica.test.js` (7) e in `blob-replica` un evento con 300 pezzi inventati = 3 richieste; sabotaggi `coda-*` 4/4 presi, base verde; suite 257 verdi.
 
+### 24/11/2026 — codifica dei reel su più fili
+
+94. **`codifica_reel_parallela`** (crate celle, usata da `celle_prepara` con tutti i core meno uno): tratti da `chiave_ogni` fotogrammi codificati insieme, ognuno un reel che parte da una chiave (= un pezzo per la rete); risultato identico qualunque sia il numero di fili, uguale a `codifica_reel_con` con un filo o senza chiavi programmate. Misura (scena sintetica 96×480×360, chiave 24, 8 core): 45,6 s → 11,4 s (×4,0), byte −2,9 %, PSNR −0,02 dB. Da rifare su video veri (fotogrammi del 13/11 non più sul PC). README del crate aggiornato; specchio m4tr1x-hive da aggiornare.
+
 ## Prossimo (dal 12/11/2026)
 
 **Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 12/11 pomeriggio in `app/celle/README.md`: foto a
