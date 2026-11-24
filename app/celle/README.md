@@ -165,6 +165,22 @@ parte (`celle_apri`, `celle_stato`, `celle_quadro`): chi guarda vede la foto int
 affinarsi; un reel parte dal primo gruppo. Nessun hub ricodifica niente, nessun metadato da ripulire (il formato
 porta solo pixel), e al JavaScript non arriva mai un file: solo pixel.
 
+## Codifica a tratti su più fili (24/11/2026, `examples/misura_parallela.rs`)
+
+`reel::codifica_reel_parallela(fotogrammi, p, fili, avanza)`: con `chiave_ogni` > 0 il reel si taglia in tratti da
+`chiave_ogni` fotogrammi, ognuno parte da una chiave e non guarda gli altri, quindi si codificano insieme (un filo
+per tratto) e si rimettono in fila. Ogni tratto è già un pezzo per la rete. Unica differenza dalla codifica su un
+filo: l'ultimo fotogramma di un tratto diventa un'àncora (bidirezionali fino alla fine del tratto) invece della coda
+in catena prima della chiave dopo. Il risultato non dipende dal numero di fili (provato). L'app la usa in
+`celle_prepara` con tutti i core meno uno.
+
+| scena | un filo | a tratti (8 core) |
+|---|---|---|
+| sintetica 96 fotogrammi 480×360, chiave ogni 24 | 45,6 s · 652.574 B · 29,43 dB | **11,4 s (×4,0)** · 633.697 B (−2,9 %) · 29,41 dB |
+
+Con 4 tratti lavorano 4 fili: il guadagno cresce con la durata (un reel di 30 s a 12 fotogrammi, chiave ogni 48 =
+8 tratti). Da rifare su video veri (le cartelle `reel1`/`reel2` del 13/11 non ci sono più su questo PC).
+
 ## Prossimo
 
 1. Misura su telefono o mini PC: tempo e memoria (oggi i piani sono i32: ~23 MB per una foto da 2 MP; si può fare

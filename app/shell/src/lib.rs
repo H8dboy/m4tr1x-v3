@@ -641,7 +641,9 @@ async fn celle_prepara(request: tauri::ipc::Request<'_>, alveare: tauri::State<'
             Ok((m4tr1x_celle::pacchetto::pezzi_foto(&c), m4tr1x_protocol::MIME_CELLE_FOTO, 0))
         } else {
             let p = m4tr1x_celle::reel::ParametriReel { chiave_ogni: CELLE_CHIAVE_OGNI, fps: fps as u8, ..m4tr1x_celle::reel::ParametriReel::default() };
-            let r = m4tr1x_celle::reel::codifica_reel_con(&fotogrammi, p, |fatti| {
+            // i tratti da una chiave all'altra si codificano insieme, lasciando un filo libero all'interfaccia
+            let fili = std::thread::available_parallelism().map(|n| n.get().saturating_sub(1)).unwrap_or(1).max(1);
+            let r = m4tr1x_celle::reel::codifica_reel_parallela(&fotogrammi, p, fili, |fatti| {
                 *fase.lock().unwrap() = Some(Avanzamento { fase: "codifico".into(), secondi: t0.elapsed().as_secs(), tentativo: 0, pezzi_fatti: u32::try_from(fatti).unwrap_or(u32::MAX), pezzi_totali: n });
             })
             .map_err(|e| e.to_string())?;
