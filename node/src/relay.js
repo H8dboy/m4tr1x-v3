@@ -74,7 +74,7 @@ function matches(ev, f) {
  *   regole aggiuntive del ruolo (es. ancora): chiamata dopo la verifica di base
  * @typedef {{ maxEventBytes: number, perAuthorMaxEvents: number, perAuthorMaxBytes: number, maxTotalEvents: number, maxTotalBytes: number }} SpaceLimits
  * @param {{ db: import('node:sqlite').DatabaseSync, network: string, log: (s: string) => void, policy?: RelayPolicy,
- *           limits?: SpaceLimits, trusted?: string[] }} ctx
+ *           limits?: SpaceLimits, trusted?: string[], metriche?: ReturnType<typeof import('./metriche').creaMetriche> }} ctx
  *   limits: spazio (I-41); trusted: autori esenti da quote e tetto (il proprietario del nodo)
  */
 function createRelay(ctx) {
@@ -130,6 +130,13 @@ function createRelay(ctx) {
    * @returns {[boolean, string]}
    */
   function ingest(ev, source, meta = {}) {
+    const esito = valuta(ev, source, meta)
+    ctx.metriche?.evento(esito[0], esito[1], !!meta.fromPeer)
+    return esito
+  }
+
+  /** @param {any} ev @param {import('ws').WebSocket | null} source @param {{ fromPeer?: boolean, peer?: string }} meta @returns {[boolean, string]} */
+  function valuta(ev, source, meta) {
     if (!protocol.verifyEvent(ev, network)) return [false, 'invalid: evento non valido per questa rete']
     if (ev.created_at > nowSec() + MAX_FUTURE_SEC) return [false, 'invalid: created_at nel futuro']
     const exp = expirationOf(ev)
@@ -197,7 +204,7 @@ function createRelay(ctx) {
         if (type === 'EVENT') {
           const ev = args[0]
           if (!ev || typeof ev !== 'object' || typeof ev.id !== 'string') return send(['NOTICE', 'invalid: evento malformato'])
-          if (!take()) return send(['OK', ev.id.slice(0, 64), false, 'rate-limited: rallenta'])
+          if (!take()) { ctx.metriche?.evento(false, 'rate-limited', false); return send(['OK', ev.id.slice(0, 64), false, 'rate-limited: rallenta']) }
           const [ok, why] = ingest(ev, ws)
           return send(['OK', ev.id.slice(0, 64), ok, why])
         }
@@ -232,6 +239,7 @@ function createRelay(ctx) {
 
   return {
     wss, ingest, query, purgeExpired,
+    connessioni: () => wss.clients.size,
     /** @param {(ev: any) => void} fn */ onEvent: fn => { listeners.add(fn); return () => listeners.delete(fn) },
     close: () => { clearInterval(purgeTimer); for (const c of wss.clients) { try { c.terminate() } catch {} } wss.close() },
   }

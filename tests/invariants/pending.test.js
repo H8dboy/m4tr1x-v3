@@ -22,7 +22,6 @@ const PENDING = [
   ['I-34', 'nessun trasferimento tra utenti; split della mancia', 'F7'],
   ['I-35', 'buono cieco non collegabile al bonifico', 'F7b'],
   ['I-42', 'approvazioni dei topic solo da moderatori correnti', 'F6b'],
-  ['I-43', 'metriche del nodo senza IP, pubkey, onion, id', 'F2b'],
   ['I-44', 'raggiungibilita firmata da 2 ancore su 3', 'F3b'],
   ['I-45', 'registrazione creator con doppia firma', 'F7'],
   ['I-46', 'mance senza pubkey creator ne id conto in pubblico', 'F7'],

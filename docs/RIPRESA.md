@@ -152,6 +152,8 @@
 
 96. **Sabotaggi sempre applicabili (`tests/unit/sabotage-applicabili.test.js`):** a ogni PR si controlla che ogni prova di sabotaggio abbia id unico, test esistente, file presente e ogni `find` una volta sola (le `edits` in ordine), con una modifica vera. Nato dalle 3 mutazioni rotte su main da settimane (punto 95): ora una modifica al codice che rompe un sabotaggio fa diventare rossa la CI subito, non alla prossima campagna completa. Controllo positivo: contro le mutazioni di prima del 95 la prova cade e le elenca.
 
+97. **F2b — metriche del nodo (I-43 attiva).** `node/src/metriche.js`: solo contatori con nomi fissi (eventi da client e da peer: accettati, duplicati, rifiutati per categoria NIP-01 `invalid/blocked/rate-limited/restricted/error/altro`; blob ricevuti, byte, rifiutati; archivio: eventi, blob, byte; connessioni al relay; tor sì/no; secondi da avvio). Il modulo non importa niente e non tiene elenchi; il motivo di un rifiuto entra solo come categoria. `GET /admin/metrics` solo sul listener del proprietario con `X-Admin-Key` (K13), 404 da quello dell'onion. Dal nodo: `curl -s -H "X-Admin-Key: <chiave>" http://127.0.0.1:<porta>/admin/metrics`. Test `inv-43-metrics` (5 prove, traffico con pubkey/id/hash/testo/IP 192.0.2.43/onion finto: niente compare), 4 sabotaggi presi; I-43 tolta dalle pending. Resta F3b (prove di raggiungibilità delle ancore, I-44). Nodo Oracle: arriva con la prossima reinstallazione (quando lo decide il fondatore).
+
 ## Prossimo (dal 12/11/2026)
 
 **Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 12/11 pomeriggio in `app/celle/README.md`: foto a
