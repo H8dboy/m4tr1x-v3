@@ -5,4 +5,5 @@
 ignore = [
   "RUSTSEC-2024-0429", # glib: solo Linux, via Tauri (GTK); VariantStrIter non usato da noi
   "RUSTSEC-2024-0370", # proc-macro-error: solo compilazione, via glib-macros (GTK di Tauri, Linux)
+  "RUSTSEC-2026-0543", # chrono non mantenuto: solo facoltativo di serde_with nel lock, non compilato
 ]
