@@ -146,6 +146,10 @@
 
 94. **`codifica_reel_parallela`** (crate celle, usata da `celle_prepara` con tutti i core meno uno): tratti da `chiave_ogni` fotogrammi codificati insieme, ognuno un reel che parte da una chiave (= un pezzo per la rete); risultato identico qualunque sia il numero di fili, uguale a `codifica_reel_con` con un filo o senza chiavi programmate. Misura (scena sintetica 96×480×360, chiave 24, 8 core): 45,6 s → 11,4 s (×4,0), byte −2,9 %, PSNR −0,02 dB. Da rifare su video veri (fotogrammi del 13/11 non più sul PC). README del crate aggiornato; specchio m4tr1x-hive da aggiornare.
 
+### 24/11/2026 — scadenza degli annunci DM
+
+95. **Annunci DM con scadenza (chiude il limite di I-62, decisione del fondatore: 30 giorni con rinnovo automatico).** `m4tr1x-dm`: l'annuncio porta `["expiration", ora + 30 gg]`; `scadenza_annuncio` lo accetta solo con UN tag intero, dopo la data e non oltre 90 giorni da essa; `dm_dichiarate`/`identita_del_mittente` prendono `ora` e scartano gli annunci scaduti o senza scadenza (quelli di prima del 24/11). `m4tr1x-posta`: `chiave_dm_di(…, ora)`, `da_rinnovare` (nessun annuncio valido, chiave diversa, o meno di 10 giorni alla scadenza) → l'app ripubblica alla lettura dei messaggi; messaggio all'utente che spiega il caso dei 30 giorni. Il nodo applicava già NIP-40 a tutti gli eventi (rifiuta e toglie gli scaduti). Prove: 3 nuove in I-60, 3 nuove nella posta (rinnovo, annuncio di prima rifatto, destinatario scaduto); 5 sabotaggi nuovi presi. **Riparate 4 mutazioni che non trovavano più il loro testo** (`i01-csp-host`, `profilo-nome-non-ripulito`, `file-svg` erano già rotte su main dopo CSP con `blob:`, titoli del forum e tipi a celle; `posta-annuncio-di-un-altro` per questo cambio): tutte prese. Controllo usato: ogni `find` deve comparire una volta sola nel suo file (233/233). Restano: rotazione della chiave DM; chi non apre i messaggi da più di 30 giorni non riceve e i suoi messaggi vecchi si vedono senza identità.
+
 ## Prossimo (dal 12/11/2026)
 
 **Prima di tutto (decisione del fondatore, 12/11): il codec a celle.** Stato al 12/11 pomeriggio in `app/celle/README.md`: foto a

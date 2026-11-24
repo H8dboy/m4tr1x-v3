@@ -5,11 +5,11 @@
 //! un nodo malevolo che risponde con l'annuncio di un altro non fa cifrare per la chiave sbagliata.
 
 use m4tr1x_dm::prova::{incarta_difettosa, Difetto};
-use m4tr1x_dm::{annuncio_dm, incarta, Entropia, KIND_ANNUNCIO_DM, KIND_BUSTA};
+use m4tr1x_dm::{annuncio_dm, incarta, Entropia, DURATA_ANNUNCIO, KIND_ANNUNCIO_DM, KIND_BUSTA, RINNOVO_ANNUNCIO};
 use m4tr1x_identity::creazione::recupera;
 use m4tr1x_identity::portachiavi::Memoria;
 use m4tr1x_identity::{deriva, seme_da_parole, ChiaveRuolo, Ruolo};
-use m4tr1x_posta::{chiave_dm_di, invia, leggi, ErrorePosta, MASSIMO_TESTO};
+use m4tr1x_posta::{chiave_dm_di, da_rinnovare, invia, leggi, ErrorePosta, MASSIMO_TESTO};
 use m4tr1x_protocol::Rete;
 use m4tr1x_transport::prova::{relay_finto_che_ignora_il_filtro, relay_finto_condiviso};
 use m4tr1x_transport::{BootstrapInfo, Isolation, OnionV3, Stream, Transport, TransportStatus};
@@ -124,7 +124,7 @@ async fn due_utenti_si_scrivono_e_al_nodo_arrivano_solo_buste_e_annunci() {
     // Bruno apre la posta: vuota, e così pubblica il suo annuncio
     let vuota = leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
     assert!(vuota.conversazioni.is_empty());
-    assert_eq!(chiave_dm_di(RETE, &nodo.eventi(), &bruno.identita).as_deref(), Some(bruno.dm.as_str()));
+    assert_eq!(chiave_dm_di(RETE, &nodo.eventi(), &bruno.identita, adesso()).as_deref(), Some(bruno.dm.as_str()));
 
     let inviato = invia(&nodo, &onion(), RETE, &anna.portachiavi, &bruno.identita, SEGRETO, BUDGET, |_| {}).await.unwrap();
     assert!(inviato.mio);
@@ -238,4 +238,57 @@ async fn un_nodo_che_risponde_con_l_annuncio_di_un_altro_non_fa_cifrare_per_la_c
     // e Bruno lo legge davvero
     let posta = leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
     assert!(posta.conversazioni.iter().any(|c| c.identita.as_deref() == Some(anna.identita.as_str()) && c.messaggi[0].testo == SEGRETO));
+}
+
+/// Annunci di Bruno sul nodo (kind 10477, firmati dalla sua identità).
+fn annunci_di(nodo: &Nodo, identita: &str) -> Vec<Value> {
+    nodo.eventi().into_iter().filter(|e| e["kind"] == KIND_ANNUNCIO_DM as u64 && e["pubkey"] == identita).collect()
+}
+
+#[tokio::test]
+async fn l_annuncio_in_scadenza_si_rinnova_da_solo_quello_fresco_no() {
+    let (nodo, bruno) = (Nodo::nuovo(), utente(&parole_bruno()));
+    let (id_b, dm_b) = chiavi(&parole_bruno(), 1);
+    let ora = adesso();
+    // annuncio fresco (di ieri): leggendo la posta non se ne pubblica un altro
+    nodo.aggiungi(serde_json::to_value(annuncio_dm(RETE, &id_b, &[&dm_b], &[], ora - 24 * 3600).unwrap()).unwrap());
+    assert_eq!(da_rinnovare(RETE, &nodo.eventi(), &bruno.identita, &bruno.dm, ora), None);
+    leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
+    assert_eq!(annunci_di(&nodo, &bruno.identita).len(), 1, "ripubblicato un annuncio ancora fresco");
+    // annuncio che scade tra meno di RINNOVO_ANNUNCIO: si rinnova
+    let nodo = Nodo::nuovo();
+    let vecchio = ora - (DURATA_ANNUNCIO - RINNOVO_ANNUNCIO) - 60;
+    nodo.aggiungi(serde_json::to_value(annuncio_dm(RETE, &id_b, &[&dm_b], &[], vecchio).unwrap()).unwrap());
+    assert_eq!(da_rinnovare(RETE, &nodo.eventi(), &bruno.identita, &bruno.dm, ora), Some("annuncio in scadenza"));
+    leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
+    let annunci = annunci_di(&nodo, &bruno.identita);
+    assert_eq!(annunci.len(), 2, "annuncio in scadenza non rinnovato");
+    assert_eq!(da_rinnovare(RETE, &annunci, &bruno.identita, &bruno.dm, adesso()), None, "il nuovo vale 30 giorni");
+}
+
+#[tokio::test]
+async fn un_annuncio_senza_scadenza_di_prima_si_rifa_e_non_vale_per_chi_scrive() {
+    // gli annunci pubblicati prima del 24/11/2026 non hanno `expiration`: non valgono più
+    let (nodo, anna, bruno) = (Nodo::nuovo(), utente(&parole_anna()), utente(&parole_bruno()));
+    let (id_b, dm_b) = chiavi(&parole_bruno(), 1);
+    let con = serde_json::to_value(annuncio_dm(RETE, &id_b, &[&dm_b], &[], adesso() - 3600).unwrap()).unwrap();
+    let tags: Vec<Vec<String>> = con["tags"].as_array().unwrap().iter().filter(|t| t[0] != "net" && t[0] != "expiration").map(|t| t.as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()).collect();
+    let senza = m4tr1x_protocol::firma_evento(KIND_ANNUNCIO_DM, "", &tags, adesso() - 3600, RETE, &id_b.pubblica_hex(), |d| id_b.firma_schnorr(d)).unwrap();
+    nodo.aggiungi(serde_json::to_value(&senza).unwrap());
+    let e = invia(&nodo, &onion(), RETE, &anna.portachiavi, &bruno.identita, SEGRETO, BUDGET, |_| {}).await.unwrap_err();
+    assert_eq!(e, ErrorePosta::SenzaAnnuncio, "si è cifrato per un annuncio senza scadenza");
+    assert_eq!(da_rinnovare(RETE, &nodo.eventi(), &bruno.identita, &bruno.dm, adesso()), Some("nessun annuncio valido"));
+    // Bruno apre la posta: l'app pubblica l'annuncio nuovo, e ora Anna può scrivergli
+    leggi(&nodo, &onion(), RETE, &bruno.portachiavi, BUDGET, |_| {}).await.unwrap();
+    invia(&nodo, &onion(), RETE, &anna.portachiavi, &bruno.identita, SEGRETO, BUDGET, |_| {}).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_chi_ha_l_annuncio_scaduto_non_si_scrive() {
+    let (nodo, anna, bruno) = (Nodo::nuovo(), utente(&parole_anna()), utente(&parole_bruno()));
+    let (id_b, dm_b) = chiavi(&parole_bruno(), 1);
+    nodo.aggiungi(serde_json::to_value(annuncio_dm(RETE, &id_b, &[&dm_b], &[], adesso() - DURATA_ANNUNCIO - 60).unwrap()).unwrap());
+    let e = invia(&nodo, &onion(), RETE, &anna.portachiavi, &bruno.identita, SEGRETO, BUDGET, |_| {}).await.unwrap_err();
+    assert_eq!(e, ErrorePosta::SenzaAnnuncio);
+    assert!(nodo.eventi().iter().all(|e| e["kind"] != KIND_BUSTA as u64));
 }

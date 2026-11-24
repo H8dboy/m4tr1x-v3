@@ -255,7 +255,7 @@ module.exports = [
 
   // ─── I-01 statica (21/10/2026) ──
   { id: 'i01-csp-host', rule: 'I-01', name: 'host remoto esplicito nella CSP (I-31 vede solo i token generici)', file: 'app/shell/tauri.conf.json',
-    find: '"img-src": "\'self\'",', replace: '"img-src": "\'self\' https://cdn.example.org",', test: T('inv-01-no-clearnet') },
+    find: '"img-src": "\'self\' blob:",', replace: '"img-src": "\'self\' blob: https://cdn.example.org",', test: T('inv-01-no-clearnet') },
   { id: 'i01-deny-ureq', rule: 'I-01', name: 'divieto di un client HTTP tolto da deny.toml', file: 'app/deny.toml',
     find: '  { crate = "ureq" },\n', replace: '', test: T('inv-01-no-clearnet') },
   { id: 'i01-plugin', rule: 'I-01', name: 'plugin di Tauri (aggiornamenti) aggiunto al guscio', file: 'app/shell/Cargo.toml',
@@ -381,8 +381,8 @@ module.exports = [
 
   // ─── F4: profilo (fondatore, 20/10/2026) ──
   { id: 'profilo-nome-non-ripulito', rule: 'profilo', name: 'nome con caratteri di direzione (falsificazione di nomi)', file: 'app/protocol/src/lib.rs',
-    find: "    let senza: String = s.chars().filter(|&c| !c.is_control() && !ingannevole(c)).collect();",
-    replace: "    let senza: String = s.chars().filter(|&c| !c.is_control()).collect();", test: 'tests/unit/profilo.test.js', timeoutMs: 900000 },
+    find: "fn pulisci_nome(s: &str) -> String {\n    let senza: String = s.chars().filter(|&c| !c.is_control() && !ingannevole(c)).collect();",
+    replace: "fn pulisci_nome(s: &str) -> String {\n    let senza: String = s.chars().filter(|&c| !c.is_control()).collect();", test: 'tests/unit/profilo.test.js', timeoutMs: 900000 },
   // toglie DAVVERO la verifica (id e firma) nel protocollo: il profilo dell'impostore passerebbe.
   // (Un Evento non si costruisce da fuori del protocollo: il sabotaggio va fatto lì, e deve compilare.)
   { id: 'profilo-non-verificato', rule: 'profilo', name: 'nome preso da un profilo non verificato (impostore)', file: 'app/protocol/src/lib.rs',
@@ -486,6 +486,17 @@ module.exports = [
     find: "    if ev.kind != KIND_ANNUNCIO_DM {\n        return Err(ErroreDm::Scartata(\"non è un annuncio DM\"));\n    }\n", replace: "", test: T("inv-60-dm-attribution"), timeoutMs: 900000 },
   { id: "dm-prova-riusabile", rule: "I-60", name: "la prova di possesso non lega la chiave DM all'identità (riusabile)", file: "app/dm/src/lib.rs",
     find: "format!(\"m4tr1x/dm-annuncio/v1:{}:{identita}:{dm}\", rete.nome())", replace: "format!(\"m4tr1x/dm-annuncio/v1:{}:{dm}\", { let _ = identita; rete.nome() })", test: T("inv-60-dm-attribution"), timeoutMs: 900000 },
+  // I-62, scadenza degli annunci DM (24/11/2026): chiude il limite della riproposta di annunci vecchi
+  { id: "dm-annuncio-senza-scadenza", rule: "I-62", name: "un annuncio senza scadenza vale per sempre", file: "app/dm/src/lib.rs",
+    find: "    let scadenza = scadenza_annuncio(&ev).ok_or(ErroreDm::Scartata(\"annuncio senza scadenza valida\"))?;", replace: "    let scadenza = scadenza_annuncio(&ev).unwrap_or(u64::MAX);", test: T("inv-60-dm-attribution"), timeoutMs: 900000 },
+  { id: "dm-annuncio-scaduto", rule: "I-62", name: "un annuncio scaduto vale ancora", file: "app/dm/src/lib.rs",
+    find: "    if scadenza <= ora {\n        return Err(ErroreDm::Scartata(\"annuncio scaduto\"));", replace: "    if false && scadenza <= ora {\n        return Err(ErroreDm::Scartata(\"annuncio scaduto\"));", test: T("inv-60-dm-attribution"), timeoutMs: 900000 },
+  { id: "dm-annuncio-eterno", rule: "I-62", name: "si accetta una scadenza lontanissima (annuncio quasi eterno)", file: "app/dm/src/lib.rs",
+    find: "    (s > ev.created_at && s - ev.created_at <= DURATA_ANNUNCIO_MASSIMA).then_some(s)", replace: "    (s > ev.created_at).then_some(s)", test: T("inv-60-dm-attribution"), timeoutMs: 900000 },
+  { id: "dm-annuncio-pubblicato-senza-scadenza", rule: "I-62", name: "l'app pubblica annunci senza scadenza", file: "app/dm/src/lib.rs",
+    find: "    tags.push(vec![\"expiration\".to_string(), (ora + DURATA_ANNUNCIO).to_string()]);\n", replace: "", test: T("inv-60-dm-attribution"), timeoutMs: 900000 },
+  { id: "posta-annuncio-non-rinnovato", rule: "I-62", name: "l'annuncio in scadenza non si rinnova", file: "app/posta/src/lib.rs",
+    find: "        Some((_, scadenza)) if scadenza.saturating_sub(ora) < dm::RINNOVO_ANNUNCIO => Some(\"annuncio in scadenza\"),\n", replace: "", test: T("inv-62-posta-app"), timeoutMs: 900000 },
   { id: "dm-firma-sigillo", rule: "I-61", name: "firma del sigillo non controllata", file: "app/dm/src/lib.rs",
     find: "    verifica_firma(s_pub, s_id, s_sig).map_err(|_| no(\"firma del sigillo falsa\"))?;\n", replace: "    let _ = (s_pub, s_id, s_sig);\n", test: T("inv-61-dm-forged"), timeoutMs: 900000 },
   { id: "dm-autore", rule: "I-61", name: "sigillo di un autore diverso da quello del messaggio accettato", file: "app/dm/src/lib.rs",
@@ -543,7 +554,7 @@ module.exports = [
   { id: "file-non-pulito", rule: "I-64", name: "si carica il file originale invece di quello pulito", file: "app/shell/src/lib.rs",
     find: "    *scelto.0.lock().unwrap() = Some((pulito, mime));", replace: "    let _ = pulito;\n    *scelto.0.lock().unwrap() = Some((b.to_vec(), mime));", test: T("inv-64-file-app") },
   { id: "file-svg", rule: "I-64", name: "una scheda con un tipo fuori elenco (SVG) si mostra", file: "app/protocol/src/lib.rs",
-    find: "            Sezione::Signal => matches!(mime, \"image/jpeg\" | \"image/png\" | \"video/mp4\"),", replace: "            Sezione::Signal => { let _ = mime; true }", test: T("inv-64-file-app"), timeoutMs: 900000 },
+    find: "            Sezione::Signal => matches!(mime, \"image/jpeg\" | \"image/png\" | \"video/mp4\" | MIME_CELLE_FOTO | MIME_CELLE_REEL),", replace: "            Sezione::Signal => { let _ = mime; true }", test: T("inv-64-file-app"), timeoutMs: 900000 },
   { id: "file-due-sezioni", rule: "I-64", name: "una scheda con più sezioni conta nella prima", file: "app/protocol/src/lib.rs",
     find: "    let [sezione] = sezioni.as_slice() else { return None };", replace: "    let [sezione, ..] = sezioni.as_slice() else { return None };", test: T("inv-64-file-app"), timeoutMs: 900000 },
   { id: "file-blob-script", rule: "I-64", name: "blob: ammesso anche negli script", file: "app/shell/tauri.conf.json",
@@ -581,11 +592,11 @@ module.exports = [
     find: "    let Some(titolo) = m4tr1x_protocol::discussione_da_evento(&e) else { return Ok(None) };\n    let mut risposte", replace: "    let titolo = m4tr1x_protocol::discussione_da_evento(&e).unwrap_or_default();\n    let mut risposte", test: T("inv-63-forum"), timeoutMs: 900000 },
   // I-62: i messaggi privati dentro l'app (m4tr1x-posta + guscio)
   { id: "posta-annuncio-di-un-altro", rule: "I-62", name: "si cifra per la chiave DM dell'annuncio più recente, di chiunque sia", file: "app/posta/src/lib.rs",
-    find: "            (autore == identita).then_some((ora, id, chiavi))", replace: "            { let _ = (&autore, identita); Some((ora, id, chiavi)) }", test: T("inv-62-posta-app"), timeoutMs: 900000 },
+    find: "            (autore == identita).then_some((creato, id, chiavi, scadenza))", replace: "            { let _ = (&autore, identita); Some((creato, id, chiavi, scadenza)) }", test: T("inv-62-posta-app"), timeoutMs: 900000 },
   { id: "posta-senza-annuncio", rule: "I-62", name: "senza annuncio del destinatario si cifra per la sua chiave d'identità", file: "app/posta/src/lib.rs",
-    find: "chiave_dm_di(rete, &suoi, destinatario).ok_or(ErrorePosta::SenzaAnnuncio)?;", replace: "chiave_dm_di(rete, &suoi, destinatario).unwrap_or_else(|| destinatario.to_string());", test: T("inv-62-posta-app"), timeoutMs: 900000 },
+    find: "chiave_dm_di(rete, &suoi, destinatario, adesso()).ok_or(ErrorePosta::SenzaAnnuncio)?;", replace: "chiave_dm_di(rete, &suoi, destinatario, adesso()).unwrap_or_else(|| destinatario.to_string());", test: T("inv-62-posta-app"), timeoutMs: 900000 },
   { id: "posta-sconosciuto-con-identita", rule: "I-62", name: "un mittente senza annuncio riceve un'identità", file: "app/posta/src/lib.rs",
-    find: "Conversazione { identita: dm::identita_del_mittente(rete, annunci, &chiave), dm: chiave, nome: None, messaggi }", replace: "Conversazione { identita: { let _ = (rete, annunci); Some(chiave.clone()) }, dm: chiave, nome: None, messaggi }", test: T("inv-62-posta-app"), timeoutMs: 900000 },
+    find: "Conversazione { identita: dm::identita_del_mittente(rete, annunci, &chiave, ora), dm: chiave, nome: None, messaggi }", replace: "Conversazione { identita: { let _ = (rete, annunci, ora); Some(chiave.clone()) }, dm: chiave, nome: None, messaggi }", test: T("inv-62-posta-app"), timeoutMs: 900000 },
   { id: "posta-destinatario-non-controllato", rule: "I-62", name: "un destinatario non valido arriva fino alla rete", file: "app/posta/src/lib.rs",
     find: "    if !chiave_valida(destinatario) {\n        return Err(ErrorePosta::Destinatario);\n    }\n", replace: "", test: T("inv-62-posta-app"), timeoutMs: 900000 },
   { id: "posta-dm-nel-guscio", rule: "I-62", name: "il guscio apre le buste da sé (usa m4tr1x-dm)", file: "app/shell/src/lib.rs",
