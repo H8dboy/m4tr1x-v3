@@ -185,7 +185,13 @@ Con 4 tratti lavorano 4 fili: il guadagno cresce con la durata (un reel di 30 s 
 
 1. Misura su telefono o mini PC: tempo e memoria (oggi i piani sono i32: ~23 MB per una foto da 2 MP; si può fare
    a strisce). Un confronto a occhio (non solo PSNR) su un paio di foto.
-2. Strato 1: le pendenze costano ancora 3–4 byte per cella; provare una scala più grossa.
+2. Strato 1, scala più grossa delle pendenze: **MISURATA il 24/11, non conviene** (resta 1/32). Quattro foto 1600×1000
+   (sfondi di Windows), passi 0/0 · 24/12 · 12/6. Con 1/16 le pendenze costano il 15–27 % in meno e lo strato base
+   (l'anteprima) il 6–15 % in meno a pari PSNR (±0,2 dB); con il dettaglio il guadagno scende a ~1 % con −0,1 dB, e
+   sulla foto liscia al passo 12/6 si perde (+6 % di byte, −0,4 dB: il dettaglio deve rifare quello che la pendenza
+   non dice più). Con 1/8 peggio ancora (foto liscia 12/6: +20 %, −0,7 dB). Le pendenze pesano 0,8–3 KB su
+   5–150 KB e danno +2,4–4,3 dB: sono già il pezzo che rende di più per byte. Cambiare scala vorrebbe dire anche
+   cambiare il formato già pubblicato.
 3. Reel: siamo a ~1,1–1,4× x264 medium a pari PSNR (vedi sopra). Da provare: un secondo livello di divisione (7×7:
    con il raggio automatico a 48 le celle divise sono ancora da 18 px), pesi diversi da ½ nella media dei due
    riferimenti (dissolvenze), un passo più grosso sulle celle che l'occhio segue meno, meno ricerche per chi scrive.
