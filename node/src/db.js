@@ -44,6 +44,12 @@ function openDb(dataDir) {
       pubkey TEXT PRIMARY KEY, first_seen INTEGER NOT NULL, last_update INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS dk_first ON directory_keys(first_seen);
+    -- moderazione (I-65): bandierine per CONTENUTO, mai per persona; spariscono con l'evento
+    CREATE TABLE IF NOT EXISTS event_flags (
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      categoria TEXT NOT NULL, peso INTEGER NOT NULL, regole TEXT NOT NULL, codice INTEGER NOT NULL,
+      PRIMARY KEY (event_id, categoria)
+    );
   `)
   return db
 }

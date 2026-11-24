@@ -13,6 +13,7 @@ const { openDb } = require('./db')
 const { createRelay } = require('./relay')
 const { createHttp } = require('./http')
 const { creaMetriche } = require('./metriche')
+const moderazione = require('../../packages/moderazione')
 const { startPeers } = require('./peers')
 const { startTor, attendiAnnuncio } = require('./tor')
 const { assertPinnedNode } = require('./runtime')
@@ -89,6 +90,10 @@ async function startNode(input) {
   const cfg = normalize(input)
   assertPinnedNode(cfg)
   const log = makeLogger(cfg.log)
+  // regole della moderazione (I-65) prima di aprire qualunque cosa: un elenco storto ferma il nodo subito
+  const regole = moderazione.validaRegole(cfg.regoleModerazione
+    ?? (cfg.regoleModerazioneFile ? JSON.parse(fs.readFileSync(cfg.regoleModerazioneFile, 'utf8')) : { versione: 1, regole: [] }))
+  log(`moderazione: ${regole.regole.length} regole (versione ${regole.versione}), più i segnali senza elenco`)
   fs.mkdirSync(cfg.dataDir, { recursive: true, mode: 0o700 })
   const db = openDb(cfg.dataDir)
   const secrets = loadSecrets(cfg.dataDir, keyPassphrase(cfg))
@@ -99,8 +104,9 @@ async function startNode(input) {
   const nodeKey = secrets.nodeKey
   const policy = cfg.role === 'anchor' ? directory.anchorPolicy({ db, network: cfg.network, limits: cfg.anchorLimits }) : undefined
   const metriche = creaMetriche()
-  const relay = createRelay({ db, network: cfg.network, log, policy, limits: cfg.relayLimits, trusted: cfg.uploaders, metriche })
-  const web = createHttp({ cfg, db, log, adminKey, onion: () => onion, version: VERSION, metriche, connessioni: relay.connessioni })
+  const relay = createRelay({ db, network: cfg.network, log, policy, limits: cfg.relayLimits, trusted: cfg.uploaders, metriche,
+    moderazione: (/** @type {{ kind: number, content: string }} */ c) => moderazione.analizza(c, regole) })
+  const web = createHttp({ cfg, db, log, adminKey, onion: () => onion, version: VERSION, metriche, connessioni: relay.connessioni, versioneRegole: regole.versione })
 
   /** @param {boolean} isPublic */
   const makeServer = isPublic => {
