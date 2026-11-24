@@ -52,6 +52,101 @@ pub fn firma_come_identita(p: &dyn Portachiavi, digest: &[u8; 32]) -> Result<[u8
     // `k` esce di scena qui: segreto cancellato
 }
 
+// ─── Rotazione della chiave DM (K1d, KEYS.md; fondatore 24/11/2026: «rotazione falla pure») ─────────────────
+//
+// `dm-v1` nasce dal seme (si ritrova con le 24 parole) e resta sempre. Le versioni dopo (`dm-v2`, `dm-v3`, …)
+// sono CASUALI: il seme non si salva mai, quindi non si possono ricavare da lì, e una chiave rubata espone solo i
+// messaggi del suo periodo. Si tengono la corrente e le `DM_TENUTE - 1` precedenti (per leggere i messaggi
+// recenti e i messaggi che arrivano ancora alla chiave vecchia); quelle più vecchie si cancellano.
+// Quale versione è la corrente sta nella voce `dm-corrente` (il numero nei primi 4 byte, il resto zero): non è
+// un segreto, ma il portachiavi è l'unico posto che l'app ha e che segue l'identità.
+
+/// Voce del portachiavi con il numero della versione DM corrente.
+pub const VOCE_DM_CORRENTE: &str = "dm-corrente";
+/// Chiavi DM ruotate tenute: la corrente e le precedenti fino a questo numero (oltre a `dm-v1`, che resta).
+pub const DM_TENUTE: u32 = 3;
+
+/// Versione della chiave DM corrente (1 se non si è mai ruotato).
+pub fn versione_dm_corrente(p: &dyn Portachiavi) -> Result<u32, IdentityError> {
+    Ok(match p.leggi(VOCE_DM_CORRENTE)? {
+        Some(b) => {
+            let v = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+            if v < 1 || b[4..].iter().any(|&x| x != 0) {
+                return Err(IdentityError::Portachiavi("voce dm-corrente non valida".into()));
+            }
+            v
+        }
+        None => 1,
+    })
+}
+
+/// Le chiavi DM da usare, la corrente PER PRIMA: poi le ruotate ancora tenute, poi `dm-v1`. Quelle che mancano
+/// si saltano; se manca la corrente è un errore (non si cifra mai per una chiave vecchia credendola nuova).
+pub fn chiavi_dm(p: &dyn Portachiavi) -> Result<Vec<ChiaveRuolo>, IdentityError> {
+    let n = versione_dm_corrente(p)?;
+    let corrente = carica(p, Ruolo::Dm, n)?.ok_or(IdentityError::Portachiavi("manca la chiave DM corrente".into()))?;
+    let mut tutte = vec![corrente];
+    let piu_vecchia = n.saturating_sub(DM_TENUTE - 1).max(2);
+    for v in (piu_vecchia..n).rev() {
+        if let Some(k) = carica(p, Ruolo::Dm, v)? {
+            tutte.push(k);
+        }
+    }
+    if n != 1 {
+        if let Some(k) = carica(p, Ruolo::Dm, 1)? {
+            tutte.push(k);
+        }
+    }
+    Ok(tutte)
+}
+
+/// Solo la chiave DM corrente (per incartare un messaggio).
+pub fn chiave_dm_corrente(p: &dyn Portachiavi) -> Result<ChiaveRuolo, IdentityError> {
+    let n = versione_dm_corrente(p)?;
+    carica(p, Ruolo::Dm, n)?.ok_or(IdentityError::Portachiavi("manca la chiave DM corrente".into()))
+}
+
+/// Le chiavi DM PUBBLICHE (la corrente per prima): i segreti si cancellano prima di uscire.
+pub fn dm_pubbliche(p: &dyn Portachiavi) -> Result<Vec<String>, IdentityError> {
+    Ok(chiavi_dm(p)?.iter().map(ChiaveRuolo::pubblica_hex).collect())
+}
+
+/// Ruota la chiave DM: una chiave nuova casuale diventa la corrente, quella uscita dalla finestra delle
+/// `DM_TENUTE` si cancella. Ritorna la nuova chiave PUBBLICA. Ordine pensato per un'interruzione a metà: prima si
+/// scrive la chiave nuova, poi il numero della corrente, poi si cancella la vecchia; in nessun momento manca la
+/// chiave corrente.
+pub fn ruota_dm(p: &dyn Portachiavi) -> Result<String, IdentityError> {
+    let n = versione_dm_corrente(p)?;
+    let nuova_v = n.checked_add(1).ok_or(IdentityError::Derivazione)?;
+    let nuova = loop {
+        let mut s = Zeroizing::new([0u8; 32]);
+        getrandom::fill(&mut s[..]).map_err(|_| IdentityError::Casuale)?;
+        // fuori dall'intervallo valido di secp256k1 (probabilità ~2^-128): se ne prende un'altra
+        if let Ok(k) = ChiaveRuolo::da_portachiavi(Ruolo::Dm, nuova_v, &s) {
+            break k;
+        }
+    };
+    salva(p, &nuova)?;
+    let mut numero = [0u8; 32];
+    numero[..4].copy_from_slice(&nuova_v.to_le_bytes());
+    p.scrivi(VOCE_DM_CORRENTE, &numero)?;
+    let uscita = nuova_v.saturating_sub(DM_TENUTE);
+    if uscita >= 2 {
+        p.cancella(&voce(Ruolo::Dm, uscita))?;
+    }
+    Ok(nuova.pubblica_hex())
+}
+
+/// Cancella le chiavi DM ruotate e il numero della corrente (resta `dm-v1`). Si usa quando nel portachiavi entra
+/// un'identità DIVERSA: le chiavi ruotate della vecchia non devono diventare le sue.
+pub fn dimentica_dm_ruotate(p: &dyn Portachiavi) -> Result<(), IdentityError> {
+    let n = versione_dm_corrente(p).unwrap_or(1);
+    for v in n.saturating_sub(DM_TENUTE - 1).max(2)..=n {
+        p.cancella(&voce(Ruolo::Dm, v))?;
+    }
+    p.cancella(VOCE_DM_CORRENTE)
+}
+
 /// Gestione credenziali di Windows (e i portachiavi nativi degli altri sistemi).
 pub struct Sistema;
 
