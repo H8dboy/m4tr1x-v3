@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-notifiche"
+description = "Enables the notifiche command without any pre-configured scope."
+commands.allow = ["notifiche"]
+
+[[permission]]
+identifier = "deny-notifiche"
+description = "Denies the notifiche command without any pre-configured scope."
+commands.deny = ["notifiche"]
