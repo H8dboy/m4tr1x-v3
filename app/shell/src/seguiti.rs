@@ -1,9 +1,8 @@
 //! Persone che segui (I-70).
 //!
-//! Come i bloccati (I-66), l'elenco sta SOLO su questo dispositivo e non si pubblica mai: un elenco pubblico di chi
-//! segui (il kind 3 di Nostr) direbbe a chiunque guardi il nodo chi frequenti. Per lo stesso motivo il feed "Chi
-//! segui" non chiede al nodo i post di quelle persone (una richiesta con `authors` racconterebbe l'elenco al nodo):
-//! filtra qui, nel lato Rust, il feed che arriva comunque a tutti.
+//! L'elenco sta su questo dispositivo (file privato) e non si pubblica (niente kind 3). Il feed "Chi segui" lo manda
+//! al nodo via Tor (`authors`) e ricontrolla la risposta: la privacy da proteggere è quella di chi scrive, non di chi
+//! legge (fondatore, 26/11/2026).
 
 use crate::bloccati::chiave_valida;
 use std::collections::BTreeSet;

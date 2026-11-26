@@ -1,13 +1,13 @@
 // @ts-check
 'use strict'
 /**
- * I-70 — Chi segui resta tuo: l'elenco sta solo su questo dispositivo, non si pubblica (niente kind 3) e non si
- * racconta al nodo (il feed "Chi segui" filtra nel lato Rust il feed di sempre, nessuna richiesta con `authors`
- * costruita dall'elenco).
+ * I-70 — Chi segui: l'elenco sta sul dispositivo (file privato) e non si pubblica (niente kind 3). "Chi segui" chiede
+ * al nodo, via Tor, i post di quelle persone (`authors`): la privacy da proteggere è quella di chi scrive, non di chi
+ * legge (fondatore, 26/11/2026). Il lato Rust ricontrolla la risposta.
  *  (1) Rust: elenco controllato (chiavi valide, te stesso no), su file privato, svuotato con l'account;
- *  (2) guscio: il filtro sta in `feed` DOPO la lettura; il crate del feed non conosce l'elenco; nessun kind 3;
- *      bloccare smette di seguire, e chi è bloccato non si segue;
- *  (3) interfaccia: "Segui" solo su altri e con un'identità; il filtro passa solo un sì/no al lato Rust.
+ *  (2) guscio: la richiesta porta l'elenco; DOPO la lettura si tiene solo chi segui (il nodo può sbagliare); elenco
+ *      vuoto = niente richiesta; nessun kind 3; bloccare smette di seguire, e chi è bloccato non si segue;
+ *  (3) interfaccia: "Segui" solo su altri e con un'identità; al lato Rust passa solo un sì/no (e la parola cercata).
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -38,13 +38,17 @@ test('I-70 (1): elenco controllato, su file privato, svuotabile', { skip: cargo.
   assert.ok(!/m4tr1x_feed|m4tr1x_protocol|pubblica\(|firma/.test(mod), 'il modulo di chi segui parla con la rete o firma')
 })
 
-test('I-70 (2): filtro nel lato Rust dopo la lettura, niente elenco al nodo, niente kind 3', () => {
+test('I-70 (2): l\'elenco va al nodo nella richiesta, la risposta si ricontrolla, niente kind 3', { timeout: 1800000 }, () => {
   const feed = corpo('feed')
-  const lettura = feed.indexOf('leggi_con_ripresa('), filtro = feed.indexOf('seguiti.contiene(&p.autore)')
-  assert.ok(lettura > 0 && filtro > lettura, 'il filtro di chi segui non sta dopo la lettura del feed')
-  assert.ok(!/seguiti\.elenco\(\)/.test(feed), 'il feed usa l\'elenco intero (lo manderebbe al nodo?)')
-  const crateFeed = senzaCommenti(fs.readFileSync(path.join(APP, 'feed', 'src', 'lib.rs'), 'utf8'))
-  assert.ok(!/seguiti/i.test(crateFeed), 'il crate del feed conosce chi segui')
+  assert.ok(feed.includes('autori: (solo_seguiti == Some(true)).then(|| seguiti.elenco())'), '"Chi segui" non chiede al nodo i post di chi segui')
+  assert.ok(/is_some_and\(Vec::is_empty\) \{\s*return Ok/.test(feed), 'con l\'elenco vuoto si chiede lo stesso al nodo (darebbe il feed di tutti)')
+  const lettura = feed.indexOf('leggi_richiesta_con_ripresa('), filtro = feed.indexOf('seguiti.contiene(&p.autore)')
+  assert.ok(lettura > 0 && filtro > lettura, 'dopo la lettura non si ricontrolla chi segui')
+  if (cargo.status === 0) {
+    const r = spawnSync('cargo', ['test', '--locked', '--manifest-path', path.join(APP, 'Cargo.toml'), '-p', 'm4tr1x-feed', '--test', 'feed', 'richiesta_al_nodo'],
+      { cwd: APP, encoding: 'utf8', timeout: 1800000, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
+    assert.match((r.stdout || '') + (r.stderr || ''), /richiesta_al_nodo_con_chi_segui_e_parola \.\.\. ok/, 'il filtro per il nodo non porta chi segui')
+  }
   for (const dir of ['shell', 'feed', 'protocol']) {
     for (const f of fs.readdirSync(path.join(APP, dir, 'src'))) {
       const src = senzaCommenti(fs.readFileSync(path.join(APP, dir, 'src', f), 'utf8'))
@@ -97,9 +101,9 @@ test('I-70 (3): "Segui" solo su altri, con un\'identità; segue e smette', async
   assert.equal(b.textContent, 'Segui già ✓')
 })
 
-test('I-70 (3): il filtro passa al lato Rust solo un sì/no', () => {
+test('I-70 (3): al lato Rust passa solo un sì/no (e la parola cercata)', () => {
   const ui = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'main.js'), 'utf8')
-  const chiamateFeed = [...ui.matchAll(/invoke\('feed'(?:,\s*([^)]*))?\)/g)].map(m => (m[1] || '').trim())
-  assert.deepEqual(chiamateFeed, ['{ soloSeguiti }'], `il feed riceve altro dall'interfaccia: ${JSON.stringify(chiamateFeed)}`)
+  const chiamateFeed = [...ui.matchAll(/invoke\('feed'(?:,\s*(\{[^}]*\}))?\)/g)].map(m => (m[1] || '').trim())
+  assert.deepEqual(chiamateFeed, ["{ soloSeguiti, cerca: parolaCercata('cerca-feed') }"], `il feed riceve altro dall'interfaccia: ${JSON.stringify(chiamateFeed)}`)
   assert.match(ui, /let soloSeguiti = false/)
 })

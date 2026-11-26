@@ -258,10 +258,11 @@ fn stato(rete: tauri::State<'_, Rete>) -> Stato {
 /// Ultimi post del nodo di prova, verificati nel lato Rust (m4tr1x-feed). Aspetta tor pronto, poi
 /// tentativi da 30 s fino a 4 minuti; la fase si legge con `feed_avanzamento`.
 /// Gli errori dicono cosa manca o quanto si è aspettato, mai l'indirizzo del nodo.
-/// `solo_seguiti`: solo i post di chi segui, filtrati QUI (al nodo si chiede lo stesso feed di sempre, I-70).
+/// `solo_seguiti`: solo i post di chi segui (I-70); `cerca`: solo i post con questa parola (I-72). Entrambi si
+/// chiedono al nodo, via Tor: la privacy da proteggere è quella di chi scrive (fondatore, 26/11/2026).
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
-async fn feed(solo_seguiti: Option<bool>, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, seguiti: tauri::State<'_, Seguiti>, chiavi: tauri::State<'_, Chiavi>) -> Result<Feed, String> {
+async fn feed(solo_seguiti: Option<bool>, cerca: Option<String>, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, seguiti: tauri::State<'_, Seguiti>, chiavi: tauri::State<'_, Chiavi>) -> Result<Feed, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
     let op = &op.feed;
@@ -271,13 +272,20 @@ async fn feed(solo_seguiti: Option<bool>, rete: tauri::State<'_, Rete>, op: taur
     let esito = async {
         attendi_tor(&tor, op).await?;
         // budget scaduto → attesa di un minuto con conto alla rovescia → una ripresa (fondatore, 20/10/2026)
-        let mut f = m4tr1x_feed::leggi_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let richiesta = m4tr1x_feed::Richiesta { autori: (solo_seguiti == Some(true)).then(|| seguiti.elenco()), cerca: cerca.clone() };
+        if richiesta.autori.as_ref().is_some_and(Vec::is_empty) {
+            return Ok(Feed::from(m4tr1x_feed::Feed { post: vec![], scartati: 0, secondi: 0, tentativi: 0 }));
+        }
+        let mut f = m4tr1x_feed::leggi_richiesta_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &richiesta, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
         // I-66: chi hai bloccato non arriva all'interfaccia
         // ...né le sue ricondivisioni (I-73)
         f.post.retain(|p| !bloccati.contiene(&p.autore));
         f.post.retain(|p| p.ricondivisione.as_ref().is_none_or(|r| !bloccati.contiene(&r.da)));
+        if let Some(q) = cerca.as_deref() {
+            f.post.retain(|p| contiene_parola(&[&p.testo], q)); // I-72
+        }
         if solo_seguiti == Some(true) {
             f.post.retain(|p| p.ricondivisione.as_ref().map_or_else(|| seguiti.contiene(&p.autore), |r| seguiti.contiene(&r.da)));
         }
@@ -474,7 +482,7 @@ fn sezione_da(s: &str) -> Result<m4tr1x_protocol::Sezione, String> {
 
 /// Le schede di una sezione ("signal", "film", "musica").
 #[tauri::command]
-async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<Galleria, String> {
+async fn media(sezione: String, cerca: Option<String>, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<Galleria, String> {
     let sez = sezione_da(&sezione)?;
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
@@ -484,10 +492,14 @@ async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'
     }
     let esito = async {
         attendi_tor(&tor, op).await?;
-        let mut g = m4tr1x_feed::leggi_media(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, sez, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let mut g = m4tr1x_feed::leggi_media_cercando(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, sez, cerca.as_deref(), m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
         g.media.retain(|m| !bloccati.contiene(&m.autore)); // I-66
+        // I-72: il nodo può sbagliare o mentire; resta solo ciò che contiene davvero la parola
+        if let Some(q) = cerca.as_deref() {
+            g.media.retain(|m| contiene_parola(&[&m.testo, &m.file.titolo], q));
+        }
         // bandierine (I-65) sulle schede: se il nodo non le dà, si vede lo stesso, senza veli, e lo si dice
         let ids: Vec<String> = g.media.iter().map(|m| m.id.clone()).collect();
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
@@ -1054,7 +1066,7 @@ async fn pubblica_nel_forum(rete: &Rete, op: &Operazione, evento: &m4tr1x_protoc
 
 /// Le discussioni del forum dal nodo, verificate nel lato Rust.
 #[tauri::command]
-async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Forum, String> {
+async fn forum(cerca: Option<String>, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Forum, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
     let op = &op.forum;
@@ -1063,10 +1075,13 @@ async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, b
     }
     let esito = async {
         attendi_tor(&tor, op).await?;
-        let mut f = m4tr1x_feed::leggi_forum(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let mut f = m4tr1x_feed::leggi_forum_cercando(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, cerca.as_deref(), m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
         f.discussioni.retain(|d| !bloccati.contiene(&d.autore)); // I-66
+        if let Some(q) = cerca.as_deref() {
+            f.discussioni.retain(|d| contiene_parola(&[&d.titolo, &d.testo], q)); // I-72
+        }
         // bandierine (I-65) sulle discussioni (titolo e testo)
         let ids: Vec<String> = f.discussioni.iter().map(|d| d.id.clone()).collect();
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
@@ -1206,6 +1221,13 @@ fn messaggi_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
 #[tauri::command]
 fn pubblica_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.post.fase()
+}
+
+/// Uno dei testi contiene la parola cercata (senza maiuscole)? Parola vuota = sì.
+fn contiene_parola(testi: &[&str], q: &str) -> bool {
+    let Some(q) = m4tr1x_feed::parola_da_cercare(q) else { return true };
+    let q = q.to_lowercase();
+    testi.iter().any(|t| t.to_lowercase().contains(&q))
 }
 
 /// La tua chiave PUBBLICA d'identità, se c'è (per riconoscere le tue reazioni).
