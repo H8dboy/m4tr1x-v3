@@ -241,6 +241,70 @@ function tastoConConferma(testo, conferma, azione) {
 }
 
 /** Il tasto "Blocca" per l'autore di un contenuto; niente per i tuoi contenuti. @param {string} autore */
+// ─── Notifiche (I-71) ─────────────────────────────────────────────────────────
+// Le calcola il lato Rust; qui si disegnano senza testo (chi, cosa, quando). Una risposta apre la discussione.
+let notificheInCorso = false
+
+/** @param {any} n */
+function vocNotifica(n) {
+  if (!n || !CHIAVE.test(String(n.autore)) || !CHIAVE.test(String(n.contenuto)) || !['mi_piace', 'risposta'].includes(n.tipo)) return null
+  const li = document.createElement('li')
+  li.className = n.nuova ? 'notifica nuova' : 'notifica'
+  li.setAttribute('data-autore', String(n.autore))
+  const chi = document.createElement('span')
+  chi.className = 'mono'
+  chi.textContent = String(n.autore).slice(0, 8) + '…'
+  chi.title = String(n.autore)
+  const cosa = document.createElement('span')
+  cosa.textContent = n.tipo === 'mi_piace' ? ' ha messo ♥ a un tuo contenuto' : ' ha risposto alla tua discussione'
+  const ora = document.createElement('time')
+  ora.className = 'tenue'
+  ora.textContent = ' · ' + quando(Number(n.creato))
+  li.append(chi, cosa, ora)
+  if (n.tipo === 'risposta') {
+    const apri = document.createElement('button')
+    apri.type = 'button'
+    apri.className = 'tasto-azione'
+    apri.textContent = 'Apri'
+    apri.addEventListener('click', () => apriNotifica(String(n.contenuto)))
+    li.append(apri)
+  }
+  return li
+}
+
+/** Apre la discussione di una risposta (dal forum, con i suoi veli e i suoi filtri). @param {string} id */
+function apriNotifica(id) {
+  apriVista('forum')
+  apriDiscussione(id)
+}
+
+async function aggiornaNotifiche() {
+  if (notificheInCorso) return
+  notificheInCorso = true
+  const b = /** @type {HTMLButtonElement|null} */ (document.getElementById('notifiche-aggiorna'))
+  if (b) b.disabled = true
+  const fase = setInterval(async () => {
+    const a = await invoke('notifiche_avanzamento').catch(() => null)
+    if (a) mostra('notifiche-stato', testoFase(a))
+  }, 1000)
+  mostra('notifiche-stato', 'chiedo al nodo…')
+  try {
+    const l = await invoke('notifiche')
+    const voci = (Array.isArray(l) ? l : []).map(vocNotifica).filter(x => x)
+    document.getElementById('notifiche-lista')?.replaceChildren(...voci)
+    const nuove = (Array.isArray(l) ? l : []).filter(n => n && n.nuova).length
+    mostra('notifiche-stato', voci.length ? (nuove ? `${nuove} nuove` : 'nessuna nuova') : 'ancora nessuna notifica')
+    const piu = (Array.isArray(l) ? l : []).reduce((m, n) => Math.max(m, Number(n && n.creato) || 0), 0)
+    if (piu) await invoke('notifiche_viste', { fino: piu }).catch(() => {})
+  } catch (e) {
+    mostra('notifiche-stato', String(e))
+  } finally {
+    clearInterval(fase)
+    if (b) b.disabled = false
+    notificheInCorso = false
+  }
+}
+
 // ─── Chi segui (I-70) ─────────────────────────────────────────────────────────
 // L'elenco lo tiene il lato Rust, solo su questo dispositivo; qui serve solo a disegnare "Segui"/"Segui già".
 /** @type {Set<string>} */
@@ -1273,6 +1337,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
   caricaBloccati()
   caricaSeguiti()
+  document.getElementById('notifiche-aggiorna')?.addEventListener('click', aggiornaNotifiche)
   document.getElementById('feed-filtro')?.addEventListener('click', () => {
     soloSeguiti = !soloSeguiti
     const b = document.getElementById('feed-filtro')

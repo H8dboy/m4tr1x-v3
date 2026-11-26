@@ -313,3 +313,8 @@ button, input, textarea { font: inherit; color: inherit; }
 .filtro-feed { gap: 8px; align-items: center; margin: 4px 0; }
 .tasto.piccolo { padding: 4px 10px; font-size: 12px; }
 .tasto-azione.segui[aria-pressed="true"] { color: var(--accento, #7cf); }
+
+/* Notifiche (I-71) */
+.notifiche { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.notifica { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.notifica.nuova { font-weight: 600; }

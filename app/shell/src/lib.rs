@@ -11,7 +11,7 @@ pub mod api_seme;
 pub mod bloccati;
 pub mod seguiti;
 
-use api::{Avanzamento, CellePronte, CelleStato, Discussione, DiscussioneAperta, Feed, FilePronto, Forum, Galleria, Identita, Media, Messaggio, Post, Posta, Profilo, Stato};
+use api::{Avanzamento, CellePronte, CelleStato, Discussione, DiscussioneAperta, Feed, FilePronto, Forum, Galleria, Identita, Media, Messaggio, Notifica, Post, Posta, Profilo, Stato};
 use api_seme::SemeDaMostrare;
 use bloccati::Bloccati;
 use seguiti::Seguiti;
@@ -143,6 +143,8 @@ struct Operazioni {
     media: Operazione,
     /// azioni piccole su un contenuto (segnalare)
     azioni: Operazione,
+    /// notifiche (I-71)
+    notifiche: Operazione,
 }
 
 /// Il file scelto per la pubblicazione, GIÀ pulito (I-16): solo il contenuto, mai il nome né il percorso.
@@ -1209,6 +1211,65 @@ fn mia_chiave(chiavi: &Chiavi) -> Option<String> {
     creazione::identita_salvata(&*chiavi.0).ok().flatten().map(|i| i.identity)
 }
 
+// ─── Notifiche (I-71) ─────────────────────────────────────────────────────────
+// Calcolate qui: il nodo non tiene notifiche per nessuno. "Viste fino a" sta solo su questo dispositivo.
+
+/// Fin dove hai già guardato le notifiche (secondi), solo su questo dispositivo.
+struct NotificheViste {
+    fino: Mutex<u64>,
+    file: Option<std::path::PathBuf>,
+}
+
+impl NotificheViste {
+    fn apri(file: Option<std::path::PathBuf>) -> Self {
+        let fino = file.as_deref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+        Self { fino: Mutex::new(fino), file }
+    }
+}
+
+/// Le tue notifiche: risposte e "mi piace" ai tuoi contenuti, dalla più recente; senza chi hai bloccato.
+#[tauri::command]
+async fn notifiche(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>, bloccati: tauri::State<'_, Bloccati>, viste: tauri::State<'_, NotificheViste>) -> Result<Vec<Notifica>, String> {
+    let mia = mia_chiave(&chiavi).ok_or("serve un'identità per avere notifiche")?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let op = &op.notifiche;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("le notifiche sono già in aggiornamento".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::leggi_notifiche(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &mia, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+            .await
+            .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    let fino = *viste.fino.lock().unwrap();
+    Ok(esito?.into_iter().filter(|n| !bloccati.contiene(&n.autore)).map(|n| Notifica::da(n, fino)).collect())
+}
+
+#[tauri::command]
+fn notifiche_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
+    op.notifiche.fase()
+}
+
+/// Segna come viste le notifiche fino a `fino` (secondi; non oltre adesso).
+#[tauri::command]
+fn notifiche_viste(fino: u64, viste: tauri::State<'_, NotificheViste>) -> Result<(), String> {
+    let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let fino = fino.min(ora);
+    let mut g = viste.fino.lock().unwrap();
+    if fino <= *g {
+        return Ok(());
+    }
+    if let Some(f) = &viste.file {
+        salva_privato(f, &fino.to_string()).map_err(|e| format!("notifiche viste non salvate: {e}"))?;
+    }
+    *g = fino;
+    Ok(())
+}
+
 // ─── Chi segui (I-70) ─────────────────────────────────────────────────────────
 // Elenco solo su questo dispositivo, mai pubblicato e mai chiesto al nodo (seguiti.rs).
 
@@ -1489,6 +1550,7 @@ pub fn costruisci<R: Runtime>(
             prima(app)?;
             app.manage(Bloccati::apri(Some(app.path().app_data_dir()?.join("bloccati"))));
             app.manage(Seguiti::apri(Some(app.path().app_data_dir()?.join("seguiti"))));
+            app.manage(NotificheViste::apri(Some(app.path().app_data_dir()?.join("notifiche-viste"))));
             let rete = avvia_rete(app)?;
             app.manage(rete);
             Ok(())
@@ -1501,7 +1563,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica, mi_piace, seguiti, segui, smetti_di_seguire])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica, mi_piace, seguiti, segui, smetti_di_seguire, notifiche, notifiche_avanzamento, notifiche_viste])
 }
 
 pub fn run() {

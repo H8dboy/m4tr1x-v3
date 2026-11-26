@@ -63,6 +63,28 @@ pub struct Post {
     pub mio_mi_piace: Option<String>,
 }
 
+/// Una notifica (I-71): `tipo` = "mi_piace" o "risposta"; chi, su quale tuo contenuto, quando. Niente testo.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Notifica {
+    pub tipo: String,
+    pub id: String,
+    pub autore: String,
+    pub contenuto: String,
+    pub creato: u64,
+    /// arrivata dopo l'ultima volta che le hai guardate
+    pub nuova: bool,
+}
+
+impl Notifica {
+    pub fn da(n: m4tr1x_feed::Notifica, vista_fino: u64) -> Self {
+        let tipo = match n.tipo {
+            m4tr1x_feed::TipoNotifica::MiPiace => "mi_piace",
+            m4tr1x_feed::TipoNotifica::Risposta => "risposta",
+        };
+        Self { tipo: tipo.into(), nuova: n.creato > vista_fino, id: n.id, autore: n.autore, contenuto: n.contenuto, creato: n.creato }
+    }
+}
+
 /// Reazioni per id di contenuto, come le conta m4tr1x-feed.
 pub type Reazioni = std::collections::HashMap<String, m4tr1x_feed::Reazioni>;
 

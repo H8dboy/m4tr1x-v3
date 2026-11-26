@@ -201,6 +201,78 @@ pub async fn mi_piace<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, ids: &[St
     Ok(tutte)
 }
 
+// ─── Notifiche (I-71) ─────────────────────────────────────────────────────────
+// Calcolate sul dispositivo: il nodo non tiene un elenco di "notifiche per te". L'app chiede i suoi contenuti
+// recenti e poi le risposte e i "mi piace" che li nominano; tutto si verifica qui.
+
+/// Cosa è successo a un tuo contenuto.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TipoNotifica {
+    MiPiace,
+    Risposta,
+}
+
+/// Una notifica: chi (`autore`), cosa (`tipo`), su quale TUO contenuto (`contenuto`), quando. `id` è l'evento
+/// (la risposta o la reazione). Niente testo: la risposta si legge aprendo la discussione (con i suoi veli).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Notifica {
+    pub tipo: TipoNotifica,
+    pub id: String,
+    pub autore: String,
+    pub contenuto: String,
+    pub creato: u64,
+}
+
+/// Contenuti tuoi che si guardano, e notifiche al massimo.
+pub const QUANTE_NOTIFICHE: usize = 100;
+
+/// Gli id dei TUOI contenuti tra gli eventi `grezzi` (solo verificati, solo con la tua chiave).
+pub fn miei_contenuti(grezzi: &[Value], rete: Rete, mia: &str) -> Vec<String> {
+    let mut ids: Vec<String> = grezzi.iter().filter_map(|g| verificato(g, rete)).filter(|e| e.pubkey == mia && (e.kind == 1 || e.kind == m4tr1x_protocol::KIND_FILE)).map(|e| e.id).collect();
+    ids.sort();
+    ids.dedup();
+    ids.truncate(QUANTE_NOTIFICHE);
+    ids
+}
+
+/// Le notifiche tra gli eventi `grezzi` per i contenuti `miei`: solo verificati, solo risposte (`risposta_a`) o
+/// "mi piace" (`mi_piace_a`) a un tuo contenuto, mai le tue; dalla più recente, una per evento.
+pub fn notifiche_da(grezzi: Vec<Value>, rete: Rete, mia: &str, miei: &[String]) -> Vec<Notifica> {
+    let miei: std::collections::HashSet<&str> = miei.iter().map(String::as_str).collect();
+    let mut viste = std::collections::HashSet::new();
+    let mut n: Vec<Notifica> = grezzi
+        .iter()
+        .filter_map(|g| verificato(g, rete))
+        .filter(|e| e.pubkey != mia)
+        .filter_map(|e| {
+            let (tipo, a) = if let Some(a) = m4tr1x_protocol::mi_piace_a(&e) {
+                (TipoNotifica::MiPiace, a.to_string())
+            } else {
+                (TipoNotifica::Risposta, m4tr1x_protocol::risposta_a(&e)?)
+            };
+            miei.contains(a.as_str()).then(|| Notifica { tipo, id: e.id.clone(), autore: e.pubkey.clone(), contenuto: a, creato: e.created_at })
+        })
+        .filter(|x| viste.insert(x.id.clone()))
+        .collect();
+    n.sort_by(|a, b| b.creato.cmp(&a.creato).then_with(|| a.id.cmp(&b.id)));
+    n.truncate(QUANTE_NOTIFICHE);
+    n
+}
+
+/// Le tue notifiche: i tuoi contenuti recenti, poi le risposte e i "mi piace" che li nominano.
+pub async fn leggi_notifiche<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, mia: &str, budget: Duration, avanza: impl Fn(Fase)) -> Result<Vec<Notifica>, NonRaggiungibile> {
+    let avanza = &avanza;
+    let filtro = json!({ "kinds": [1, m4tr1x_protocol::KIND_FILE], "authors": [mia], "limit": QUANTE_NOTIFICHE });
+    let grezzi: Vec<Value> = richiedi(t, nodo, &[filtro], budget, avanza).await?.into_iter().flatten().collect();
+    let miei = miei_contenuti(&grezzi, rete, mia);
+    if miei.is_empty() {
+        return Ok(vec![]);
+    }
+    let filtro = json!({ "kinds": [1, m4tr1x_protocol::KIND_REAZIONE], "#e": miei, "limit": 500 });
+    let grezzi = richiedi(t, nodo, &[filtro], budget, avanza).await?.into_iter().flatten().collect();
+    Ok(notifiche_da(grezzi, rete, mia, &miei))
+}
+
 /// Post pubblicato: quanto ci è voluto.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pubblicato {

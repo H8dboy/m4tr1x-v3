@@ -231,6 +231,9 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("seguiti", json!({}), OK),
         ("segui", json!({"chiave": "x"}), "chiave non valida"),
         ("smetti_di_seguire", json!({"chiave": "x"}), "chiave non valida"),
+        ("notifiche_avanzamento", json!({}), OK),
+        // fino = 0: niente da salvare (la prova non scrive nella cartella dati)
+        ("notifiche_viste", json!({"fino": 0}), OK),
     ];
     for (cmd, args, atteso) in comandi {
         let r = chiama(&main, cmd, args);
