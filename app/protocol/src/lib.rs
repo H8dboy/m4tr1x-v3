@@ -301,6 +301,28 @@ pub fn risposta_a(e: &Evento) -> Option<String> {
     }
 }
 
+// ─── Segnalazioni (NIP-56, kind 1984; I-67) ──────────────────────────────────
+// Una segnalazione riguarda UN contenuto, mai una persona: un solo tag `e` con la categoria (elenco chiuso, lo
+// stesso della moderazione del nodo), nessun tag `p`, testo vuoto, scadenza (NIP-40) entro 90 giorni. Il nodo la
+// conta e la tiene per sé: non la restituisce a nessuno (né a chi è segnalato, né ad altri nodi).
+
+pub const KIND_SEGNALAZIONE: u16 = 1984;
+/// Le categorie di una segnalazione: le stesse delle bandierine della moderazione (packages/moderazione).
+pub const CATEGORIE_SEGNALAZIONE: [&str; 9] = ["truffa", "spam", "odio", "violenza", "armi", "droga", "sfruttamento-minori", "terrorismo", "altro"];
+/// Dopo quanto una segnalazione sparisce dal nodo da sola.
+pub const DURATA_SEGNALAZIONE: u64 = 90 * 24 * 3600;
+
+/// Tag di una segnalazione del contenuto `id` per `categoria`, scritta all'ora `ora`.
+pub fn tag_segnalazione(id: &str, categoria: &str, ora: u64) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !esadecimale_minuscolo(id, 64) {
+        return Err(Rifiuto::Forma("id del contenuto"));
+    }
+    if !CATEGORIE_SEGNALAZIONE.contains(&categoria) {
+        return Err(Rifiuto::Forma("categoria della segnalazione"));
+    }
+    Ok(vec![vec!["e".into(), id.into(), categoria.into()], vec!["expiration".into(), (ora + DURATA_SEGNALAZIONE).to_string()]])
+}
+
 // ─── File: reels, film, musica (stesso schema della v2: kind 1063 NIP-94 con tag `t` della sezione) ──────
 // La scheda dice SOLO: hash del file (`x`), tipo (`m`, da un elenco chiuso), dimensione, sezione, titolo. Il file
 // sta sul nodo per hash; chi lo scarica ricontrolla l'hash (I-17) e il tipo dai primi byte.
@@ -608,6 +630,32 @@ fn da_esadecimale(s: &str) -> Option<Vec<u8>> {
         return None;
     }
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
+}
+
+#[cfg(test)]
+mod prove_segnalazione {
+    use super::*;
+
+    #[test]
+    fn una_segnalazione_nomina_solo_il_contenuto() {
+        let id = "a".repeat(64);
+        let t = tag_segnalazione(&id, "spam", 1_000).unwrap();
+        assert_eq!(t, vec![vec!["e".to_string(), id.clone(), "spam".into()], vec!["expiration".to_string(), (1_000 + DURATA_SEGNALAZIONE).to_string()]]);
+        assert!(!t.iter().any(|x| x[0] == "p"), "una segnalazione nomina una persona");
+        for c in CATEGORIE_SEGNALAZIONE {
+            assert!(tag_segnalazione(&id, c, 0).is_ok());
+        }
+    }
+
+    #[test]
+    fn id_e_categorie_fuori_elenco_rifiutati() {
+        for id in ["", "A".repeat(64).as_str(), "a".repeat(63).as_str(), "g".repeat(64).as_str()] {
+            assert!(tag_segnalazione(id, "spam", 0).is_err(), "id accettato: {id:?}");
+        }
+        for c in ["", "Spam", "persona", "spam ", "<b>"] {
+            assert!(tag_segnalazione(&"a".repeat(64), c, 0).is_err(), "categoria accettata: {c:?}");
+        }
+    }
 }
 
 #[cfg(test)]

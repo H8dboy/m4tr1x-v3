@@ -106,7 +106,7 @@ const ctx = vm.createContext({
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'ui', 'main.js'), 'utf8'), ctx)
 vm.runInContext(`identita = { identity: '${IO}' }`, ctx)
 const voce = (/** @type {string} */ autore) => /** @type {El} */ (ctx.voce({ id: 'c'.repeat(64), autore, creato: 1_760_000_000, testo: 'ciao', nome: null, bandierine: [] }))
-const tasti = (/** @type {El} */ li) => li.trova(e => e.className === 'tasto-azione')
+const tasti = (/** @type {El} */ li) => li.trova(e => e.className === 'tasto-azione' && e.textContent === 'Blocca')
 
 test('I-66 (4): "Blocca" sui contenuti degli altri, mai sui tuoi; segnati con il loro autore', () => {
   assert.equal(tasti(voce(IO)).length, 0, 'c\'è "Blocca" sul tuo post')

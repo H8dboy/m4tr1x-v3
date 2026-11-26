@@ -286,6 +286,64 @@ async function caricaBloccati() {
   nascondi('bloccati-vuoto', elenco.length > 0)
 }
 
+// ─── Segnalazioni (I-67) ──────────────────────────────────────────────────────
+// Si segnala un CONTENUTO per un motivo dell'elenco chiuso. La firma la fa il lato Rust; la segnalazione resta nel
+// nodo (non la vede chi è segnalato) e non toglie niente da sola: la valuta chi gestisce il nodo.
+
+const MOTIVI_SEGNALAZIONE = /** @type {Array<[string, string]>} */ ([
+  ['spam', 'Spam'], ['truffa', 'Truffa'], ['odio', "Odio o discriminazione"], ['violenza', 'Violenza o minacce'],
+  ['armi', 'Armi'], ['droga', 'Droghe'], ['sfruttamento-minori', 'Sfruttamento di minori'], ['terrorismo', 'Terrorismo'], ['altro', 'Altro'],
+])
+
+/** "Segnala" su un contenuto di un altro (serve un'identità per firmare). @param {string} id @param {string} autore */
+function tastoSegnala(id, autore) {
+  if (!identita || !CHIAVE.test(id) || identita.identity === autore) return null
+  const box = document.createElement('span')
+  box.className = 'segnala'
+  const b = document.createElement('button')
+  b.type = 'button'
+  b.className = 'tasto-azione'
+  b.textContent = 'Segnala'
+  const pannello = document.createElement('span')
+  pannello.className = 'pannello-segnala'
+  pannello.hidden = true
+  const scelta = document.createElement('select')
+  scelta.className = 'campo piccolo'
+  scelta.setAttribute('aria-label', 'Motivo della segnalazione')
+  for (const [valore, nome] of MOTIVI_SEGNALAZIONE) {
+    const o = document.createElement('option')
+    o.value = valore
+    o.textContent = nome
+    scelta.append(o)
+  }
+  const invia = document.createElement('button')
+  invia.type = 'button'
+  invia.className = 'tasto contorno piccolo'
+  invia.textContent = 'Invia segnalazione'
+  const stato = document.createElement('span')
+  stato.className = 'tenue'
+  stato.setAttribute('aria-live', 'polite')
+  pannello.append(scelta, invia, stato)
+  b.addEventListener('click', ev => { ev.stopPropagation(); pannello.hidden = !pannello.hidden })
+  invia.addEventListener('click', async ev => {
+    ev.stopPropagation()
+    const categoria = String(scelta.value)
+    if (!MOTIVI_SEGNALAZIONE.some(([v]) => v === categoria)) return
+    invia.disabled = true
+    stato.textContent = 'firmo e invio al nodo…'
+    try {
+      await invoke('segnala', { id, categoria })
+      stato.textContent = 'Segnalato ✓ Lo vede solo chi gestisce il nodo, non chi hai segnalato.'
+      scelta.disabled = true
+    } catch (e) {
+      stato.textContent = String(e)
+      invia.disabled = false
+    }
+  })
+  box.append(b, pannello)
+  return box
+}
+
 /** @param {any} p */
 function voce(p) {
   const autore = String(p.autore)
@@ -322,6 +380,8 @@ function voce(p) {
   testo.textContent = String(p.testo)
   const coperto = velo(p, testo)
   const blocca = tastoBlocca(autore)
+  const segnala = tastoSegnala(String(p.id), autore)
+  if (segnala) chi.append(segnala)
   if (blocca) chi.append(blocca)
   corpo.append(chi, ...(coperto ? [coperto] : []), testo)
   li.append(av, corpo)
@@ -491,7 +551,8 @@ function voceMedia(m) {
   // I-65: con una bandierina la tessera (titolo e apertura) resta sotto il velo finché non lo apri
   const coperto = velo(m, b)
   const blocca = tastoBlocca(String(m.autore))
-  li.append(...(coperto ? [coperto] : []), b, ...(blocca ? [blocca] : []))
+  const segnala = tastoSegnala(String(m.id), String(m.autore))
+  li.append(...(coperto ? [coperto] : []), b, ...(segnala ? [segnala] : []), ...(blocca ? [blocca] : []))
   return li
 }
 
@@ -858,7 +919,8 @@ async function apriDiscussione(/** @type {string} */ id) {
     mostra('disc-titolo', String(d.discussione.titolo) || 'Senza titolo')
     mostra('disc-chi', `${chiDi(d.discussione)} · ${quando(Number(d.discussione.creato))}`)
     const bd = tastoBlocca(discAutore)
-    document.getElementById('disc-azioni')?.replaceChildren(...(bd ? [bd] : []))
+    const sd = tastoSegnala(discAperta, discAutore)
+    document.getElementById('disc-azioni')?.replaceChildren(...(sd ? [sd] : []), ...(bd ? [bd] : []))
     mostra('disc-testo', String(d.discussione.testo))
     document.getElementById('disc-risposte')?.replaceChildren(...d.risposte.map(voce))
     const veli = d.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'

@@ -139,6 +139,8 @@ struct Operazioni {
     posta: Operazione,
     forum: Operazione,
     media: Operazione,
+    /// azioni piccole su un contenuto (segnalare)
+    azioni: Operazione,
 }
 
 /// Il file scelto per la pubblicazione, GIÀ pulito (I-16): solo il contenuto, mai il nome né il percorso.
@@ -1191,6 +1193,40 @@ fn pubblica_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.post.fase()
 }
 
+// ─── Segnalazioni (I-67) ──────────────────────────────────────────────────────
+// Si segnala un CONTENUTO per una categoria dell'elenco chiuso: la segnalazione è firmata con la tua identità (il
+// nodo conta persone diverse) ma resta nel nodo, che non la restituisce a nessuno, e scade da sola in 90 giorni.
+
+/// Segnala al nodo il contenuto `id` per `categoria`. Non toglie niente: lo valuta chi gestisce il nodo.
+#[tauri::command]
+async fn segnala(id: String, categoria: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<(), String> {
+    let ora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
+    let tags = m4tr1x_protocol::tag_segnalazione(&id, &categoria, ora).map_err(|e| e.to_string())?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let evento = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_SEGNALAZIONE, "", &tags).map_err(|e| format!("segnalazione non firmata: {e}"))?;
+    let op = &op.azioni;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra azione è in corso".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        m4tr1x_feed::pubblica(&*tor, &nodo, &evento, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map(|_| ()).map_err(|e| match e {
+            m4tr1x_feed::ErrorePubblica::Rifiutato(m) => format!("il nodo ha rifiutato la segnalazione: {m}"),
+            m4tr1x_feed::ErrorePubblica::NonRaggiungibile(n) => format!("segnalazione non partita: il nodo non risponde ancora. Riprova tra un minuto ({})", n.ultimo),
+        })
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Fase dell'azione in corso (segnalazione), per l'interfaccia.
+#[tauri::command]
+fn azioni_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
+    op.azioni.fase()
+}
+
 // ─── Persone bloccate (I-66) ──────────────────────────────────────────────────
 // Elenco solo su questo dispositivo, mai pubblicato; si applica qui, prima dell'interfaccia (bloccati.rs).
 
@@ -1320,7 +1356,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento])
 }
 
 pub fn run() {

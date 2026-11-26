@@ -30,7 +30,7 @@
 2. Nodo: bandierine calcolate all'arrivo degli eventi pubblici, salvate per id di evento (mai per autore), conteggio delle segnalazioni NIP-56 per evento (persone diverse); il proprietario le vede dal listener locale con K13. **Fatto il 24/11.**
    - Le regole: in `/etc/m4tr1x/node.json` la voce `"regoleModerazioneFile": "/etc/m4tr1x/regole-moderazione.json"`, file con `{ "versione": N, "regole": [{ "id", "categoria", "schema", "peso" }] }`. Senza: solo i segnali senza elenco. Un elenco storto ferma il nodo all'avvio (meglio saperlo subito che moderare a metà).
    - Vederle: `curl -s -H "X-Admin-Key: <chiave>" http://127.0.0.1:<porta>/admin/bandierine` → contenuti (id, kind, data), bandierine e numero di persone che li hanno segnalati; mai chi scrive, chi segnala o il testo.
-3. App: velo con il motivo sui contenuti con bandierina. **Fatto il 24/11** (feed).
+3. App: velo con il motivo sui contenuti con bandierina. **Fatto il 24/11** (feed). Segnalare dall'app ("Segnala" su post, risposte, discussioni e file, motivo da un elenco chiuso): **fatto il 26/11** (I-67).
    - Il nodo dà alle app `GET /moderazione?ids=…` (al massimo 100 id): per ogni contenuto con bandierine, solo categoria, peso e «scritto in codice». Mai gli id delle regole (direbbero com'è fatto l'elenco), mai chi scrive o chi segnala.
    - L'app controlla la risposta campo per campo (categorie da un elenco chiuso, solo gli id chiesti, niente campi in più); se il nodo non le dà, il feed si vede senza veli e lo dice.
    - Il velo dice il motivo in parole e si apre con «Mostra comunque»; **il possibile sfruttamento di minori non si apre** (resta coperto finché un moderatore non lo valuta): scelta prudente, un falso allarme costa poco, un'apertura sbagliata no.
@@ -41,4 +41,4 @@
 
 - Una normalizzazione aggressiva fa falsi positivi (una regola corta dentro una parola innocente): per questo il confronto "senza spazi" vale solo per regole di almeno 5 lettere, e la bandierina non toglie mai niente.
 - Chi scrive su un nodo che non usa le regole non viene segnalato lì: ogni nodo decide le sue, come ogni relay Nostr.
-- Le segnalazioni NIP-56 sono eventi pubblici firmati da chi segnala: chi segnala si espone come per un post. Per segnalare senza esporsi resta il modulo via Tor della procedura DSA.
+- Le segnalazioni NIP-56 sono firmate da chi segnala (il nodo conta persone diverse, non clic), ma **dal 26/11/2026 restano nel nodo che le riceve** (I-67): nessuna richiesta le restituisce e nessuna sottoscrizione le riceve, quindi chi è segnalato non sa chi l'ha segnalato e gli altri nodi non le copiano. Il proprietario del nodo, che le riceve, può vedere nel database chi ha segnalato: per segnalare senza farsi conoscere nemmeno da lui resta il modulo via Tor della procedura DSA. Riguardano solo un contenuto (niente tag `p`) e scadono da sole in 90 giorni.

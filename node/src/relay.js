@@ -8,10 +8,13 @@
  * - un evento si accetta solo se passa protocol.verifyEvent sulla rete del nodo
  *   (firma, id, tag di rete, nessun dato H8)
  * - eventi effimeri (kind 20000–29999) inoltrati, mai salvati
+ * - segnalazioni (NIP-56, kind 1984; I-67): solo su UN contenuto, mai su una persona, con scadenza; si contano e
+ *   restano QUI: nessuna richiesta le restituisce, nessuna sottoscrizione le riceve, nessun peer le copia
  */
 const crypto = require('crypto')
 const { WebSocketServer } = require('ws')
 const protocol = require('../../packages/protocol')
+const { CATEGORIE } = require('../../packages/moderazione')
 
 const MAX_PAYLOAD = 512 * 1024
 const MAX_SUBS = 64
@@ -26,6 +29,24 @@ const isEphemeral = (/** @type {number} */ k) => k >= 20000 && k < 30000
 const isReplaceable = (/** @type {number} */ k) => k === 0 || k === 3 || (k >= 10000 && k < 20000)
 const isParamReplaceable = (/** @type {number} */ k) => k >= 30000 && k < 40000
 const nowSec = () => Math.floor(Date.now() / 1000)
+/** Segnalazioni (I-67): kind, durata massima (90 giorni più un margine per gli orologi) e testo. */
+const KIND_SEGNALAZIONE = 1984
+const SEGNALAZIONE_DURATA_MAX = 91 * 24 * 3600
+const SEGNALAZIONE_TESTO_MAX = 500
+/**
+ * Perché una segnalazione non va bene (null se va bene): un solo tag `e` con id e categoria dell'elenco chiuso,
+ * una scadenza entro 91 giorni, oltre a questi solo il tag di rete. Niente `p`: si segnala un contenuto, non
+ * una persona. @param {any} ev @returns {string|null}
+ */
+function segnalazioneNonValida(ev) {
+  if (typeof ev.content !== 'string' || ev.content.length > SEGNALAZIONE_TESTO_MAX) return 'testo'
+  const e = ev.tags.filter((/** @type {string[]} */ t) => t[0] === 'e')
+  if (e.length !== 1 || e[0].length !== 3 || !/^[0-9a-f]{64}$/.test(e[0][1]) || !CATEGORIE.includes(e[0][2])) return 'serve un solo contenuto con la sua categoria'
+  const exp = expirationOf(ev)
+  if (exp === null || exp > nowSec() + SEGNALAZIONE_DURATA_MAX) return 'serve una scadenza entro 90 giorni'
+  if (ev.tags.some((/** @type {string[]} */ t) => !['e', 'expiration', 'net'].includes(t[0]))) return 'tag non ammessi (una segnalazione non nomina persone)'
+  return null
+}
 /** @param {any} ev */
 function expirationOf(ev) {
   const t = ev.tags.find((/** @type {string[]} */ x) => x[0] === 'expiration')
@@ -147,6 +168,10 @@ function createRelay(ctx) {
     if (ev.created_at > nowSec() + MAX_FUTURE_SEC) return [false, 'invalid: created_at nel futuro']
     const exp = expirationOf(ev)
     if (exp !== null && exp <= nowSec()) return [false, 'invalid: evento scaduto']
+    if (ev.kind === KIND_SEGNALAZIONE) {
+      const no = segnalazioneNonValida(ev)
+      if (no) return [false, `invalid: segnalazione (${no})`]
+    }
     // Spazio (I-41): un autore o un peer non possono riempire il nodo
     const size = Buffer.byteLength(JSON.stringify({ id: ev.id, pubkey: ev.pubkey, created_at: ev.created_at, kind: ev.kind, tags: ev.tags, content: ev.content, sig: ev.sig }))
     if (size > L.maxEventBytes) return [false, `invalid: evento troppo grande (${size} byte, massimo ${L.maxEventBytes})`]
@@ -168,7 +193,8 @@ function createRelay(ctx) {
         for (const b of ctx.moderazione({ kind: clean.kind, content: testoPubblico(clean) })) insFlag.run(clean.id, b.categoria, b.peso, b.regole.join(','), b.codice ? 1 : 0)
       } catch (e) { log(`moderazione: analisi non riuscita (${/** @type {Error} */ (e).message})`) }
     }
-    if (fresh) broadcast(clean, source)
+    // I-67: una segnalazione si conta e resta qui, non va a nessuna sottoscrizione
+    if (fresh && clean.kind !== KIND_SEGNALAZIONE) broadcast(clean, source)
     return [true, fresh ? '' : 'duplicate: già presente']
   }
 
@@ -182,6 +208,8 @@ function createRelay(ctx) {
     if (f.since) { where.push('e.created_at >= ?'); params.push(f.since) }
     if (f.until) { where.push('e.created_at <= ?'); params.push(f.until) }
     where.push('(e.expires_at IS NULL OR e.expires_at > ?)'); params.push(nowSec())
+    // I-67: nessuna richiesta restituisce le segnalazioni (né a chi è segnalato, né ad altri nodi, né per id)
+    where.push(`e.kind <> ${KIND_SEGNALAZIONE}`)
     const joinParams = /** @type {any[]} */ ([])
     let n = 0
     for (const [k, vals] of Object.entries(f)) {

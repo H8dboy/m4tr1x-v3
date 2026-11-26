@@ -293,3 +293,9 @@ button, input, textarea { font: inherit; color: inherit; }
 .bloccati { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .bloccati li { display: flex; align-items: center; gap: 10px; }
 .bloccati .chiave { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Segnalazioni (I-67): il motivo si sceglie da un elenco chiuso */
+.segnala { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.pannello-segnala { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pannello-segnala[hidden] { display: none; }
+.campo.piccolo { width: auto; padding: 4px 8px; font-size: 12px; }

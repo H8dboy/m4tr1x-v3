@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-azioni-avanzamento"
+description = "Enables the azioni_avanzamento command without any pre-configured scope."
+commands.allow = ["azioni_avanzamento"]
+
+[[permission]]
+identifier = "deny-azioni-avanzamento"
+description = "Denies the azioni_avanzamento command without any pre-configured scope."
+commands.deny = ["azioni_avanzamento"]

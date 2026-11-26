@@ -215,6 +215,11 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("blocca", json!({"chiave": "../bloccati"}), "chiave non valida"),
         ("blocca", json!({"chiave": "a".repeat(63)}), "chiave non valida"),
         ("sblocca", json!({"chiave": "g".repeat(64)}), "chiave non valida"),
+        // I-67: id e categoria controllati prima di firmare
+        ("segnala", json!({"id": "a".repeat(64), "categoria": "spam"}), "tor non configurato"),
+        ("segnala", json!({"id": "non-un-id", "categoria": "spam"}), "forma non valida: id del contenuto"),
+        ("segnala", json!({"id": "a".repeat(64), "categoria": "persona"}), "forma non valida: categoria"),
+        ("azioni_avanzamento", json!({}), OK),
     ];
     for (cmd, args, atteso) in comandi {
         let r = chiama(&main, cmd, args);
