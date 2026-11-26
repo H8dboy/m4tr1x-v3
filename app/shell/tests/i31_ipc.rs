@@ -226,6 +226,8 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("account_cancella", json!({"conferma": "cancella"}), "per cancellare l'account scrivi CANCELLA"),
         ("account_cancella", json!({"conferma": "CANCELLA"}), "tor non configurato"),
         ("identita_dimentica", json!({"conferma": "si"}), "per togliere l'identità"),
+        ("mi_piace", json!({"id": "a".repeat(64)}), "tor non configurato"),
+        ("mi_piace", json!({"id": "x"}), "forma non valida: id del contenuto"),
     ];
     for (cmd, args, atteso) in comandi {
         let r = chiama(&main, cmd, args);

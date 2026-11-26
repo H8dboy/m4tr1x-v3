@@ -343,6 +343,35 @@ pub fn tag_sparisci() -> Vec<Vec<String>> {
     vec![vec!["relay".into(), "ALL_RELAYS".into()]]
 }
 
+// ─── Mi piace (NIP-25, kind 7; I-69) ──────────────────────────────────────────
+// Un "mi piace" è pubblico come un post: chi lo mette lo firma. Nomina solo il contenuto (un tag `e`), non la persona
+// che l'ha scritto. Si toglie con una cancellazione (kind 5) della reazione.
+
+pub const KIND_REAZIONE: u16 = 7;
+/// Il testo di un "mi piace".
+pub const MI_PIACE: &str = "+";
+
+/// Tag di un "mi piace" al contenuto `id`.
+pub fn tag_mi_piace(id: &str) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !esadecimale_minuscolo(id, 64) {
+        return Err(Rifiuto::Forma("id del contenuto"));
+    }
+    Ok(vec![vec!["e".into(), id.into()]])
+}
+
+/// Il contenuto a cui un evento GIÀ verificato mette "mi piace": Some solo se è un kind 7 con testo "+" e UN solo tag
+/// `e` valido (altre forme non si contano).
+pub fn mi_piace_a(e: &Evento) -> Option<&str> {
+    if e.kind != KIND_REAZIONE || e.content != MI_PIACE {
+        return None;
+    }
+    let es: Vec<&Vec<String>> = e.tags.iter().filter(|t| t[0] == "e").collect();
+    match es.as_slice() {
+        [t] => t.get(1).map(String::as_str).filter(|id| esadecimale_minuscolo(id, 64)),
+        _ => None,
+    }
+}
+
 // ─── File: reels, film, musica (stesso schema della v2: kind 1063 NIP-94 con tag `t` della sezione) ──────
 // La scheda dice SOLO: hash del file (`x`), tipo (`m`, da un elenco chiuso), dimensione, sezione, titolo. Il file
 // sta sul nodo per hash; chi lo scarica ricontrolla l'hash (I-17) e il tipo dai primi byte.
@@ -650,6 +679,30 @@ fn da_esadecimale(s: &str) -> Option<Vec<u8>> {
         return None;
     }
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
+}
+
+#[cfg(test)]
+mod prove_mi_piace {
+    use super::*;
+
+    fn ev(content: &str, tags: Vec<Vec<String>>) -> Evento {
+        Evento { id: "0".repeat(64), pubkey: "1".repeat(64), created_at: 1, kind: KIND_REAZIONE, tags, content: content.into(), sig: "2".repeat(128), _verificato: () }
+    }
+
+    #[test]
+    fn mi_piace_solo_nella_forma_giusta() {
+        let id = "a".repeat(64);
+        assert_eq!(tag_mi_piace(&id).unwrap(), vec![vec!["e".to_string(), id.clone()]]);
+        assert!(tag_mi_piace("A").is_err());
+        assert_eq!(mi_piace_a(&ev("+", vec![vec!["e".into(), id.clone()]])), Some(id.as_str()));
+        assert_eq!(mi_piace_a(&ev("-", vec![vec!["e".into(), id.clone()]])), None, "contato un non-mi-piace");
+        assert_eq!(mi_piace_a(&ev("+", vec![])), None);
+        assert_eq!(mi_piace_a(&ev("+", vec![vec!["e".into(), id.clone()], vec!["e".into(), "b".repeat(64)]])), None, "contata una reazione a due contenuti");
+        assert_eq!(mi_piace_a(&ev("+", vec![vec!["e".into(), "XYZ".into()]])), None);
+        let mut altro = ev("+", vec![vec!["e".into(), id.clone()]]);
+        altro.kind = 1;
+        assert_eq!(mi_piace_a(&altro), None, "contato un post come mi piace");
+    }
 }
 
 #[cfg(test)]

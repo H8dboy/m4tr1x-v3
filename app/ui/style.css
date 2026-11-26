@@ -304,3 +304,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .scheda.pericolo { border-color: rgba(255, 107, 107, 0.35); }
 .tasto.rosso { background: #ff6b6b; color: #1a0505; }
 .tasto.rosso:hover { background: #ff8787; }
+
+/* Mi piace (I-69) */
+.tasto-azione.mi-piace { margin-left: 0; font-size: 12px; }
+.tasto-azione.mi-piace[aria-pressed="true"] { color: #ff6b9a; }

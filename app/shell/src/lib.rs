@@ -255,7 +255,7 @@ fn stato(rete: tauri::State<'_, Rete>) -> Stato {
 /// tentativi da 30 s fino a 4 minuti; la fase si legge con `feed_avanzamento`.
 /// Gli errori dicono cosa manca o quanto si è aspettato, mai l'indirizzo del nodo.
 #[tauri::command]
-async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Feed, String> {
+async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<Feed, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
     let op = &op.feed;
@@ -273,7 +273,9 @@ async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bl
         // bandierine della moderazione (I-65): se il nodo non le dà, il feed si vede lo stesso, senza veli, e lo si dice
         let ids: Vec<String> = f.post.iter().map(|p| p.id.clone()).collect();
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
-        Ok(Feed::from(f).con_bandierine(veli.as_ref()))
+        // "mi piace" (I-69): un di più, come le bandierine
+        let reazioni = m4tr1x_feed::mi_piace(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &ids, mia_chiave(&chiavi).as_deref()).await.ok();
+        Ok(Feed::from(f).con_bandierine(veli.as_ref()).con_reazioni(reazioni.as_ref()))
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
@@ -394,7 +396,7 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
-    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![] })
+    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None })
 }
 
 /// Il TUO profilo com'è sul nodo (per precompilare il modulo). Ok(None): non ne hai ancora uno.
@@ -461,7 +463,7 @@ fn sezione_da(s: &str) -> Result<m4tr1x_protocol::Sezione, String> {
 
 /// Le schede di una sezione ("signal", "film", "musica").
 #[tauri::command]
-async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Galleria, String> {
+async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<Galleria, String> {
     let sez = sezione_da(&sezione)?;
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
@@ -478,7 +480,8 @@ async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'
         // bandierine (I-65) sulle schede: se il nodo non le dà, si vede lo stesso, senza veli, e lo si dice
         let ids: Vec<String> = g.media.iter().map(|m| m.id.clone()).collect();
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
-        Ok(Galleria::from(g).con_bandierine(veli.as_ref()))
+        let reazioni = m4tr1x_feed::mi_piace(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &ids, mia_chiave(&chiavi).as_deref()).await.ok();
+        Ok(Galleria::from(g).con_bandierine(veli.as_ref()).con_reazioni(reazioni.as_ref()))
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
@@ -587,7 +590,7 @@ async fn media_pubblica(sezione: String, titolo: String, testo: String, rete: ta
     esito?;
     *scelto.0.lock().unwrap() = None;
     let file = m4tr1x_protocol::file_da_evento(&scheda).ok_or("scheda non leggibile")?;
-    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into(), bandierine: vec![] })
+    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into(), bandierine: vec![], mi_piace: 0, mio_mi_piace: None })
 }
 
 /// Fase dell'operazione sui file in corso, per l'interfaccia.
@@ -739,7 +742,7 @@ async fn celle_pubblica(sezione: String, titolo: String, testo: String, rete: ta
     esito?;
     *alveare.pronto.lock().unwrap() = None;
     let file = m4tr1x_protocol::file_da_evento(&scheda).ok_or("scheda non leggibile")?;
-    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into(), bandierine: vec![] })
+    Ok(Media { id: scheda.id, autore: scheda.pubkey, nome: None, testo: scheda.content, creato: scheda.created_at, file: file.into(), bandierine: vec![], mi_piace: 0, mio_mi_piace: None })
 }
 
 /// Gruppi di un reel tenuti come pixel: quello che si guarda e il prossimo. Il resto del reel resta a pezzi
@@ -1065,7 +1068,7 @@ async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, b
 
 /// Una discussione con le sue risposte. Ok(None): il nodo non ce l'ha (o l'id non è di una discussione).
 #[tauri::command]
-async fn forum_discussione(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Option<DiscussioneAperta>, String> {
+async fn forum_discussione(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<Option<DiscussioneAperta>, String> {
     if id.len() != 64 || !id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) {
         return Err("id della discussione non valido".into());
     }
@@ -1086,7 +1089,8 @@ async fn forum_discussione(id: String, rete: tauri::State<'_, Rete>, op: tauri::
         let d = DiscussioneAperta::from(d);
         // bandierine (I-65) sulla discussione e su ogni risposta
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &d.ids()).await.ok();
-        Ok(Some(d.con_bandierine(veli.as_ref())))
+        let reazioni = m4tr1x_feed::mi_piace(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &d.ids(), mia_chiave(&chiavi).as_deref()).await.ok();
+        Ok(Some(d.con_bandierine(veli.as_ref()).con_reazioni(reazioni.as_ref())))
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
@@ -1114,7 +1118,7 @@ async fn forum_rispondi(id: String, testo: String, rete: tauri::State<'_, Rete>,
     let tags = m4tr1x_protocol::tag_risposta(&id).map_err(|e| e.to_string())?;
     let evento = firma_con_la_mia_identita(&chiavi, 1, &testo, &tags).map_err(|e| format!("risposta non firmata: {e}"))?;
     pubblica_nel_forum(&rete, &op.forum, &evento).await?;
-    Ok(Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![] })
+    Ok(Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None })
 }
 
 /// Fase del forum in corso, per l'interfaccia.
@@ -1191,6 +1195,35 @@ fn messaggi_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
 #[tauri::command]
 fn pubblica_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.post.fase()
+}
+
+/// La tua chiave PUBBLICA d'identità, se c'è (per riconoscere le tue reazioni).
+fn mia_chiave(chiavi: &Chiavi) -> Option<String> {
+    creazione::identita_salvata(&*chiavi.0).ok().flatten().map(|i| i.identity)
+}
+
+// ─── Mi piace (I-69) ──────────────────────────────────────────────────────────
+// Pubblico come un post (firmato con la tua identità); nomina solo il contenuto. Si toglie con `cancella` sull'id
+// della reazione: il nodo la toglie e tiene la lapide (I-68).
+
+/// Mette "mi piace" al contenuto `id`. Restituisce l'id della reazione (per toglierla).
+#[tauri::command]
+async fn mi_piace(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<String, String> {
+    let tags = m4tr1x_protocol::tag_mi_piace(&id).map_err(|e| e.to_string())?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let evento = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_REAZIONE, m4tr1x_protocol::MI_PIACE, &tags).map_err(|e| format!("mi piace non firmato: {e}"))?;
+    let op = &op.azioni;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra azione è in corso".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        pubblica_azione(&tor, &nodo, &evento, op, "il mi piace").await
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito.map(|_| evento.id)
 }
 
 // ─── Segnalazioni (I-67) ──────────────────────────────────────────────────────
@@ -1434,7 +1467,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica, mi_piace])
 }
 
 pub fn run() {
