@@ -1,4 +1,4 @@
-# Nota di ripresa — 12/11/2026
+# Nota di ripresa — 26/11/2026
 
 > Fonte di verità: codice e test.
 
@@ -166,6 +166,18 @@
 103. **I-27 attiva (processi esterni).** Riscritta sulla realtà: niente programmi esterni per i file (pulizia e codifica in Rust), l'unico processo è tor. `inv-27-processi`: statico (solo tor.js e tor_process.rs avviano processi; nessun ffmpeg/exiftool), dal vivo un tor finto che non parte → fermato a 1,5 s e ucciso (solo Linux/macOS: CI), app con kill_on_drop/__OwningControllerProcess/30 s porta di controllo/bootstrap, file a celle "bomba" rifiutato prima di allocare. 7 sabotaggi (2 solo Linux, nel job sabotaggio-linux). Tetto di memoria per tor: no, dichiarato.
 
 104. **Velo su forum e reel (I-65).** Il fondatore: «va bene così, metti il velo anche su forum e reel». Nodo: analizzati anche i kind 1063 (schede di reel/film/musica) e i titoli (`subject` delle discussioni, `title` delle schede) con `testoPubblico()` nel relay (solo testo + quei due tag). Shell: `Forum`, `DiscussioneAperta`, `Galleria` con `con_bandierine` e `bandierine_disponibili` (helper `bandierine_di`, tipo `Veli`). UI: `velo(p, ...coperti)` generico; tessera del reel e voce della discussione restano coperte (titolo e apertura) finché non si apre il velo; risposte già via `voce()`. Prove: inv-65-moderazione-nodo (discussione con titolo in codice, scheda reel), inv-65-velo-app (DOM finto su voceDiscussione/voceMedia, prova Rust), 7 sabotaggi nuovi + 2 aggiornati. Il velo dei reel guarda il testo della scheda, non i fotogrammi.
+
+105. **Funzioni dell'app utente per gli store (26/11; il fondatore: «dagli store escono gli utenti, i nodi sono un'altra cosa» e «finisci tutto quello che manca senza mai tradire la nostra filosofia e i test»).** Una PR per funzione, ognuna con la sua regola, prova e sabotaggi:
+    - **I-66 Blocca** (#20): elenco solo sul dispositivo (file privato), filtro nel lato Rust su feed, reel, forum, risposte, messaggi; mai pubblicato.
+    - **I-67 Segnala** (#21): NIP-56 su un CONTENUTO con categoria da elenco chiuso e scadenza 90 gg; il nodo la tiene solo per sé (nessuna REQ, sottoscrizione o peer la vede).
+    - **I-68 Cancella** (#22): kind 5 toglie solo i propri contenuti (e i file non usati da altri) con lapide; kind 62 toglie l'account (anche buste DM per le sue chiavi) con una lapide; quota piena: si cancella ancora solo togliendo qualcosa di proprio; app: CANCELLA scritto, chiavi via dal portachiavi solo dopo il sì del nodo; «solo da questo dispositivo».
+    - **I-69 Mi piace**: kind 7 firmato in Rust, conto in `m4tr1x-feed` solo da eventi verificati, una persona una volta.
+    - **I-70 Segui**: elenco solo sul dispositivo, niente kind 3, «Chi segui» filtra in Rust il feed di sempre (nessuna `authors` dall'elenco).
+    - **I-71 Notifiche**: calcolate sul dispositivo (i tuoi contenuti → risposte e mi piace che li nominano), niente testo nella notifica, «viste fino a» in file privato.
+    - **I-72 Cerca**: solo nell'interfaccia, tra ciò che è scaricato; la parola non va al nodo né al lato Rust.
+    - **I-73 Ricondividi**: kind 6 a testo vuoto; l'originale si chiede per id e si verifica; mai la copia incollata.
+    Suite locale dopo I-73: 321 verdi, 0 falliti. Sabotaggi nuovi tutti presi (7+7+9+7+7+7+4+8). Lezioni: mai unire due righe guardate da una prova di un'altra regola (I-66); un sabotaggio che non compila non vale; ogni `find` una volta sola (si vede subito in `sabotage-applicabili`).
+    **Resta per gli store, fuori dal codice:** informativa privacy e termini, schede degli store, contatto per le segnalazioni (DSA), età minima, account sviluppatore. **Resta nel codice:** F7 (mance/H8/shop/boost: prima parere legale e SRLS, Q20) e film lunghi in HLS (F6).
 
 ## Prossimo (dal 12/11/2026)
 
