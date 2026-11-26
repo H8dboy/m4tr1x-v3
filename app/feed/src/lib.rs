@@ -53,6 +53,53 @@ pub struct Post {
     pub testo: String,
     /// nome dal profilo (kind 0) dell'autore, già pulito (m4tr1x_protocol::profilo_da_evento); None se non ne ha
     pub nome: Option<String>,
+    /// se questa voce è una ricondivisione (I-73): chi, quando, con quale evento
+    pub ricondivisione: Option<Ricondivisione>,
+}
+
+/// Una ricondivisione verificata: l'evento (per toglierla), chi l'ha fatta, quando.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ricondivisione {
+    pub id: String,
+    pub da: String,
+    pub creato: u64,
+}
+
+impl Post {
+    /// L'ora con cui la voce si ordina nel feed: quella della ricondivisione, se lo è.
+    pub fn quando_nel_feed(&self) -> u64 {
+        self.ricondivisione.as_ref().map_or(self.creato, |r| r.creato)
+    }
+}
+
+/// Le ricondivisioni VERIFICATE tra `grezzi`: (ricondivisione, id del post). Una per persona e post (la più recente).
+pub fn ricondivisioni(grezzi: &[Value], rete: Rete) -> Vec<(Ricondivisione, String)> {
+    let mut per: std::collections::HashMap<(String, String), Ricondivisione> = Default::default();
+    for e in grezzi.iter().filter_map(|g| verificato(g, rete)) {
+        let Some(orig) = m4tr1x_protocol::ricondivisione_di(&e) else { continue };
+        let chiave = (e.pubkey.clone(), orig.to_string());
+        if per.get(&chiave).is_none_or(|r| e.created_at > r.creato) {
+            per.insert(chiave, Ricondivisione { id: e.id.clone(), da: e.pubkey.clone(), creato: e.created_at });
+        }
+    }
+    per.into_iter().map(|((_, orig), r)| (r, orig)).collect()
+}
+
+/// Aggiunge al feed una voce per ogni ricondivisione il cui post originale è VERIFICATO (tra `post` o `originali`):
+/// le altre si scartano. Poi ordina per ora nel feed.
+pub fn con_ricondivisioni(mut post: Vec<Post>, ric: Vec<(Ricondivisione, String)>, originali: Vec<Post>) -> Vec<Post> {
+    let mut voci = vec![];
+    for (r, orig) in ric {
+        let Some(p) = post.iter().chain(originali.iter()).find(|p| p.id == orig && p.ricondivisione.is_none()) else { continue };
+        // ricondividere sé stessi non aggiunge niente
+        if p.autore == r.da {
+            continue;
+        }
+        voci.push(Post { ricondivisione: Some(r), ..p.clone() });
+    }
+    post.extend(voci);
+    post.sort_by(|a, b| b.quando_nel_feed().cmp(&a.quando_nel_feed()).then_with(|| a.id.cmp(&b.id)));
+    post
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -346,14 +393,21 @@ async fn un_tentativo<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, scarico: 
     let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
     let mut relay = Relay::apri(flusso, nodo).await?;
     scarico();
-    let grezzi = match relay.richiedi(json!({ "kinds": [1], "limit": QUANTI })).await {
+    let grezzi = match relay.richiedi(json!({ "kinds": [1, m4tr1x_protocol::KIND_RICONDIVISIONE], "limit": QUANTI })).await {
         Ok(g) => g,
         Err(e) => {
             relay.chiudi().await;
             return Err(e);
         }
     };
-    let (mut post, scartati) = verificati(grezzi, rete);
+    // ricondivisioni (I-73): si separano per kind dichiarato, poi si verificano a parte
+    let (ric, grezzi): (Vec<Value>, Vec<Value>) = grezzi.into_iter().partition(|g| g.get("kind").and_then(Value::as_u64) == Some(u64::from(m4tr1x_protocol::KIND_RICONDIVISIONE)));
+    let (post, scartati) = verificati(grezzi, rete);
+    let ric = ricondivisioni(&ric, rete);
+    // gli originali che non sono già nel feed si chiedono per id, nella stessa connessione, e si verificano
+    let mancanti: Vec<&str> = ric.iter().map(|(_, o)| o.as_str()).filter(|o| !post.iter().any(|p| p.id == *o)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    let originali = if mancanti.is_empty() { vec![] } else { relay.richiedi(json!({ "ids": mancanti, "kinds": [1], "limit": QUANTI })).await.map(|g| verificati(g, rete).0).unwrap_or_default() };
+    let mut post = con_ricondivisioni(post, ric, originali);
     // nella stessa connessione: i profili (kind 0) degli autori, per mostrare il nome
     let autori: Vec<&str> = post.iter().map(|p| p.autore.as_str()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
     if !autori.is_empty() {
@@ -421,7 +475,7 @@ pub fn verificati(grezzi: Vec<serde_json::Value>, rete: Rete) -> (Vec<Post>, usi
             Ok(e) if e.kind == 1 && m4tr1x_protocol::e_del_forum(&e) => {}
             Ok(e) if e.kind == 1 => {
                 if !post.iter().any(|p| p.id == e.id) {
-                    post.push(Post { id: e.id, autore: e.pubkey, creato: e.created_at, testo: e.content, nome: None });
+                    post.push(Post { id: e.id, autore: e.pubkey, creato: e.created_at, testo: e.content, nome: None, ricondivisione: None });
                 }
             }
             _ => scartati += 1,
@@ -530,7 +584,7 @@ pub async fn leggi_discussione<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, 
     for g in grezze {
         let Some(r) = verificato(&g, rete) else { continue };
         if m4tr1x_protocol::risposta_a(&r).as_deref() == Some(id) && !risposte.iter().any(|p| p.id == r.id) {
-            risposte.push(Post { id: r.id, autore: r.pubkey, creato: r.created_at, testo: r.content, nome: None });
+            risposte.push(Post { id: r.id, autore: r.pubkey, creato: r.created_at, testo: r.content, nome: None, ricondivisione: None });
         }
     }
     risposte.sort_by(|a, b| a.creato.cmp(&b.creato).then_with(|| a.id.cmp(&b.id)));

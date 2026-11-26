@@ -275,9 +275,11 @@ async fn feed(solo_seguiti: Option<bool>, rete: tauri::State<'_, Rete>, op: taur
             .await
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
         // I-66: chi hai bloccato non arriva all'interfaccia
+        // ...né le sue ricondivisioni (I-73)
         f.post.retain(|p| !bloccati.contiene(&p.autore));
+        f.post.retain(|p| p.ricondivisione.as_ref().is_none_or(|r| !bloccati.contiene(&r.da)));
         if solo_seguiti == Some(true) {
-            f.post.retain(|p| seguiti.contiene(&p.autore));
+            f.post.retain(|p| p.ricondivisione.as_ref().map_or_else(|| seguiti.contiene(&p.autore), |r| seguiti.contiene(&r.da)));
         }
         // bandierine della moderazione (I-65): se il nodo non le dà, il feed si vede lo stesso, senza veli, e lo si dice
         let ids: Vec<String> = f.post.iter().map(|p| p.id.clone()).collect();
@@ -405,7 +407,7 @@ async fn pubblica(testo: String, rete: tauri::State<'_, Rete>, op: tauri::State<
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
-    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None })
+    esito.map(|_| Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None, ricondiviso_da: None, ricondivisione: None })
 }
 
 /// Il TUO profilo com'è sul nodo (per precompilare il modulo). Ok(None): non ne hai ancora uno.
@@ -1127,7 +1129,7 @@ async fn forum_rispondi(id: String, testo: String, rete: tauri::State<'_, Rete>,
     let tags = m4tr1x_protocol::tag_risposta(&id).map_err(|e| e.to_string())?;
     let evento = firma_con_la_mia_identita(&chiavi, 1, &testo, &tags).map_err(|e| format!("risposta non firmata: {e}"))?;
     pubblica_nel_forum(&rete, &op.forum, &evento).await?;
-    Ok(Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None })
+    Ok(Post { id: evento.id, autore: evento.pubkey, creato: evento.created_at, testo: evento.content, nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None, ricondiviso_da: None, ricondivisione: None })
 }
 
 /// Fase del forum in corso, per l'interfaccia.
@@ -1289,6 +1291,29 @@ fn segui(chiave: String, seguiti: tauri::State<'_, Seguiti>, bloccati: tauri::St
 #[tauri::command]
 fn smetti_di_seguire(chiave: String, seguiti: tauri::State<'_, Seguiti>) -> Result<(), String> {
     seguiti.smetti(&chiave)
+}
+
+// ─── Ricondividere (I-73) ─────────────────────────────────────────────────────
+// Pubblico come un post; porta solo l'id. Si toglie con `cancella` sull'id della ricondivisione (I-68).
+
+/// Ricondivide il post `id`. Restituisce l'id della ricondivisione.
+#[tauri::command]
+async fn ricondividi(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<String, String> {
+    let tags = m4tr1x_protocol::tag_ricondividi(&id).map_err(|e| e.to_string())?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let evento = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_RICONDIVISIONE, "", &tags).map_err(|e| format!("ricondivisione non firmata: {e}"))?;
+    let op = &op.azioni;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra azione è in corso".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        pubblica_azione(&tor, &nodo, &evento, op, "la ricondivisione").await
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito.map(|_| evento.id)
 }
 
 // ─── Mi piace (I-69) ──────────────────────────────────────────────────────────
@@ -1563,7 +1588,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica, mi_piace, seguiti, segui, smetti_di_seguire, notifiche, notifiche_avanzamento, notifiche_viste])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica, mi_piace, seguiti, segui, smetti_di_seguire, notifiche, notifiche_avanzamento, notifiche_viste, ricondividi])
 }
 
 pub fn run() {

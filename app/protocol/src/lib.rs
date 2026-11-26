@@ -365,11 +365,38 @@ pub fn mi_piace_a(e: &Evento) -> Option<&str> {
     if e.kind != KIND_REAZIONE || e.content != MI_PIACE {
         return None;
     }
+    unico_e(e)
+}
+
+/// L'id del contenuto nominato da UN solo tag `e` valido (con due o più, o nessuno, None).
+fn unico_e(e: &Evento) -> Option<&str> {
     let es: Vec<&Vec<String>> = e.tags.iter().filter(|t| t[0] == "e").collect();
     match es.as_slice() {
         [t] => t.get(1).map(String::as_str).filter(|id| esadecimale_minuscolo(id, 64)),
         _ => None,
     }
+}
+
+// ─── Ricondividere (NIP-18, kind 6; I-73) ─────────────────────────────────────
+// La ricondivisione porta SOLO l'id del post (testo vuoto): chi legge chiede l'originale al nodo e lo verifica come
+// ogni altro post. Una copia incollata nel testo non si usa mai (potrebbe dire qualsiasi cosa a nome di altri).
+
+pub const KIND_RICONDIVISIONE: u16 = 6;
+
+/// Tag della ricondivisione del post `id`.
+pub fn tag_ricondividi(id: &str) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !esadecimale_minuscolo(id, 64) {
+        return Err(Rifiuto::Forma("id del post"));
+    }
+    Ok(vec![vec!["e".into(), id.into()], vec!["k".into(), "1".into()]])
+}
+
+/// Il post che un evento GIÀ verificato ricondivide: Some solo se è un kind 6 con UN solo tag `e` valido.
+pub fn ricondivisione_di(e: &Evento) -> Option<&str> {
+    if e.kind != KIND_RICONDIVISIONE {
+        return None;
+    }
+    unico_e(e)
 }
 
 // ─── File: reels, film, musica (stesso schema della v2: kind 1063 NIP-94 con tag `t` della sezione) ──────
@@ -679,6 +706,23 @@ fn da_esadecimale(s: &str) -> Option<Vec<u8>> {
         return None;
     }
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
+}
+
+#[cfg(test)]
+mod prove_ricondividi {
+    use super::*;
+
+    #[test]
+    fn ricondivisione_solo_nella_forma_giusta() {
+        let id = "a".repeat(64);
+        assert_eq!(tag_ricondividi(&id).unwrap()[0], vec!["e".to_string(), id.clone()]);
+        assert!(tag_ricondividi("x").is_err());
+        let ev = |kind: u16, tags: Vec<Vec<String>>| Evento { id: "0".repeat(64), pubkey: "1".repeat(64), created_at: 1, kind, tags, content: String::new(), sig: "2".repeat(128), _verificato: () };
+        assert_eq!(ricondivisione_di(&ev(6, vec![vec!["e".into(), id.clone()]])), Some(id.as_str()));
+        assert_eq!(ricondivisione_di(&ev(1, vec![vec!["e".into(), id.clone()]])), None, "un post preso per ricondivisione");
+        assert_eq!(ricondivisione_di(&ev(6, vec![vec!["e".into(), id.clone()], vec!["e".into(), "b".repeat(64)]])), None);
+        assert_eq!(ricondivisione_di(&ev(6, vec![vec!["e".into(), "ZZ".into()]])), None);
+    }
 }
 
 #[cfg(test)]

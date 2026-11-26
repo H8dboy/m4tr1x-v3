@@ -234,6 +234,8 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("notifiche_avanzamento", json!({}), OK),
         // fino = 0: niente da salvare (la prova non scrive nella cartella dati)
         ("notifiche_viste", json!({"fino": 0}), OK),
+        ("ricondividi", json!({"id": "a".repeat(64)}), "tor non configurato"),
+        ("ricondividi", json!({"id": "x"}), "forma non valida: id del post"),
     ];
     for (cmd, args, atteso) in comandi {
         let r = chiama(&main, cmd, args);
