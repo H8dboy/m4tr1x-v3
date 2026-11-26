@@ -278,14 +278,22 @@ function rigaRicondivisione(p, li) {
 }
 
 // ─── Cerca (I-72) ─────────────────────────────────────────────────────────────
-// Solo su questo dispositivo, tra ciò che è già scaricato e verificato: la parola cercata non esce mai dall'app
-// (né verso il nodo né verso il lato Rust). Si cerca nel testo visibile e nella chiave dell'autore.
+// Mentre scrivi: filtro immediato tra ciò che è già sullo schermo (testo e chiave dell'autore). Con Invio: la parola
+// va al nodo (via Tor) e il nodo cerca in TUTTO quello che ha; il lato Rust ricontrolla i risultati. La privacy da
+// proteggere è quella di chi scrive, non di chi cerca (fondatore, 26/11/2026).
 /** @type {Record<string, string>} */
 const CERCA = { 'cerca-feed': 'feed-lista', 'cerca-media': 'media-lista', 'cerca-forum': 'forum-lista' }
 
 /** Normalizza per cercare: minuscolo, senza accenti. @param {string} t */
 function perCercare(t) {
   return String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+/** La parola del campo `campoId` da mandare al nodo, o null (vuota). @param {string} campoId */
+function parolaCercata(campoId) {
+  const c = /** @type {HTMLInputElement|null} */ (document.getElementById(campoId))
+  const q = c ? c.value.trim().slice(0, 100) : ''
+  return q || null
 }
 
 /** Nasconde le voci di `listaId` che non contengono la parola del campo `campoId`. @param {string} campoId */
@@ -673,7 +681,7 @@ async function aggiornaFeed() {
   }, 1000)
   mostra('feed-stato', 'sto cercando il nodo…')
   try {
-    const f = await invoke('feed', { soloSeguiti })
+    const f = await invoke('feed', { soloSeguiti, cerca: parolaCercata('cerca-feed') })
     const lista = document.getElementById('feed-lista')
     if (lista) lista.replaceChildren(...f.post.map(voce))
     filtraLista('cerca-feed')
@@ -868,7 +876,7 @@ function apriSezione(s) {
 async function caricaMedia() {
   const s = sezioneAperta
   await conFaseMedia('cerco i contenuti sul nodo…', async () => {
-    const g = await invoke('media', { sezione: s.nome })
+    const g = await invoke('media', { sezione: s.nome, cerca: parolaCercata('cerca-media') })
     if (s !== sezioneAperta) return
     const lista = Array.isArray(g.media) ? g.media : []
     document.getElementById('media-lista')?.replaceChildren(...lista.map(voceMedia))
@@ -1170,7 +1178,7 @@ function vediElenco() {
 async function caricaForum() {
   forumChiesto = true
   await conFaseForum('cerco le discussioni sul nodo…', async () => {
-    const f = await invoke('forum')
+    const f = await invoke('forum', { cerca: parolaCercata('cerca-forum') })
     const lista = Array.isArray(f.discussioni) ? f.discussioni : []
     document.getElementById('forum-lista')?.replaceChildren(...lista.map(voceDiscussione))
     filtraLista('cerca-forum')
@@ -1409,6 +1417,10 @@ document.addEventListener('DOMContentLoaded', () => {
   caricaSeguiti()
   document.getElementById('notifiche-aggiorna')?.addEventListener('click', aggiornaNotifiche)
   for (const id of Object.keys(CERCA)) document.getElementById(id)?.addEventListener('input', () => filtraLista(id))
+  // Invio (o svuotare il campo con la x): si chiede al nodo
+  /** @type {Record<string, () => unknown>} */
+  const ricarica = { 'cerca-feed': () => aggiornaFeed(), 'cerca-media': () => caricaMedia(), 'cerca-forum': () => caricaForum() }
+  for (const id of Object.keys(CERCA)) document.getElementById(id)?.addEventListener('change', () => ricarica[id]())
   document.getElementById('feed-filtro')?.addEventListener('click', () => {
     soloSeguiti = !soloSeguiti
     const b = document.getElementById('feed-filtro')

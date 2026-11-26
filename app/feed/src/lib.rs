@@ -164,19 +164,67 @@ where
     operazione().await
 }
 
+/// Cosa chiedere al nodo per il feed. Chi legge chiede direttamente (via Tor): la privacy da proteggere è quella di
+/// chi scrive (decisione del fondatore, 26/11/2026). Vuota = gli ultimi post di tutti.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Richiesta {
+    /// solo i post (e le ricondivisioni) di queste persone (I-70); al massimo [`MASSIMO_AUTORI`]
+    pub autori: Option<Vec<String>>,
+    /// solo i post che contengono questa parola (NIP-50, I-72); al massimo [`MASSIMO_CERCA`] caratteri
+    pub cerca: Option<String>,
+}
+
+/// Persone per richiesta (il nodo accetta liste da 500).
+pub const MASSIMO_AUTORI: usize = 500;
+/// Caratteri della parola cercata (come il nodo).
+pub const MASSIMO_CERCA: usize = 100;
+
+/// La parola da cercare, pulita: senza spazi ai bordi, non vuota, al massimo [`MASSIMO_CERCA`] caratteri.
+pub fn parola_da_cercare(q: &str) -> Option<String> {
+    let q = q.trim();
+    (!q.is_empty()).then(|| q.chars().take(MASSIMO_CERCA).collect())
+}
+
+impl Richiesta {
+    /// Il filtro per il nodo.
+    pub fn filtro(&self) -> Value {
+        let mut f = json!({ "kinds": [1, m4tr1x_protocol::KIND_RICONDIVISIONE], "limit": QUANTI });
+        if let Some(a) = &self.autori {
+            f["authors"] = json!(a.iter().take(MASSIMO_AUTORI).collect::<Vec<_>>());
+        }
+        if let Some(q) = self.cerca.as_deref().and_then(parola_da_cercare) {
+            // le ricondivisioni hanno testo vuoto: si cercano solo i post
+            f["kinds"] = json!([1]);
+            f["search"] = json!(q);
+        }
+        f
+    }
+}
+
 /// Legge il feed dal nodo entro `budget`, chiamando `avanza` a ogni cambio di fase.
 pub async fn leggi<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Duration, avanza: impl Fn(Fase)) -> Result<Feed, NonRaggiungibile> {
+    leggi_richiesta(t, nodo, rete, &Richiesta::default(), budget, avanza).await
+}
+
+/// Come [`leggi`], con una [`Richiesta`] (chi segui, parola cercata).
+pub async fn leggi_richiesta<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, richiesta: &Richiesta, budget: Duration, avanza: impl Fn(Fase)) -> Result<Feed, NonRaggiungibile> {
     let avanza = &avanza;
+    let filtro = richiesta.filtro();
+    let filtro = &filtro;
     let ((post, scartati), secondi, tentativi) =
-        con_tentativi(budget, avanza, |tentativo, t0| un_tentativo(t, nodo, rete, move || avanza(Fase::Scarico { secondi: t0.elapsed().as_secs(), tentativo })))
-            .await?;
+        con_tentativi(budget, avanza, |tentativo, t0| un_tentativo(t, nodo, rete, filtro, move || avanza(Fase::Scarico { secondi: t0.elapsed().as_secs(), tentativo }))).await?;
     avanza(Fase::Fatto { secondi, tentativo: tentativi });
     Ok(Feed { post, scartati, secondi, tentativi })
 }
 
 /// Come [`leggi`], ma con la ripresa automatica dopo il budget.
 pub async fn leggi_con_ripresa<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Duration, avanza: impl Fn(Fase)) -> Result<Feed, NonRaggiungibile> {
-    con_ripresa(&avanza, || leggi(t, nodo, rete, budget, &avanza)).await
+    leggi_richiesta_con_ripresa(t, nodo, rete, &Richiesta::default(), budget, avanza).await
+}
+
+/// Come [`leggi_richiesta`], ma con la ripresa automatica dopo il budget.
+pub async fn leggi_richiesta_con_ripresa<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, richiesta: &Richiesta, budget: Duration, avanza: impl Fn(Fase)) -> Result<Feed, NonRaggiungibile> {
+    con_ripresa(&avanza, || leggi_richiesta(t, nodo, rete, richiesta, budget, &avanza)).await
 }
 
 pub use m4tr1x_transport::http::Bandierina;
@@ -388,12 +436,12 @@ pub async fn richiedi<T: Transport>(t: &T, nodo: &OnionV3, filtri: &[serde_json:
     Ok(risposte)
 }
 
-async fn un_tentativo<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, scarico: impl Fn()) -> Result<(Vec<Post>, usize), TransportError> {
+async fn un_tentativo<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, filtro: &Value, scarico: impl Fn()) -> Result<(Vec<Post>, usize), TransportError> {
     // ogni collegamento dura al massimo TEMPO_MASSIMO_CONNESSIONE (30 s): lo garantisce il trasporto
     let flusso = t.connect_onion(nodo, 80, ISOLAMENTO_FEED).await?;
     let mut relay = Relay::apri(flusso, nodo).await?;
     scarico();
-    let grezzi = match relay.richiedi(json!({ "kinds": [1, m4tr1x_protocol::KIND_RICONDIVISIONE], "limit": QUANTI })).await {
+    let grezzi = match relay.richiedi(filtro.clone()).await {
         Ok(g) => g,
         Err(e) => {
             relay.chiudi().await;
@@ -526,8 +574,17 @@ fn verificato(g: &Value, rete: Rete) -> Option<m4tr1x_protocol::Evento> {
 
 /// Le discussioni del nodo, dalla più attiva, con il numero di risposte e i nomi degli autori.
 pub async fn leggi_forum<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, budget: Duration, avanza: impl Fn(Fase)) -> Result<Forum, NonRaggiungibile> {
+    leggi_forum_cercando(t, nodo, rete, None, budget, avanza).await
+}
+
+/// Come [`leggi_forum`], solo le discussioni che contengono `cerca` (titolo o testo; NIP-50, I-72).
+pub async fn leggi_forum_cercando<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, cerca: Option<&str>, budget: Duration, avanza: impl Fn(Fase)) -> Result<Forum, NonRaggiungibile> {
     let avanza = &avanza;
-    let primo = richiedi(t, nodo, &[json!({ "kinds": [1], "#t": [m4tr1x_protocol::TAG_FORUM], "limit": QUANTE_DISCUSSIONI })], budget, avanza).await?;
+    let mut filtro = json!({ "kinds": [1], "#t": [m4tr1x_protocol::TAG_FORUM], "limit": QUANTE_DISCUSSIONI });
+    if let Some(q) = cerca.and_then(parola_da_cercare) {
+        filtro["search"] = json!(q);
+    }
+    let primo = richiedi(t, nodo, &[filtro], budget, avanza).await?;
     let mut scartati = 0;
     let mut discussioni: Vec<Discussione> = vec![];
     for g in primo.into_iter().flatten() {
@@ -628,8 +685,16 @@ pub struct Galleria {
 
 /// Le schede di una sezione, dalla più recente, con i nomi degli autori.
 pub async fn leggi_media<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, sezione: m4tr1x_protocol::Sezione, budget: Duration, avanza: impl Fn(Fase)) -> Result<Galleria, NonRaggiungibile> {
+    leggi_media_cercando(t, nodo, rete, sezione, None, budget, avanza).await
+}
+
+/// Come [`leggi_media`], solo le schede che contengono `cerca` (testo o titolo; NIP-50, I-72).
+pub async fn leggi_media_cercando<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, sezione: m4tr1x_protocol::Sezione, cerca: Option<&str>, budget: Duration, avanza: impl Fn(Fase)) -> Result<Galleria, NonRaggiungibile> {
     let avanza = &avanza;
-    let filtro = json!({ "kinds": [m4tr1x_protocol::KIND_FILE], "#t": [sezione.tag()], "limit": QUANTI_FILE });
+    let mut filtro = json!({ "kinds": [m4tr1x_protocol::KIND_FILE], "#t": [sezione.tag()], "limit": QUANTI_FILE });
+    if let Some(q) = cerca.and_then(parola_da_cercare) {
+        filtro["search"] = json!(q);
+    }
     let grezzi = richiedi(t, nodo, &[filtro], budget, avanza).await?.into_iter().flatten();
     let mut scartati = 0;
     let mut media: Vec<Media> = vec![];

@@ -310,3 +310,20 @@ async fn il_nome_solo_da_un_profilo_kind0_dell_autore() {
     let pa = f.post.iter().find(|p| p.testo == "post di A").expect("manca il post di A");
     assert_eq!(pa.nome.as_deref(), Some("Arta"), "il profilo VERO (kind 0) dell'autore va accettato, l'impostore kind 1 no");
 }
+
+/// I-70/I-72: chi segui e la parola cercata vanno al nodo nel filtro, con i loro tetti.
+#[test]
+fn richiesta_al_nodo_con_chi_segui_e_parola() {
+    use m4tr1x_feed::{parola_da_cercare, Richiesta, MASSIMO_AUTORI};
+    let base = Richiesta::default().filtro();
+    assert_eq!(base, serde_json::json!({ "kinds": [1, 6], "limit": m4tr1x_feed::QUANTI }));
+    let autori: Vec<String> = (0..MASSIMO_AUTORI + 3).map(|i| format!("{i:064x}")).collect();
+    let f = Richiesta { autori: Some(autori.clone()), cerca: None }.filtro();
+    assert_eq!(f["authors"].as_array().unwrap().len(), MASSIMO_AUTORI, "oltre il tetto del nodo");
+    assert_eq!(f["authors"][0], autori[0].as_str());
+    let f = Richiesta { autori: None, cerca: Some("  tirana  ".into()) }.filtro();
+    assert_eq!(f["search"], "tirana");
+    assert_eq!(f["kinds"], serde_json::json!([1]), "si cercano anche le ricondivisioni (testo vuoto)");
+    assert!(Richiesta { autori: None, cerca: Some("   ".into()) }.filtro().get("search").is_none(), "parola vuota mandata al nodo");
+    assert_eq!(parola_da_cercare(&"x".repeat(150)).unwrap().chars().count(), 100);
+}

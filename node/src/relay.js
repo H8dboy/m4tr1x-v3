@@ -85,6 +85,12 @@ const HEX = /^[0-9a-f]{1,64}$/
 const strList = (/** @type {any} */ v, /** @type {RegExp} [re] */ re = undefined) => Array.isArray(v) && v.length <= MAX_LIST && v.every(x => typeof x === 'string' && x.length <= 256 && (!re || re.test(x)))
 const intList = (/** @type {any} */ v) => Array.isArray(v) && v.length <= MAX_LIST && v.every(x => Number.isInteger(x) && x >= 0 && x <= 65535)
 
+/** Ricerca (NIP-50, I-72): solo profili, post, discussioni e schede dei file; parola da 1 a 100 caratteri. */
+const KIND_CERCABILI = [0, 1, 1063]
+const CERCA_MAX = 100
+/** "%parola%" per LIKE, con %, _ e \ presi alla lettera. @param {string} q */
+const perLike = q => '%' + q.replace(/[\\%_]/g, c => '\\' + c) + '%'
+
 /** @param {any} f @returns {Record<string, any> | null} */
 function sanitizeFilter(f) {
   if (!f || typeof f !== 'object' || Array.isArray(f)) return null
@@ -95,6 +101,13 @@ function sanitizeFilter(f) {
   if (f.since !== undefined) { if (!Number.isInteger(f.since) || f.since < 0) return null; out.since = f.since }
   if (f.until !== undefined) { if (!Number.isInteger(f.until) || f.until < 0) return null; out.until = f.until }
   if (f.limit !== undefined) { if (!Number.isInteger(f.limit)) return null; out.limit = Math.max(1, Math.min(f.limit, 500)) }
+  if (f.search !== undefined) {
+    const q = typeof f.search === 'string' ? f.search.trim() : ''
+    if (!q || q.length > CERCA_MAX) return null
+    // si cerca solo nei contenuti pubblici: servono i kind, e solo quelli cercabili
+    if (!out.kinds || !out.kinds.every((/** @type {number} */ k) => KIND_CERCABILI.includes(k))) return null
+    out.search = q
+  }
   for (const [k, v] of Object.entries(f)) {
     if (!k.startsWith('#')) continue
     if (k.length !== 2 || !/^[a-zA-Z]$/.test(k[1]) || !strList(v)) return null
@@ -110,6 +123,7 @@ function matches(ev, f) {
   if (f.kinds && !f.kinds.includes(ev.kind)) return false
   if (f.since && ev.created_at < f.since) return false
   if (f.until && ev.created_at > f.until) return false
+  if (f.search && !(ev.content + ' ' + JSON.stringify(ev.tags)).toLowerCase().includes(f.search.toLowerCase())) return false
   for (const [k, vals] of Object.entries(f)) {
     if (!k.startsWith('#')) continue
     if (!ev.tags.some((/** @type {string[]} */ t) => t[0] === k[1] && vals.includes(t[1]))) return false
@@ -307,6 +321,7 @@ function createRelay(ctx) {
     if (f.kinds) { where.push(`e.kind IN (${f.kinds.map(() => '?').join(',')})`); params.push(...f.kinds) }
     if (f.since) { where.push('e.created_at >= ?'); params.push(f.since) }
     if (f.until) { where.push('e.created_at <= ?'); params.push(f.until) }
+    if (f.search) { where.push("(e.content LIKE ? ESCAPE '\\' OR e.tags LIKE ? ESCAPE '\\')"); params.push(perLike(f.search), perLike(f.search)) }
     where.push('(e.expires_at IS NULL OR e.expires_at > ?)'); params.push(nowSec())
     // I-67: nessuna richiesta restituisce le segnalazioni (né a chi è segnalato, né ad altri nodi, né per id)
     where.push(`e.kind <> ${KIND_SEGNALAZIONE}`)
