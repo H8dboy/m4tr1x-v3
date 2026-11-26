@@ -208,10 +208,89 @@ function velo(p, ...coperti) {
   return v
 }
 
+// ─── Persone bloccate (I-66) ──────────────────────────────────────────────────
+// L'elenco sta solo su questo dispositivo e si applica nel lato Rust: i contenuti di chi blocchi non arrivano
+// nemmeno qui. Qui si chiede il blocco e si tolgono dallo schermo i contenuti già mostrati.
+
+/** Una chiave pubblica d'identità valida (64 esadecimali minuscoli): solo così entra in un selettore. */
+const CHIAVE = /^[0-9a-f]{64}$/
+
+/** Un tasto che chiede conferma con un secondo tocco (niente finestre di dialogo del browser).
+ * @param {string} testo @param {string} conferma @param {() => Promise<void>} azione */
+function tastoConConferma(testo, conferma, azione) {
+  const b = document.createElement('button')
+  b.type = 'button'
+  b.className = 'tasto-azione'
+  b.textContent = testo
+  let armato = false
+  /** @type {ReturnType<typeof setTimeout>|null} */ let scade = null
+  b.addEventListener('click', async ev => {
+    ev.stopPropagation()
+    if (!armato) {
+      armato = true
+      b.textContent = conferma
+      b.classList.add('armato')
+      scade = setTimeout(() => { armato = false; b.textContent = testo; b.classList.remove('armato') }, 4000)
+      return
+    }
+    if (scade) clearTimeout(scade)
+    b.disabled = true
+    try { await azione() } finally { b.disabled = false; armato = false; b.textContent = testo; b.classList.remove('armato') }
+  })
+  return b
+}
+
+/** Il tasto "Blocca" per l'autore di un contenuto; niente per i tuoi contenuti. @param {string} autore */
+function tastoBlocca(autore) {
+  if (!CHIAVE.test(autore) || (identita && identita.identity === autore)) return null
+  return tastoConConferma('Blocca', 'Tocca ancora per bloccare', () => blocca(autore))
+}
+
+/** @param {string} autore */
+async function blocca(autore) {
+  try {
+    await invoke('blocca', { chiave: autore })
+  } catch (e) {
+    mostra('bloccati-stato', String(e))
+    return
+  }
+  for (const el of document.querySelectorAll(`[data-autore="${autore}"]`)) el.remove()
+  conversazioni = conversazioni.filter(c => c.identita !== autore)
+  if (discAutore === autore) vediElenco()
+  disegnaPosta()
+  segnaVuoto()
+  await caricaBloccati()
+}
+
+async function caricaBloccati() {
+  /** @type {string[]} */ const elenco = await invoke('bloccati').catch(() => [])
+  const lista = document.getElementById('bloccati-lista')
+  if (lista) {
+    lista.replaceChildren(...elenco.filter(k => CHIAVE.test(String(k))).map(k => {
+      const li = document.createElement('li')
+      const c = document.createElement('span')
+      c.className = 'chiave cresce'
+      c.textContent = String(k)
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = 'tasto contorno piccolo'
+      b.textContent = 'Sblocca'
+      b.addEventListener('click', async () => {
+        try { await invoke('sblocca', { chiave: String(k) }); mostra('bloccati-stato', 'sbloccata ✓ (i suoi contenuti tornano al prossimo aggiornamento)') } catch (e) { mostra('bloccati-stato', String(e)) }
+        await caricaBloccati()
+      })
+      li.append(c, b)
+      return li
+    }))
+  }
+  nascondi('bloccati-vuoto', elenco.length > 0)
+}
+
 /** @param {any} p */
 function voce(p) {
   const autore = String(p.autore)
   const li = document.createElement('li')
+  if (CHIAVE.test(autore)) li.setAttribute('data-autore', autore)
   const av = document.createElement('div')
   av.className = 'avatar'
   av.setAttribute('aria-hidden', 'true')
@@ -242,6 +321,8 @@ function voce(p) {
   testo.className = 'testo'
   testo.textContent = String(p.testo)
   const coperto = velo(p, testo)
+  const blocca = tastoBlocca(autore)
+  if (blocca) chi.append(blocca)
   corpo.append(chi, ...(coperto ? [coperto] : []), testo)
   li.append(av, corpo)
   return li
@@ -392,6 +473,7 @@ function mega(/** @type {number} */ n) {
 /** @param {Media} m */
 function voceMedia(m) {
   const li = document.createElement('li')
+  if (CHIAVE.test(String(m.autore))) li.setAttribute('data-autore', String(m.autore))
   const b = document.createElement('button')
   b.type = 'button'
   const cop = document.createElement('span')
@@ -408,7 +490,8 @@ function voceMedia(m) {
   b.addEventListener('click', () => apriMedia(m))
   // I-65: con una bandierina la tessera (titolo e apertura) resta sotto il velo finché non lo apri
   const coperto = velo(m, b)
-  li.append(...(coperto ? [coperto] : []), b)
+  const blocca = tastoBlocca(String(m.autore))
+  li.append(...(coperto ? [coperto] : []), b, ...(blocca ? [blocca] : []))
   return li
 }
 
@@ -694,6 +777,7 @@ async function pubblicaMedia() {
 let forumChiesto = false
 let forumInCorso = false
 /** id della discussione aperta @type {string|null} */ let discAperta = null
+/** chi ha aperto la discussione aperta @type {string|null} */ let discAutore = null
 
 /** @param {Discussione} d */
 function chiDi(d) {
@@ -703,6 +787,7 @@ function chiDi(d) {
 /** @param {Discussione} d */
 function voceDiscussione(d) {
   const li = document.createElement('li')
+  if (CHIAVE.test(String(d.autore))) li.setAttribute('data-autore', String(d.autore))
   const b = document.createElement('button')
   b.type = 'button'
   const t = document.createElement('span')
@@ -745,6 +830,7 @@ async function conFaseForum(comando, lavoro) {
 
 function vediElenco() {
   discAperta = null
+  discAutore = null
   nascondi('forum-aperta', true)
   nascondi('forum-elenco', false)
 }
@@ -768,8 +854,11 @@ async function apriDiscussione(/** @type {string} */ id) {
     const d = await invoke('forum_discussione', { id })
     if (!d) { mostra('forum-stato', 'discussione non trovata sul nodo'); return }
     discAperta = String(d.discussione.id)
+    discAutore = String(d.discussione.autore)
     mostra('disc-titolo', String(d.discussione.titolo) || 'Senza titolo')
     mostra('disc-chi', `${chiDi(d.discussione)} · ${quando(Number(d.discussione.creato))}`)
+    const bd = tastoBlocca(discAutore)
+    document.getElementById('disc-azioni')?.replaceChildren(...(bd ? [bd] : []))
     mostra('disc-testo', String(d.discussione.testo))
     document.getElementById('disc-risposte')?.replaceChildren(...d.risposte.map(voce))
     const veli = d.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
@@ -923,6 +1012,8 @@ function disegnaPosta() {
   if (!c) return
   mostra('filo-nome', titoloDi(c))
   mostra('filo-chiave', c.identita ? String(c.identita) : '')
+  const bf = c.identita ? tastoBlocca(String(c.identita)) : null
+  document.getElementById('filo-azioni')?.replaceChildren(...(bf ? [bf] : []))
   nascondi('filo-sconosciuto', !!c.identita)
   const av = document.getElementById('filo-avatar')
   if (av) { av.className = 'avatar'; vestiAvatar(av, c.identita || c.dm, c.identita ? c.nome : '?') }
@@ -979,6 +1070,7 @@ async function inviaMessaggio() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
+  caricaBloccati()
   document.getElementById('nodo-file-salva')?.addEventListener('click', () => salvaNodoFile(false))
   document.getElementById('nodo-file-togli')?.addEventListener('click', () => salvaNodoFile(true))
   aggiornaNodoFile()

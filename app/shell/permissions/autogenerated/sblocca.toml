@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sblocca"
+description = "Enables the sblocca command without any pre-configured scope."
+commands.allow = ["sblocca"]
+
+[[permission]]
+identifier = "deny-sblocca"
+description = "Denies the sblocca command without any pre-configured scope."
+commands.deny = ["sblocca"]

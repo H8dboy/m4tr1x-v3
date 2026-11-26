@@ -210,6 +210,11 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("nodo_imposta", json!({"indirizzo": "esempio.com"}), "indirizzo non valido"),
         ("nodo_imposta", json!({"indirizzo": "192.0.2.1"}), "indirizzo non valido"),
         ("apri_finestra_seme", json!({"modo": "sconosciuto"}), "modo sconosciuto"),
+        // I-66: l'elenco dei bloccati (vuoto) e chiavi non valide rifiutate prima di toccare il disco
+        ("bloccati", json!({}), OK),
+        ("blocca", json!({"chiave": "../bloccati"}), "chiave non valida"),
+        ("blocca", json!({"chiave": "a".repeat(63)}), "chiave non valida"),
+        ("sblocca", json!({"chiave": "g".repeat(64)}), "chiave non valida"),
     ];
     for (cmd, args, atteso) in comandi {
         let r = chiama(&main, cmd, args);

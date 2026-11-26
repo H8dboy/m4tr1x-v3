@@ -198,6 +198,7 @@
           <article class="scheda discussione-aperta">
             <h2 id="disc-titolo"></h2>
             <p id="disc-chi" class="chi-disc"></p>
+            <div id="disc-azioni" class="azioni"></div>
             <p id="disc-testo" class="testo"></p>
           </article>
           <ol id="disc-risposte" class="feed"></ol>
@@ -263,6 +264,7 @@
                     <p class="nome-filo" id="filo-nome"></p>
                     <p class="chiave" id="filo-chiave"></p>
                   </div>
+                  <div id="filo-azioni" class="azioni"></div>
                 </div>
                 <p id="filo-sconosciuto" class="avviso" hidden>
                   <svg class="ic"><use href="#i-warning"></use></svg>
@@ -322,6 +324,14 @@
               <button type="button" id="profilo-salva" class="tasto pieno">Salva</button>
             </div>
           </div>
+        </div>
+
+        <div class="scheda">
+          <p class="etichetta">Persone bloccate</p>
+          <p class="tenue">I loro post, file, discussioni e messaggi spariscono dalla tua app. L'elenco resta <strong>solo su questo dispositivo</strong>: non si pubblica e chi blocchi non lo sa.</p>
+          <ul id="bloccati-lista" class="bloccati"></ul>
+          <p id="bloccati-vuoto" class="tenue">Non hai bloccato nessuno.</p>
+          <p id="bloccati-stato" class="tenue" aria-live="polite"></p>
         </div>
       </section>
 
