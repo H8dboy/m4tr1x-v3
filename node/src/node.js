@@ -11,6 +11,7 @@ const { normalize } = require('./config')
 const { makeLogger } = require('./log')
 const { openDb } = require('./db')
 const { createRelay } = require('./relay')
+const blobs = require('./blobs')
 const { createHttp } = require('./http')
 const { creaMetriche } = require('./metriche')
 const moderazione = require('../../packages/moderazione')
@@ -105,7 +106,8 @@ async function startNode(input) {
   const policy = cfg.role === 'anchor' ? directory.anchorPolicy({ db, network: cfg.network, limits: cfg.anchorLimits }) : undefined
   const metriche = creaMetriche()
   const relay = createRelay({ db, network: cfg.network, log, policy, limits: cfg.relayLimits, trusted: cfg.uploaders, metriche,
-    moderazione: (/** @type {{ kind: number, content: string }} */ c) => moderazione.analizza(c, regole) })
+    moderazione: (/** @type {{ kind: number, content: string }} */ c) => moderazione.analizza(c, regole),
+    togliFile: (/** @type {string} */ sha) => blobs.removeBlob({ dataDir: cfg.dataDir, db }, sha) })
   const web = createHttp({ cfg, db, log, adminKey, onion: () => onion, version: VERSION, metriche, connessioni: relay.connessioni, versioneRegole: regole.versione })
 
   /** @param {boolean} isPublic */

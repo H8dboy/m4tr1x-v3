@@ -10,6 +10,9 @@
  * - eventi effimeri (kind 20000–29999) inoltrati, mai salvati
  * - segnalazioni (NIP-56, kind 1984; I-67): solo su UN contenuto, mai su una persona, con scadenza; si contano e
  *   restano QUI: nessuna richiesta le restituisce, nessuna sottoscrizione le riceve, nessun peer le copia
+ * - cancellazioni dell'autore (I-68): kind 5 (NIP-09) toglie i SUOI contenuti indicati, kind 62 (NIP-62) toglie
+ *   tutto il suo account (contenuti, file, buste dei messaggi per le sue chiavi DM); entrambe restano come
+ *   lapide, così una copia vecchia che torna da un peer non rientra
  */
 const crypto = require('crypto')
 const { WebSocketServer } = require('ws')
@@ -33,6 +36,30 @@ const nowSec = () => Math.floor(Date.now() / 1000)
 const KIND_SEGNALAZIONE = 1984
 const SEGNALAZIONE_DURATA_MAX = 91 * 24 * 3600
 const SEGNALAZIONE_TESTO_MAX = 500
+/** Cancellazioni dell'autore (I-68). */
+const KIND_CANCELLA = 5
+const KIND_SPARISCI = 62
+const KIND_FILE = 1063
+const KIND_BUSTA = 1059
+const KIND_ANNUNCIO_DM = 10477
+const HEX64 = /^[0-9a-f]{64}$/
+/** Perché una cancellazione (kind 5) non va bene, o null: da 1 a 500 tag `e` con id validi, oltre solo `k` e `net`.
+ * @param {any} ev @returns {string|null} */
+function cancellazioneNonValida(ev) {
+  if (typeof ev.content !== 'string' || ev.content.length > SEGNALAZIONE_TESTO_MAX) return 'testo'
+  const e = ev.tags.filter((/** @type {string[]} */ t) => t[0] === 'e')
+  if (!e.length || e.length > MAX_LIST || !e.every((/** @type {string[]} */ t) => HEX64.test(t[1]))) return 'servono da 1 a 500 contenuti'
+  if (ev.tags.some((/** @type {string[]} */ t) => !['e', 'k', 'net'].includes(t[0]))) return 'tag non ammessi'
+  return null
+}
+/** Perché una richiesta di sparire (kind 62) non va bene, o null: NIP-62 vuole ["relay", "ALL_RELAYS"] (o questo nodo).
+ * @param {any} ev @returns {string|null} */
+function sparizioneNonValida(ev) {
+  if (typeof ev.content !== 'string' || ev.content.length > SEGNALAZIONE_TESTO_MAX) return 'testo'
+  if (!ev.tags.some((/** @type {string[]} */ t) => t[0] === 'relay' && t[1] === 'ALL_RELAYS')) return 'serve ["relay", "ALL_RELAYS"]'
+  if (ev.tags.some((/** @type {string[]} */ t) => !['relay', 'net'].includes(t[0]))) return 'tag non ammessi'
+  return null
+}
 /**
  * Perché una segnalazione non va bene (null se va bene): un solo tag `e` con id e categoria dell'elenco chiuso,
  * una scadenza entro 91 giorni, oltre a questi solo il tag di rete. Niente `p`: si segnala un contenuto, non
@@ -96,7 +123,9 @@ function matches(ev, f) {
  * @typedef {{ maxEventBytes: number, perAuthorMaxEvents: number, perAuthorMaxBytes: number, maxTotalEvents: number, maxTotalBytes: number }} SpaceLimits
  * @param {{ db: import('node:sqlite').DatabaseSync, network: string, log: (s: string) => void, policy?: RelayPolicy,
  *           limits?: SpaceLimits, trusted?: string[], metriche?: ReturnType<typeof import('./metriche').creaMetriche>,
- *           moderazione?: (contenuto: { kind: number, content: string }) => Array<{ categoria: string, peso: number, regole: string[], codice: boolean }> }} ctx
+ *           moderazione?: (contenuto: { kind: number, content: string }) => Array<{ categoria: string, peso: number, regole: string[], codice: boolean }>,
+ *           togliFile?: (sha: string) => void }} ctx
+ *   togliFile: toglie un file del nodo (cancellazioni dell'autore, I-68)
  *   limits: spazio (I-41); trusted: autori esenti da quote e tetto (il proprietario del nodo)
  */
 function createRelay(ctx) {
@@ -116,6 +145,64 @@ function createRelay(ctx) {
   const testoPubblico = (/** @type {{ content: string, tags: string[][] }} */ e) =>
     [e.content, ...e.tags.filter(t => (t[0] === 'subject' || t[0] === 'title') && typeof t[1] === 'string').map(t => t[1])].join('\n')
   const insFlag = db.prepare('INSERT OR REPLACE INTO event_flags (event_id,categoria,peso,regole,codice) VALUES (?,?,?,?,?)')
+  // I-68: lapidi e cancellazioni
+  const qCancellato = db.prepare(`SELECT 1 FROM events d JOIN event_tags t ON t.event_id = d.id
+    WHERE d.kind = ${KIND_CANCELLA} AND d.pubkey = ? AND t.name = 'e' AND t.value = ? LIMIT 1`)
+  const qSparito = db.prepare(`SELECT MAX(created_at) AS t FROM events WHERE kind = ${KIND_SPARISCI} AND pubkey = ?`)
+  const qSuo = db.prepare(`SELECT id, kind, tags FROM events WHERE id = ? AND pubkey = ? AND kind NOT IN (${KIND_CANCELLA}, ${KIND_SPARISCI})`)
+  const qTuttiSuoi = db.prepare(`SELECT id, kind, tags FROM events WHERE pubkey = ? AND created_at <= ? AND kind NOT IN (${KIND_CANCELLA}, ${KIND_SPARISCI})`)
+  const qBusteA = db.prepare(`SELECT DISTINCT e.id FROM events e JOIN event_tags t ON t.event_id = e.id WHERE e.kind = ${KIND_BUSTA} AND t.name = 'p' AND t.value = ?`)
+  const qFileSuoi = db.prepare('SELECT sha256 FROM blobs WHERE pubkey = ?')
+  const qTogliLapidi = db.prepare(`DELETE FROM events WHERE pubkey = ? AND kind IN (${KIND_CANCELLA}, ${KIND_SPARISCI}) AND id <> ?`)
+  const qFileDi = db.prepare('SELECT pubkey FROM blobs WHERE sha256 = ?')
+  // un file si toglie solo se nessun contenuto rimasto lo nomina (lo stesso file può essere di due schede)
+  const qFileUsato = db.prepare(`SELECT 1 FROM events WHERE kind = ${KIND_FILE} AND instr(tags, ?) > 0 LIMIT 1`)
+
+  /** Gli hash dei file di una scheda (intero e pezzi). @param {string[][]} tags */
+  const fileDellaScheda = tags => tags.filter(t => (t[0] === 'x' || t[0] === 'pezzo') && HEX64.test(t[1])).map(t => t[1])
+  /** Toglie i file `shas` se sono dell'autore e nessun contenuto rimasto li usa. @param {string[]} shas @param {string} autore */
+  function togliFileDi(shas, autore) {
+    if (!ctx.togliFile) return
+    for (const sha of new Set(shas)) {
+      const r = /** @type {any} */ (qFileDi.get(sha))
+      if (!r || r.pubkey !== autore || qFileUsato.get(sha)) continue
+      try { ctx.togliFile(sha) } catch (e) { log(`cancellazione: file non tolto (${/** @type {Error} */ (e).message})`) }
+    }
+  }
+  /** Toglie eventi (con le loro bandierine e i loro tag, per la cascata) e poi i file che restano senza scheda.
+   * @param {Array<{ id: string, kind: number, tags: string }>} righe @param {string} autore */
+  function togli(righe, autore) {
+    /** @type {string[]} */ const file = []
+    for (const r of righe) {
+      if (r.kind === KIND_FILE) file.push(...fileDellaScheda(JSON.parse(r.tags)))
+      delEv.run(r.id)
+    }
+    togliFileDi(file, autore)
+    totals = /** @type {any} */ (totalUse.get())
+  }
+  /** Esegue una cancellazione (kind 5) o una sparizione (kind 62) già verificata e salvata. @param {any} ev */
+  function eseguiCancellazione(ev) {
+    if (ev.kind === KIND_CANCELLA) {
+      const righe = ev.tags.filter((/** @type {string[]} */ t) => t[0] === 'e').map((/** @type {string[]} */ t) => qSuo.get(t[1], ev.pubkey)).filter(Boolean)
+      togli(/** @type {any} */ (righe), ev.pubkey)
+      return
+    }
+    // sparire: le buste dei messaggi per le sue chiavi DM (annunciate da lui), poi tutto il suo, poi i suoi file
+    const dm = /** @type {any[]} */ (qTuttiSuoi.all(ev.pubkey, ev.created_at)).filter(r => r.kind === KIND_ANNUNCIO_DM)
+      .flatMap(r => JSON.parse(r.tags).filter((/** @type {string[]} */ t) => t[0] === 'dm' && HEX64.test(t[1])).map((/** @type {string[]} */ t) => t[1]))
+    for (const k of new Set(dm)) for (const b of /** @type {any[]} */ (qBusteA.all(k))) delEv.run(b.id)
+    togli(/** @type {any} */ (qTuttiSuoi.all(ev.pubkey, ev.created_at)), ev.pubkey)
+    togliFileDi(/** @type {any[]} */ (qFileSuoi.all(ev.pubkey)).map(r => r.sha256), ev.pubkey)
+    // una sola lapide per account: questa copre tutte le cancellazioni e le sparizioni di prima
+    qTogliLapidi.run(ev.pubkey, ev.id)
+    totals = /** @type {any} */ (totalUse.get())
+  }
+  /** Una cancellazione è esente dalla quota dell'autore (deve poter cancellare anche a quota piena) solo se toglie
+   * davvero qualcosa di suo: così non serve a riempire il nodo. @param {any} ev */
+  function esenteDaQuota(ev) {
+    if (ev.kind === KIND_SPARISCI) return true
+    return ev.kind === KIND_CANCELLA && Array.isArray(ev.tags) && ev.tags.some((/** @type {any} */ t) => Array.isArray(t) && t[0] === 'e' && typeof t[1] === 'string' && !!qSuo.get(t[1], ev.pubkey))
+  }
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD })
   /** @type {Map<string, { ws: import('ws').WebSocket, sid: string, filters: Record<string, any>[] }>} */
   const subs = new Map()
@@ -172,10 +259,22 @@ function createRelay(ctx) {
       const no = segnalazioneNonValida(ev)
       if (no) return [false, `invalid: segnalazione (${no})`]
     }
+    if (ev.kind === KIND_CANCELLA) {
+      const no = cancellazioneNonValida(ev)
+      if (no) return [false, `invalid: cancellazione (${no})`]
+    }
+    if (ev.kind === KIND_SPARISCI) {
+      const no = sparizioneNonValida(ev)
+      if (no) return [false, `invalid: richiesta di sparire (${no})`]
+    }
+    // I-68: un account sparito non torna con le sue copie vecchie; un contenuto cancellato dal suo autore non rientra
+    const sparito = /** @type {any} */ (qSparito.get(ev.pubkey)).t
+    if (sparito !== null && ev.created_at <= sparito && ev.kind !== KIND_SPARISCI) return [false, 'blocked: account cancellato dal suo autore']
+    if (ev.kind !== KIND_CANCELLA && ev.kind !== KIND_SPARISCI && qCancellato.get(ev.pubkey, ev.id)) return [false, 'blocked: cancellato dal suo autore']
     // Spazio (I-41): un autore o un peer non possono riempire il nodo
     const size = Buffer.byteLength(JSON.stringify({ id: ev.id, pubkey: ev.pubkey, created_at: ev.created_at, kind: ev.kind, tags: ev.tags, content: ev.content, sig: ev.sig }))
     if (size > L.maxEventBytes) return [false, `invalid: evento troppo grande (${size} byte, massimo ${L.maxEventBytes})`]
-    if (!trusted.has(ev.pubkey) && !isEphemeral(ev.kind)) {
+    if (!trusted.has(ev.pubkey) && !isEphemeral(ev.kind) && !esenteDaQuota(ev)) {
       const a = /** @type {any} */ (authorUse.get(ev.pubkey))
       if (a.n >= L.perAuthorMaxEvents || a.b + size > L.perAuthorMaxBytes) return [false, 'blocked: quota di questo autore esaurita su questo nodo']
       if (totals.n >= L.maxTotalEvents || totals.b + size > L.maxTotalBytes) return [false, 'blocked: relay pieno']
@@ -187,6 +286,7 @@ function createRelay(ctx) {
     const clean = { id: ev.id, pubkey: ev.pubkey, created_at: ev.created_at, kind: ev.kind, tags: ev.tags, content: ev.content, sig: ev.sig }
     if (isEphemeral(clean.kind)) { broadcast(clean, source); return [true, ''] }
     const fresh = store(clean)
+    if (fresh && (clean.kind === KIND_CANCELLA || clean.kind === KIND_SPARISCI)) eseguiCancellazione(clean)
     if (fresh && ctx.moderazione) {
       // I-65: all'analizzatore solo kind e testo, mai chi ha scritto; le bandierine restano legate all'evento
       try {

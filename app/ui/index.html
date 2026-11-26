@@ -324,6 +324,19 @@
               <button type="button" id="profilo-salva" class="tasto pieno">Salva</button>
             </div>
           </div>
+
+          <div class="scheda pericolo">
+            <p class="etichetta">Cancella il tuo account</p>
+            <p class="tenue">Il tuo nodo (e il nodo dei file, se ne usi uno) toglie <strong>tutto ciò che è tuo</strong>: post, risposte, discussioni, file, profilo e i messaggi che ti sono arrivati. La richiesta resta sul nodo come lapide, così una copia vecchia che torna da un altro nodo non rientra. Poi le tue chiavi lasciano questo dispositivo.</p>
+            <p class="tenue">Da sapere: chi ha già scaricato o copiato i tuoi contenuti può averli ancora, e un nodo che non riceve la richiesta non li toglie. Con le 24 parole potresti ricreare la stessa identità.</p>
+            <label for="account-conferma" class="etichetta">Scrivi CANCELLA per confermare</label>
+            <input id="account-conferma" class="campo mono" maxlength="20" autocomplete="off" spellcheck="false" placeholder="CANCELLA">
+            <div class="riga">
+              <span id="account-stato" class="tenue cresce" aria-live="polite"></span>
+              <button type="button" id="account-dimentica" class="tasto contorno">Togli solo da questo dispositivo</button>
+              <button type="button" id="account-cancella" class="tasto rosso">Cancella il mio account</button>
+            </div>
+          </div>
         </div>
 
         <div class="scheda">

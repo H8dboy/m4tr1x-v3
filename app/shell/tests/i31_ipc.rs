@@ -220,6 +220,12 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("segnala", json!({"id": "non-un-id", "categoria": "spam"}), "forma non valida: id del contenuto"),
         ("segnala", json!({"id": "a".repeat(64), "categoria": "persona"}), "forma non valida: categoria"),
         ("azioni_avanzamento", json!({}), OK),
+        // I-68: senza la parola nessuna cancellazione; senza rete le chiavi NON si toccano (controllo sotto)
+        ("cancella", json!({"id": "a".repeat(64)}), "tor non configurato"),
+        ("cancella", json!({"id": "non-un-id"}), "forma non valida: id del contenuto"),
+        ("account_cancella", json!({"conferma": "cancella"}), "per cancellare l'account scrivi CANCELLA"),
+        ("account_cancella", json!({"conferma": "CANCELLA"}), "tor non configurato"),
+        ("identita_dimentica", json!({"conferma": "si"}), "per togliere l'identità"),
     ];
     for (cmd, args, atteso) in comandi {
         let r = chiama(&main, cmd, args);
@@ -233,6 +239,14 @@ fn nessuna_chiave_raggiunge_il_javascript() {
     assert_eq!(chiama(&main, "stato", json!({})).unwrap()["trasporto"], "spento", "tor dell'app acceso durante la prova");
     let id = chiama(&main, "identita", json!({})).expect("identita");
     assert!(id["identity"].as_str().is_some_and(|s| s.len() == 64), "identità pubblica attesa nella risposta: {id}");
+    // I-68: la cancellazione dell'account non partita (tor spento) ha lasciato le chiavi dove sono
+    assert_eq!(memoria.voci.lock().unwrap().len(), 3, "le chiavi sono sparite senza il sì del nodo");
+    // solo dal dispositivo: con la parola giusta il portachiavi si svuota, e l'identità non c'è più
+    let r = chiama(&main, "identita_dimentica", json!({"conferma": "CANCELLA"}));
+    assert!(r.is_ok(), "identita_dimentica rifiutata: {r:?}");
+    controlla("identita_dimentica", &r, &segreti, &parole, false);
+    assert!(memoria.voci.lock().unwrap().is_empty(), "nel portachiavi resta qualcosa dopo identita_dimentica");
+    assert!(chiama(&main, "identita", json!({})).unwrap().is_null(), "identità ancora presente");
 
     // la prova vede davvero le fughe: una risposta con un pezzo di chiave viene presa
     let finta = Ok(json!({ "x": segreti[0].1[3..3 + FRAMMENTO].iter().map(|b| format!("{b:02x}")).collect::<String>() }));

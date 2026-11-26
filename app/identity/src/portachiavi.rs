@@ -147,6 +147,17 @@ pub fn dimentica_dm_ruotate(p: &dyn Portachiavi) -> Result<(), IdentityError> {
     p.cancella(VOCE_DM_CORRENTE)
 }
 
+/// Cancella dal portachiavi TUTTE le chiavi di questa identità (account cancellato, I-68): le chiavi DM ruotate e
+/// il numero della corrente, poi identity, dm e wallet. Dopo, `identita_salvata` dice None. Chi ha le 24 parole può
+/// ancora ricostruirle: il seme non è mai stato qui.
+pub fn dimentica_tutto(p: &dyn Portachiavi) -> Result<(), IdentityError> {
+    dimentica_dm_ruotate(p)?;
+    for r in RUOLI_SALVATI {
+        p.cancella(&voce(r, 1))?;
+    }
+    Ok(())
+}
+
 /// Gestione credenziali di Windows (e i portachiavi nativi degli altri sistemi).
 pub struct Sistema;
 

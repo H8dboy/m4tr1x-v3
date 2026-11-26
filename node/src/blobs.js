@@ -143,4 +143,15 @@ function fetchVerified(baseUrl, sha, o = {}) {
   }).finally(() => clearTimeout(scadenza))
 }
 
-module.exports = { SHA_RE, TEMPO_MASSIMO_BLOB_MS, blobPath, checkUploadAuth, receiveUpload, storeVerified, fetchVerified }
+/**
+ * Toglie un file dal nodo (cancellazione dell'autore, I-68): il file e la sua riga. Chi chiama ha già controllato
+ * che sia dell'autore e che nessun altro contenuto rimasto lo usi.
+ * @param {{ dataDir: string, db: import('node:sqlite').DatabaseSync }} ctx @param {string} sha
+ */
+function removeBlob(ctx, sha) {
+  if (!SHA_RE.test(sha)) return
+  try { fs.unlinkSync(blobPath(ctx.dataDir, sha)) } catch (e) { if (/** @type {any} */ (e).code !== 'ENOENT') throw e }
+  ctx.db.prepare('DELETE FROM blobs WHERE sha256 = ?').run(sha)
+}
+
+module.exports = { SHA_RE, TEMPO_MASSIMO_BLOB_MS, blobPath, checkUploadAuth, receiveUpload, storeVerified, fetchVerified, removeBlob }

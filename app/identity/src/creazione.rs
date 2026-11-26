@@ -120,6 +120,21 @@ mod tests {
     use crate::portachiavi::Memoria;
     use crate::Ruolo;
 
+    #[test]
+    fn dimentica_tutto_lascia_il_portachiavi_vuoto() {
+        let p = Memoria::default();
+        let c = CreazioneInCorso::nuova().unwrap();
+        c.conferma(&risposte_giuste(&c), &p).unwrap();
+        portachiavi::ruota_dm(&p).unwrap();
+        portachiavi::ruota_dm(&p).unwrap();
+        assert!(identita_salvata(&p).unwrap().is_some());
+        portachiavi::dimentica_tutto(&p).unwrap();
+        assert!(identita_salvata(&p).unwrap().is_none());
+        assert!(p.voci.lock().unwrap().is_empty(), "nel portachiavi resta qualcosa: {:?}", p.voci.lock().unwrap().keys().collect::<Vec<_>>());
+        // due volte: innocuo
+        portachiavi::dimentica_tutto(&p).unwrap();
+    }
+
     fn risposte_giuste(c: &CreazioneInCorso) -> Vec<String> {
         c.posizioni().iter().map(|&i| c.parole()[i].to_string()).collect()
     }

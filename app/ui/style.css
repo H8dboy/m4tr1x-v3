@@ -299,3 +299,8 @@ button, input, textarea { font: inherit; color: inherit; }
 .pannello-segnala { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pannello-segnala[hidden] { display: none; }
 .campo.piccolo { width: auto; padding: 4px 8px; font-size: 12px; }
+
+/* Cancellare l'account (I-68) */
+.scheda.pericolo { border-color: rgba(255, 107, 107, 0.35); }
+.tasto.rosso { background: #ff6b6b; color: #1a0505; }
+.tasto.rosso:hover { background: #ff8787; }
