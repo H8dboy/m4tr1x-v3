@@ -8,9 +8,11 @@
 
 pub mod api;
 pub mod api_seme;
+pub mod bloccati;
 
 use api::{Avanzamento, CellePronte, CelleStato, Discussione, DiscussioneAperta, Feed, FilePronto, Forum, Galleria, Identita, Media, Messaggio, Post, Posta, Profilo, Stato};
 use api_seme::SemeDaMostrare;
+use bloccati::Bloccati;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::{firma_come_identita, Portachiavi, Sistema};
 use m4tr1x_transport::{OnionV3, TorProcessConfig, TorProcessTransport, Transport, TransportStatus};
@@ -251,7 +253,7 @@ fn stato(rete: tauri::State<'_, Rete>) -> Stato {
 /// tentativi da 30 s fino a 4 minuti; la fase si legge con `feed_avanzamento`.
 /// Gli errori dicono cosa manca o quanto si è aspettato, mai l'indirizzo del nodo.
 #[tauri::command]
-async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Feed, String> {
+async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Feed, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
     let op = &op.feed;
@@ -261,9 +263,11 @@ async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) ->
     let esito = async {
         attendi_tor(&tor, op).await?;
         // budget scaduto → attesa di un minuto con conto alla rovescia → una ripresa (fondatore, 20/10/2026)
-        let f = m4tr1x_feed::leggi_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let mut f = m4tr1x_feed::leggi_con_ripresa(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
+        // I-66: chi hai bloccato non arriva all'interfaccia
+        f.post.retain(|p| !bloccati.contiene(&p.autore));
         // bandierine della moderazione (I-65): se il nodo non le dà, il feed si vede lo stesso, senza veli, e lo si dice
         let ids: Vec<String> = f.post.iter().map(|p| p.id.clone()).collect();
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
@@ -455,7 +459,7 @@ fn sezione_da(s: &str) -> Result<m4tr1x_protocol::Sezione, String> {
 
 /// Le schede di una sezione ("signal", "film", "musica").
 #[tauri::command]
-async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Galleria, String> {
+async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Galleria, String> {
     let sez = sezione_da(&sezione)?;
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
@@ -465,9 +469,10 @@ async fn media(sezione: String, rete: tauri::State<'_, Rete>, op: tauri::State<'
     }
     let esito = async {
         attendi_tor(&tor, op).await?;
-        let g = m4tr1x_feed::leggi_media(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, sez, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let mut g = m4tr1x_feed::leggi_media(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, sez, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
+        g.media.retain(|m| !bloccati.contiene(&m.autore)); // I-66
         // bandierine (I-65) sulle schede: se il nodo non le dà, si vede lo stesso, senza veli, e lo si dice
         let ids: Vec<String> = g.media.iter().map(|m| m.id.clone()).collect();
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
@@ -1033,7 +1038,7 @@ async fn pubblica_nel_forum(rete: &Rete, op: &Operazione, evento: &m4tr1x_protoc
 
 /// Le discussioni del forum dal nodo, verificate nel lato Rust.
 #[tauri::command]
-async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Forum, String> {
+async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Forum, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
     let op = &op.forum;
@@ -1042,9 +1047,10 @@ async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -
     }
     let esito = async {
         attendi_tor(&tor, op).await?;
-        let f = m4tr1x_feed::leggi_forum(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
+        let mut f = m4tr1x_feed::leggi_forum(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
+        f.discussioni.retain(|d| !bloccati.contiene(&d.autore)); // I-66
         // bandierine (I-65) sulle discussioni (titolo e testo)
         let ids: Vec<String> = f.discussioni.iter().map(|d| d.id.clone()).collect();
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
@@ -1057,7 +1063,7 @@ async fn forum(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -
 
 /// Una discussione con le sue risposte. Ok(None): il nodo non ce l'ha (o l'id non è di una discussione).
 #[tauri::command]
-async fn forum_discussione(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>) -> Result<Option<DiscussioneAperta>, String> {
+async fn forum_discussione(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>) -> Result<Option<DiscussioneAperta>, String> {
     if id.len() != 64 || !id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) {
         return Err("id della discussione non valido".into());
     }
@@ -1072,7 +1078,10 @@ async fn forum_discussione(id: String, rete: tauri::State<'_, Rete>, op: tauri::
         let d = m4tr1x_feed::leggi_discussione(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &id, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f)))
             .await
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
-        let Some(d) = d.map(DiscussioneAperta::from) else { return Ok(None) };
+        // I-66: la discussione di chi hai bloccato non si apre; le sue risposte nelle altre non si vedono
+        let Some(mut d) = d.filter(|d| !bloccati.contiene(&d.discussione.autore)) else { return Ok(None) };
+        d.risposte.retain(|r| !bloccati.contiene(&r.autore));
+        let d = DiscussioneAperta::from(d);
         // bandierine (I-65) sulla discussione e su ogni risposta
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &d.ids()).await.ok();
         Ok(Some(d.con_bandierine(veli.as_ref())))
@@ -1124,7 +1133,7 @@ fn errore_posta(e: m4tr1x_posta::ErrorePosta) -> String {
 /// La chiave dei messaggi si legge dal portachiavi solo dentro m4tr1x-posta, per il tempo di aprire le
 /// buste: qui non passa e all'interfaccia arrivano solo testi e chiavi PUBBLICHE.
 #[tauri::command]
-async fn messaggi(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<Posta, String> {
+async fn messaggi(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>, bloccati: tauri::State<'_, Bloccati>) -> Result<Posta, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
     let portachiavi = chiavi.0.clone();
@@ -1134,7 +1143,10 @@ async fn messaggi(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>
     }
     let esito = async {
         attendi_tor(&tor, op).await?;
-        m4tr1x_posta::leggi(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &*portachiavi, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map(Posta::from).map_err(errore_posta)
+        let mut p = m4tr1x_posta::leggi(&*tor, &nodo, m4tr1x_protocol::Rete::Prova, &*portachiavi, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map(Posta::from).map_err(errore_posta)?;
+        // I-66: le conversazioni con chi hai bloccato non arrivano all'interfaccia
+        p.conversazioni.retain(|c| c.identita.as_deref().is_none_or(|i| !bloccati.contiene(i)));
+        Ok(p)
     }
     .await;
     op.in_corso.store(false, Ordering::SeqCst);
@@ -1177,6 +1189,29 @@ fn messaggi_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
 #[tauri::command]
 fn pubblica_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.post.fase()
+}
+
+// ─── Persone bloccate (I-66) ──────────────────────────────────────────────────
+// Elenco solo su questo dispositivo, mai pubblicato; si applica qui, prima dell'interfaccia (bloccati.rs).
+
+/// Le chiavi pubbliche che hai bloccato.
+#[tauri::command]
+fn bloccati(bloccati: tauri::State<'_, Bloccati>) -> Vec<String> {
+    bloccati.elenco()
+}
+
+/// Blocca la persona con chiave pubblica d'identità `chiave`: i suoi contenuti e i suoi messaggi spariscono
+/// dall'app. Non si pubblica niente e lei non lo sa.
+#[tauri::command]
+fn blocca(chiave: String, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<(), String> {
+    let mia = creazione::identita_salvata(&*chiavi.0).ok().flatten().map(|i| i.identity);
+    bloccati.blocca(&chiave, mia.as_deref())
+}
+
+/// Sblocca `chiave`.
+#[tauri::command]
+fn sblocca(chiave: String, bloccati: tauri::State<'_, Bloccati>) -> Result<(), String> {
+    bloccati.sblocca(&chiave)
 }
 
 /// Identità salvata (solo chiavi pubbliche), se c'è.
@@ -1272,6 +1307,7 @@ pub fn costruisci<R: Runtime>(
         .manage(Chiavi(chiavi))
         .setup(move |app| {
             prima(app)?;
+            app.manage(Bloccati::apri(Some(app.path().app_data_dir()?.join("bloccati"))));
             let rete = avvia_rete(app)?;
             app.manage(rete);
             Ok(())
@@ -1284,7 +1320,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca])
 }
 
 pub fn run() {

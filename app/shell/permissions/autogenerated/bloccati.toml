@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bloccati"
+description = "Enables the bloccati command without any pre-configured scope."
+commands.allow = ["bloccati"]
+
+[[permission]]
+identifier = "deny-bloccati"
+description = "Denies the bloccati command without any pre-configured scope."
+commands.deny = ["bloccati"]
