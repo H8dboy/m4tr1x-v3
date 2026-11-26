@@ -34,7 +34,7 @@ before(async () => {
   for (const e of [ev.codice, ev.pulito, ev.busta, ev.discussione, ev.reel]) await manda(e)
   // due persone segnalano il post pulito (una due volte): contano 2
   for (const [chi, n] of [[bruno, 0], [bruno, 1], [carla, 0]])
-    await manda(protocol.buildEvent({ kind: 1984, content: '', tags: [['e', ev.pulito.id, 'spam']], created_at: Math.floor(Date.now() / 1000) - /** @type {number} */ (n) }, chi, NET))
+    await manda(protocol.buildEvent({ kind: 1984, content: '', tags: [['e', ev.pulito.id, 'spam'], ['expiration', String(Math.floor(Date.now() / 1000) + 86400)]], created_at: Math.floor(Date.now() / 1000) - /** @type {number} */ (n) }, chi, NET))
   ws.close()
 })
 after(() => t.close())

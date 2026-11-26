@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-segnala"
+description = "Enables the segnala command without any pre-configured scope."
+commands.allow = ["segnala"]
+
+[[permission]]
+identifier = "deny-segnala"
+description = "Denies the segnala command without any pre-configured scope."
+commands.deny = ["segnala"]
