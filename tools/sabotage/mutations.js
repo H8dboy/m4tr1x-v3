@@ -805,4 +805,13 @@ module.exports = [
     find: "    let fino = fino.min(ora);\n", replace: "    let _ = ora;\n", test: T("inv-71-notifiche"), timeoutMs: 1800000 },
   { id: "notifiche-ui-storte", rule: "I-71", name: "l'interfaccia mostra notifiche storte", file: "app/ui/main.js",
     find: "  if (!n || !CHIAVE.test(String(n.autore)) || !CHIAVE.test(String(n.contenuto)) || !['mi_piace', 'risposta'].includes(n.tipo)) return null", replace: "  if (!n) return null", test: T("inv-71-notifiche") },
+  // I-72, cerca (26/11/2026)
+  { id: "cerca-al-lato-rust", rule: "I-72", name: "la parola cercata passa al lato Rust", file: "app/ui/main.js",
+    find: "  const q = perCercare(c.value.trim())\n", replace: "  const q = perCercare(c.value.trim())\n  invoke('feed', { soloSeguiti: q === '' })\n", test: T("inv-72-cerca") },
+  { id: "cerca-non-filtra", rule: "I-72", name: "la ricerca non nasconde niente", file: "app/ui/main.js",
+    find: "    li.hidden = q !== '' && !dove.includes(q)", replace: "    li.hidden = false", test: T("inv-72-cerca") },
+  { id: "cerca-accenti", rule: "I-72", name: "la ricerca non regge accenti e maiuscole", file: "app/ui/main.js",
+    find: "  return String(t).toLowerCase().normalize(", replace: "  return String(t).normalize(", test: T("inv-72-cerca") },
+  { id: "cerca-non-riapplica", rule: "I-72", name: "dopo l'aggiornamento il filtro non si riapplica", file: "app/ui/main.js",
+    find: "    if (lista) lista.replaceChildren(...f.post.map(voce))\n    filtraLista('cerca-feed')\n", replace: "    if (lista) lista.replaceChildren(...f.post.map(voce))\n", test: T("inv-72-cerca") },
 ]

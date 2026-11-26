@@ -318,3 +318,6 @@ button, input, textarea { font: inherit; color: inherit; }
 .notifiche { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
 .notifica { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
 .notifica.nuova { font-weight: 600; }
+
+/* Cerca (I-72) */
+.riga.cerca { gap: 8px; align-items: center; margin: 6px 0; }

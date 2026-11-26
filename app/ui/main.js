@@ -241,6 +241,33 @@ function tastoConConferma(testo, conferma, azione) {
 }
 
 /** Il tasto "Blocca" per l'autore di un contenuto; niente per i tuoi contenuti. @param {string} autore */
+// ─── Cerca (I-72) ─────────────────────────────────────────────────────────────
+// Solo su questo dispositivo, tra ciò che è già scaricato e verificato: la parola cercata non esce mai dall'app
+// (né verso il nodo né verso il lato Rust). Si cerca nel testo visibile e nella chiave dell'autore.
+/** @type {Record<string, string>} */
+const CERCA = { 'cerca-feed': 'feed-lista', 'cerca-media': 'media-lista', 'cerca-forum': 'forum-lista' }
+
+/** Normalizza per cercare: minuscolo, senza accenti. @param {string} t */
+function perCercare(t) {
+  return String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+/** Nasconde le voci di `listaId` che non contengono la parola del campo `campoId`. @param {string} campoId */
+function filtraLista(campoId) {
+  const c = /** @type {HTMLInputElement|null} */ (document.getElementById(campoId))
+  const lista = document.getElementById(CERCA[campoId] || '')
+  if (!c || !lista) return
+  const q = perCercare(c.value.trim())
+  let viste = 0
+  for (const li of /** @type {any} */ (lista).children) {
+    const dove = perCercare(li.textContent + ' ' + (li.getAttribute('data-autore') || ''))
+    li.hidden = q !== '' && !dove.includes(q)
+    if (!li.hidden) viste++
+  }
+  const conta = document.getElementById(campoId + '-conta')
+  if (conta) conta.textContent = q ? `${viste} trovati` : ''
+}
+
 // ─── Notifiche (I-71) ─────────────────────────────────────────────────────────
 // Le calcola il lato Rust; qui si disegnano senza testo (chi, cosa, quando). Una risposta apre la discussione.
 let notificheInCorso = false
@@ -609,6 +636,7 @@ async function aggiornaFeed() {
     const f = await invoke('feed', { soloSeguiti })
     const lista = document.getElementById('feed-lista')
     if (lista) lista.replaceChildren(...f.post.map(voce))
+    filtraLista('cerca-feed')
     const scartati = Number(f.scartati) ? ` · ${Number(f.scartati)} scartati (non validi)` : ''
     const veli = f.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
     const chi = soloSeguiti ? ' di chi segui' : ''
@@ -804,6 +832,7 @@ async function caricaMedia() {
     if (s !== sezioneAperta) return
     const lista = Array.isArray(g.media) ? g.media : []
     document.getElementById('media-lista')?.replaceChildren(...lista.map(voceMedia))
+    filtraLista('cerca-media')
     nascondi('media-vuoto', lista.length > 0)
     const scartati = Number(g.scartati) ? ` · ${Number(g.scartati)} scartati (non validi)` : ''
     const veli = g.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
@@ -1104,6 +1133,7 @@ async function caricaForum() {
     const f = await invoke('forum')
     const lista = Array.isArray(f.discussioni) ? f.discussioni : []
     document.getElementById('forum-lista')?.replaceChildren(...lista.map(voceDiscussione))
+    filtraLista('cerca-forum')
     nascondi('forum-vuoto', lista.length > 0)
     const scartati = Number(f.scartati) ? ` · ${Number(f.scartati)} scartati (non validi)` : ''
     const veli = f.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
@@ -1338,6 +1368,7 @@ document.addEventListener('DOMContentLoaded', () => {
   caricaBloccati()
   caricaSeguiti()
   document.getElementById('notifiche-aggiorna')?.addEventListener('click', aggiornaNotifiche)
+  for (const id of Object.keys(CERCA)) document.getElementById(id)?.addEventListener('input', () => filtraLista(id))
   document.getElementById('feed-filtro')?.addEventListener('click', () => {
     soloSeguiti = !soloSeguiti
     const b = document.getElementById('feed-filtro')
