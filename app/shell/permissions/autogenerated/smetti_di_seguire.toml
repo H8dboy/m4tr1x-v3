@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-smetti-di-seguire"
+description = "Enables the smetti_di_seguire command without any pre-configured scope."
+commands.allow = ["smetti_di_seguire"]
+
+[[permission]]
+identifier = "deny-smetti-di-seguire"
+description = "Denies the smetti_di_seguire command without any pre-configured scope."
+commands.deny = ["smetti_di_seguire"]

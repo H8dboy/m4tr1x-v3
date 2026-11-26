@@ -308,3 +308,8 @@ button, input, textarea { font: inherit; color: inherit; }
 /* Mi piace (I-69) */
 .tasto-azione.mi-piace { margin-left: 0; font-size: 12px; }
 .tasto-azione.mi-piace[aria-pressed="true"] { color: #ff6b9a; }
+
+/* Chi segui (I-70) */
+.filtro-feed { gap: 8px; align-items: center; margin: 4px 0; }
+.tasto.piccolo { padding: 4px 10px; font-size: 12px; }
+.tasto-azione.segui[aria-pressed="true"] { color: var(--accento, #7cf); }

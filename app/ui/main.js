@@ -241,6 +241,44 @@ function tastoConConferma(testo, conferma, azione) {
 }
 
 /** Il tasto "Blocca" per l'autore di un contenuto; niente per i tuoi contenuti. @param {string} autore */
+// ─── Chi segui (I-70) ─────────────────────────────────────────────────────────
+// L'elenco lo tiene il lato Rust, solo su questo dispositivo; qui serve solo a disegnare "Segui"/"Segui già".
+/** @type {Set<string>} */
+let seguiti = new Set()
+let soloSeguiti = false
+
+async function caricaSeguiti() {
+  const l = await invoke('seguiti').catch(() => [])
+  seguiti = new Set(Array.isArray(l) ? l.filter(k => typeof k === 'string' && CHIAVE.test(k)) : [])
+}
+
+/** "Segui" / "Segui già ✓" su un autore (non su te stesso, non senza identità). @param {string} autore */
+function tastoSegui(autore) {
+  if (!identita || !CHIAVE.test(autore) || identita.identity === autore) return null
+  const b = document.createElement('button')
+  b.type = 'button'
+  b.className = 'tasto-azione segui'
+  const disegna = () => {
+    const si = seguiti.has(autore)
+    b.textContent = si ? 'Segui già ✓' : 'Segui'
+    b.setAttribute('aria-pressed', si ? 'true' : 'false')
+  }
+  disegna()
+  b.title = 'Chi segui resta solo su questo dispositivo'
+  b.addEventListener('click', async ev => {
+    ev.stopPropagation()
+    b.disabled = true
+    try {
+      if (seguiti.has(autore)) { await invoke('smetti_di_seguire', { chiave: autore }); seguiti.delete(autore) }
+      else { await invoke('segui', { chiave: autore }); seguiti.add(autore) }
+      disegna()
+    } catch (e) {
+      b.title = String(e)
+    } finally { b.disabled = false }
+  })
+  return b
+}
+
 function tastoBlocca(autore) {
   if (!CHIAVE.test(autore) || (identita && identita.identity === autore)) return null
   return tastoConConferma('Blocca', 'Tocca ancora per bloccare', () => blocca(autore))
@@ -254,6 +292,7 @@ async function blocca(autore) {
     mostra('bloccati-stato', String(e))
     return
   }
+  seguiti.delete(autore)
   for (const el of document.querySelectorAll(`[data-autore="${autore}"]`)) el.remove()
   conversazioni = conversazioni.filter(c => c.identita !== autore)
   if (discAutore === autore) vediElenco()
@@ -473,7 +512,9 @@ function voce(p) {
   const segnala = tastoSegnala(String(p.id), autore)
   const elimina = tastoElimina(String(p.id), autore, () => { li.remove(); segnaVuoto() })
   const piace = tastoMiPiace(p)
+  const segui = tastoSegui(autore)
   if (piace) chi.append(piace)
+  if (segui) chi.append(segui)
   if (segnala) chi.append(segnala)
   if (blocca) chi.append(blocca)
   if (elimina) chi.append(elimina)
@@ -501,12 +542,13 @@ async function aggiornaFeed() {
   }, 1000)
   mostra('feed-stato', 'sto cercando il nodo…')
   try {
-    const f = await invoke('feed')
+    const f = await invoke('feed', { soloSeguiti })
     const lista = document.getElementById('feed-lista')
     if (lista) lista.replaceChildren(...f.post.map(voce))
     const scartati = Number(f.scartati) ? ` · ${Number(f.scartati)} scartati (non validi)` : ''
     const veli = f.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
-    mostra('feed-stato', `${f.post.length} post in ${Number(f.secondi)} s${scartati}${veli}`)
+    const chi = soloSeguiti ? ' di chi segui' : ''
+    mostra('feed-stato', `${f.post.length} post${chi} in ${Number(f.secondi)} s${scartati}${veli}`)
   } catch (e) {
     mostra('feed-stato', String(e))
   } finally {
@@ -1230,6 +1272,13 @@ async function inviaMessaggio() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
   caricaBloccati()
+  caricaSeguiti()
+  document.getElementById('feed-filtro')?.addEventListener('click', () => {
+    soloSeguiti = !soloSeguiti
+    const b = document.getElementById('feed-filtro')
+    if (b) { b.textContent = soloSeguiti ? 'Chi segui' : 'Tutti'; b.setAttribute('aria-pressed', soloSeguiti ? 'true' : 'false') }
+    aggiornaFeed()
+  })
   document.getElementById('account-cancella')?.addEventListener('click', () => cancellaAccount(false))
   document.getElementById('account-dimentica')?.addEventListener('click', () => cancellaAccount(true))
   document.getElementById('nodo-file-salva')?.addEventListener('click', () => salvaNodoFile(false))
