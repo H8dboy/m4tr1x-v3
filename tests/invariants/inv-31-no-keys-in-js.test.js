@@ -147,7 +147,7 @@ test('chiave d\'identità: letta solo per firmare, mai tenuta dal guscio', () =>
   const aiuto = /fn firma_con_la_mia_identita\([\s\S]*?\n}\n/.exec(lib)
   assert.ok(aiuto && aiuto[0].includes('firma_come_identita('), 'firma_come_identita fuori da firma_con_la_mia_identita')
   const chiamanti = [...lib.matchAll(/async fn (\w+)\([^)]*\)[^{]*\{[\s\S]*?\n}\n/g)].filter(m => m[0].includes('firma_con_la_mia_identita(')).map(m => m[1]).sort()
-  assert.deepEqual(chiamanti, ['account_cancella', 'cancella', 'celle_pubblica', 'forum_pubblica', 'forum_rispondi', 'media_pubblica', 'profilo_salva', 'pubblica', 'segnala'], `la tua identità firma da: ${chiamanti}`)
+  assert.deepEqual(chiamanti, ['account_cancella', 'cancella', 'celle_pubblica', 'forum_pubblica', 'forum_rispondi', 'media_pubblica', 'mi_piace', 'profilo_salva', 'pubblica', 'segnala'], `la tua identità firma da: ${chiamanti}`)
   const pc = read(path.join(ROOT, 'app', 'identity', 'src', 'portachiavi.rs'))
   assert.match(pc, /let v = Zeroizing::new\(v\);/, 'il buffer letto dal portachiavi non si cancella')
   assert.match(pc, /fn leggi\(&self, voce: &str\) -> Result<Option<Zeroizing<\[u8; 32\]>>, IdentityError>;/, 'il portachiavi restituisce il segreto senza Zeroizing')

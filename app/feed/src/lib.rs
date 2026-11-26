@@ -151,6 +151,56 @@ pub async fn bandierine<T: Transport>(t: &T, nodo: &OnionV3, ids: &[String]) -> 
     Ok(tutte)
 }
 
+// ─── Mi piace (I-69) ─────────────────────────────────────────────────────────
+
+/// Quante persone diverse hanno messo "mi piace" a un contenuto, e la TUA reazione (il suo id, per toglierla).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Reazioni {
+    pub quante: u32,
+    pub mia: Option<String>,
+}
+
+/// Reazioni chieste al nodo per gruppo di contenuti (il nodo ne restituisce al massimo 500 per richiesta).
+pub const QUANTE_REAZIONI: u64 = 500;
+
+/// Conta i "mi piace" validi per i contenuti `ids`: solo eventi VERIFICATI (firma, rete), solo la forma di
+/// `mi_piace_a`, solo per contenuti chiesti, una persona conta una volta. `mia`: la tua chiave pubblica.
+pub fn conta_mi_piace(grezzi: Vec<Value>, rete: Rete, ids: &[String], mia: Option<&str>) -> std::collections::HashMap<String, Reazioni> {
+    use std::collections::{HashMap, HashSet};
+    let chiesti: HashSet<&str> = ids.iter().map(String::as_str).collect();
+    let mut chi: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut mie: HashMap<String, (u64, String)> = HashMap::new();
+    for g in grezzi {
+        let Ok(e) = verifica(&g, rete) else { continue };
+        let Some(a) = m4tr1x_protocol::mi_piace_a(&e) else { continue };
+        if !chiesti.contains(a) {
+            continue;
+        }
+        let a = a.to_string();
+        if mia == Some(e.pubkey.as_str()) && mie.get(&a).is_none_or(|(t, _)| e.created_at > *t) {
+            mie.insert(a.clone(), (e.created_at, e.id.clone()));
+        }
+        chi.entry(a).or_default().insert(e.pubkey);
+    }
+    chi.into_iter()
+        .map(|(id, p)| {
+            let mia = mie.remove(&id).map(|(_, r)| r);
+            (id, Reazioni { quante: u32::try_from(p.len()).unwrap_or(u32::MAX), mia })
+        })
+        .collect()
+}
+
+/// I "mi piace" dei contenuti `ids`, a gruppi di 100. Sono un di più: chi chiama mostra i contenuti anche senza.
+pub async fn mi_piace<T: Transport>(t: &T, nodo: &OnionV3, rete: Rete, ids: &[String], mia: Option<&str>) -> Result<std::collections::HashMap<String, Reazioni>, NonRaggiungibile> {
+    let mut tutte = std::collections::HashMap::new();
+    for gruppo in ids.chunks(100) {
+        let filtro = json!({ "kinds": [m4tr1x_protocol::KIND_REAZIONE], "#e": gruppo, "limit": QUANTE_REAZIONI });
+        let grezzi = richiedi(t, nodo, &[filtro], BUDGET_BANDIERINE, |_| {}).await?.into_iter().flatten().collect();
+        tutte.extend(conta_mi_piace(grezzi, rete, gruppo, mia));
+    }
+    Ok(tutte)
+}
+
 /// Post pubblicato: quanto ci è voluto.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pubblicato {

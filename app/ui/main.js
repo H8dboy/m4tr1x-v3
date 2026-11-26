@@ -399,6 +399,41 @@ async function cancellaAccount(/** @type {boolean} */ soloQui) {
   }
 }
 
+// ─── Mi piace (I-69) ──────────────────────────────────────────────────────────
+// Il conto arriva dal lato Rust (reazioni verificate, una per persona). Mettere: il lato Rust firma; togliere:
+// cancellazione della TUA reazione (I-68). Il "mi piace" è pubblico come un post: chi guarda il nodo vede chi l'ha messo.
+
+/** Il tasto ♥ con il conto. Senza identità si vede solo il conto. @param {any} c contenuto con id, mi_piace, mio_mi_piace */
+function tastoMiPiace(c) {
+  const id = String(c.id)
+  if (!CHIAVE.test(id)) return null
+  let quante = Number(c.mi_piace) || 0
+  let mia = typeof c.mio_mi_piace === 'string' && CHIAVE.test(c.mio_mi_piace) ? c.mio_mi_piace : null
+  const b = document.createElement('button')
+  b.type = 'button'
+  b.className = 'tasto-azione mi-piace'
+  const disegna = () => {
+    b.textContent = `${mia ? '♥' : '♡'} ${quante}`
+    b.setAttribute('aria-pressed', mia ? 'true' : 'false')
+    b.setAttribute('aria-label', mia ? `Ti piace (${quante}). Tocca per togliere` : `Mi piace (${quante})`)
+  }
+  disegna()
+  if (!identita) { b.disabled = true; b.title = 'Serve un\'identità per mettere mi piace'; return b }
+  b.title = 'Il mi piace è pubblico, come un post'
+  b.addEventListener('click', async ev => {
+    ev.stopPropagation()
+    b.disabled = true
+    try {
+      if (mia) { await invoke('cancella', { id: mia }); mia = null; quante = Math.max(0, quante - 1) }
+      else { const r = await invoke('mi_piace', { id }); if (typeof r === 'string' && CHIAVE.test(r)) { mia = r; quante += 1 } }
+      disegna()
+    } catch (e) {
+      b.title = String(e)
+    } finally { b.disabled = false }
+  })
+  return b
+}
+
 /** @param {any} p */
 function voce(p) {
   const autore = String(p.autore)
@@ -437,6 +472,8 @@ function voce(p) {
   const blocca = tastoBlocca(autore)
   const segnala = tastoSegnala(String(p.id), autore)
   const elimina = tastoElimina(String(p.id), autore, () => { li.remove(); segnaVuoto() })
+  const piace = tastoMiPiace(p)
+  if (piace) chi.append(piace)
   if (segnala) chi.append(segnala)
   if (blocca) chi.append(blocca)
   if (elimina) chi.append(elimina)
@@ -610,7 +647,8 @@ function voceMedia(m) {
   const blocca = tastoBlocca(String(m.autore))
   const segnala = tastoSegnala(String(m.id), String(m.autore))
   const elimina = tastoElimina(String(m.id), String(m.autore), () => li.remove())
-  li.append(...(coperto ? [coperto] : []), b, ...(segnala ? [segnala] : []), ...(blocca ? [blocca] : []), ...(elimina ? [elimina] : []))
+  const piace = tastoMiPiace(m)
+  li.append(...(coperto ? [coperto] : []), b, ...(piace ? [piace] : []), ...(segnala ? [segnala] : []), ...(blocca ? [blocca] : []), ...(elimina ? [elimina] : []))
   return li
 }
 

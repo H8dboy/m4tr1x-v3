@@ -57,6 +57,18 @@ pub struct Post {
     pub nome: Option<String>,
     /// bandierine della moderazione del nodo (I-65): con almeno una, l'interfaccia copre il testo con un velo
     pub bandierine: Vec<Bandierina>,
+    /// persone diverse che hanno messo "mi piace" (I-69)
+    pub mi_piace: u32,
+    /// la TUA reazione, se c'è (id dell'evento, per toglierla)
+    pub mio_mi_piace: Option<String>,
+}
+
+/// Reazioni per id di contenuto, come le conta m4tr1x-feed.
+pub type Reazioni = std::collections::HashMap<String, m4tr1x_feed::Reazioni>;
+
+/// (quante, mia) per il contenuto `id`.
+fn reazioni_di(r: &Reazioni, id: &str) -> (u32, Option<String>) {
+    r.get(id).map(|x| (x.quante, x.mia.clone())).unwrap_or((0, None))
 }
 
 /// Bandierine per id di contenuto, come arrivano dal nodo (m4tr1x-feed, già controllate dal trasporto).
@@ -107,6 +119,16 @@ pub struct Feed {
 }
 
 impl Feed {
+    /// Attacca a ogni post i suoi "mi piace" (I-69). `None`: il nodo non li ha dati (restano a zero).
+    pub fn con_reazioni(mut self, r: Option<&Reazioni>) -> Self {
+        if let Some(r) = r {
+            for p in &mut self.post {
+                (p.mi_piace, p.mio_mi_piace) = reazioni_di(r, &p.id);
+            }
+        }
+        self
+    }
+
     /// Attacca a ogni post le sue bandierine (I-65). `None`: il nodo non le ha date.
     pub fn con_bandierine(mut self, b: Option<&std::collections::HashMap<String, Vec<m4tr1x_feed::Bandierina>>>) -> Self {
         self.bandierine_disponibili = b.is_some();
@@ -122,7 +144,7 @@ impl Feed {
 impl From<m4tr1x_feed::Feed> for Feed {
     fn from(f: m4tr1x_feed::Feed) -> Self {
         Self {
-            post: f.post.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![] }).collect(),
+            post: f.post.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![], mi_piace: 0, mio_mi_piace: None }).collect(),
             scartati: u32::try_from(f.scartati).unwrap_or(u32::MAX),
             secondi: f.secondi,
             tentativi: f.tentativi,
@@ -199,11 +221,14 @@ pub struct Media {
     pub file: FileMedia,
     /// bandierine della moderazione del nodo (I-65): con almeno una, la tessera resta coperta da un velo
     pub bandierine: Vec<Bandierina>,
+    /// persone diverse che hanno messo "mi piace" (I-69), e la TUA reazione
+    pub mi_piace: u32,
+    pub mio_mi_piace: Option<String>,
 }
 
 impl From<m4tr1x_feed::Media> for Media {
     fn from(m: m4tr1x_feed::Media) -> Self {
-        Self { id: m.id, autore: m.autore, nome: m.nome, testo: m.testo, creato: m.creato, file: m.file.into(), bandierine: vec![] }
+        Self { id: m.id, autore: m.autore, nome: m.nome, testo: m.testo, creato: m.creato, file: m.file.into(), bandierine: vec![], mi_piace: 0, mio_mi_piace: None }
     }
 }
 
@@ -217,6 +242,16 @@ pub struct Galleria {
 }
 
 impl Galleria {
+    /// Attacca a ogni scheda i suoi "mi piace" (I-69).
+    pub fn con_reazioni(mut self, r: Option<&Reazioni>) -> Self {
+        if let Some(r) = r {
+            for m in &mut self.media {
+                (m.mi_piace, m.mio_mi_piace) = reazioni_di(r, &m.id);
+            }
+        }
+        self
+    }
+
     /// Attacca a ogni scheda le sue bandierine (I-65). `None`: il nodo non le ha date.
     pub fn con_bandierine(mut self, b: Option<&Veli>) -> Self {
         self.bandierine_disponibili = b.is_some();
@@ -315,6 +350,16 @@ impl DiscussioneAperta {
         self
     }
 
+    /// Attacca a ogni risposta i suoi "mi piace" (I-69).
+    pub fn con_reazioni(mut self, r: Option<&Reazioni>) -> Self {
+        if let Some(r) = r {
+            for p in &mut self.risposte {
+                (p.mi_piace, p.mio_mi_piace) = reazioni_di(r, &p.id);
+            }
+        }
+        self
+    }
+
     /// Gli id di cui chiedere le bandierine: la discussione e le sue risposte.
     pub fn ids(&self) -> Vec<String> {
         std::iter::once(self.discussione.id.clone()).chain(self.risposte.iter().map(|r| r.id.clone())).collect()
@@ -325,7 +370,7 @@ impl From<m4tr1x_feed::DiscussioneAperta> for DiscussioneAperta {
     fn from(d: m4tr1x_feed::DiscussioneAperta) -> Self {
         Self {
             discussione: d.discussione.into(),
-            risposte: d.risposte.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![] }).collect(),
+            risposte: d.risposte.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![], mi_piace: 0, mio_mi_piace: None }).collect(),
             bandierine_disponibili: false,
         }
     }
@@ -434,7 +479,7 @@ mod prove_bandierine {
     use super::*;
 
     fn post(id: &str) -> Post {
-        Post { id: id.repeat(64), autore: "f".repeat(64), creato: 1, testo: "ciao".into(), nome: None, bandierine: vec![] }
+        Post { id: id.repeat(64), autore: "f".repeat(64), creato: 1, testo: "ciao".into(), nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None }
     }
 
     #[test]
@@ -468,7 +513,7 @@ mod prove_bandierine {
         assert_eq!(aperta.risposte[0].bandierine[0].categoria, "odio");
         assert!(aperta.risposte[1].bandierine.is_empty());
         let scheda = |id: &str| Media {
-            id: id.repeat(64), autore: "f".repeat(64), nome: None, testo: "x".into(), creato: 1, bandierine: vec![],
+            id: id.repeat(64), autore: "f".repeat(64), nome: None, testo: "x".into(), creato: 1, bandierine: vec![], mi_piace: 0, mio_mi_piace: None,
             file: FileMedia { sha256: "e".repeat(64), mime: "video/mp4".into(), dimensione: 1, sezione: "signal".into(), titolo: "t".into(), pezzi: vec![], misure: vec![], celle: false },
         };
         let g = Galleria { media: vec![scheda("b"), scheda("a")], scartati: 0, bandierine_disponibili: false }.con_bandierine(Some(&b));
