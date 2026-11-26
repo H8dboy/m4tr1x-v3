@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ricondividi"
+description = "Enables the ricondividi command without any pre-configured scope."
+commands.allow = ["ricondividi"]
+
+[[permission]]
+identifier = "deny-ricondividi"
+description = "Denies the ricondividi command without any pre-configured scope."
+commands.deny = ["ricondividi"]

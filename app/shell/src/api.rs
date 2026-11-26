@@ -61,6 +61,9 @@ pub struct Post {
     pub mi_piace: u32,
     /// la TUA reazione, se c'è (id dell'evento, per toglierla)
     pub mio_mi_piace: Option<String>,
+    /// se la voce è una ricondivisione (I-73): chi l'ha fatta e l'id della ricondivisione (per toglierla se è tua)
+    pub ricondiviso_da: Option<String>,
+    pub ricondivisione: Option<String>,
 }
 
 /// Una notifica (I-71): `tipo` = "mi_piace" o "risposta"; chi, su quale tuo contenuto, quando. Niente testo.
@@ -166,7 +169,14 @@ impl Feed {
 impl From<m4tr1x_feed::Feed> for Feed {
     fn from(f: m4tr1x_feed::Feed) -> Self {
         Self {
-            post: f.post.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![], mi_piace: 0, mio_mi_piace: None }).collect(),
+            post: f
+                .post
+                .into_iter()
+                .map(|p| {
+                    let (ricondiviso_da, ricondivisione) = p.ricondivisione.map(|r| (Some(r.da), Some(r.id))).unwrap_or((None, None));
+                    Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![], mi_piace: 0, mio_mi_piace: None, ricondiviso_da, ricondivisione }
+                })
+                .collect(),
             scartati: u32::try_from(f.scartati).unwrap_or(u32::MAX),
             secondi: f.secondi,
             tentativi: f.tentativi,
@@ -392,7 +402,7 @@ impl From<m4tr1x_feed::DiscussioneAperta> for DiscussioneAperta {
     fn from(d: m4tr1x_feed::DiscussioneAperta) -> Self {
         Self {
             discussione: d.discussione.into(),
-            risposte: d.risposte.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![], mi_piace: 0, mio_mi_piace: None }).collect(),
+            risposte: d.risposte.into_iter().map(|p| Post { id: p.id, autore: p.autore, creato: p.creato, testo: p.testo, nome: p.nome, bandierine: vec![], mi_piace: 0, mio_mi_piace: None, ricondiviso_da: None, ricondivisione: None }).collect(),
             bandierine_disponibili: false,
         }
     }
@@ -501,7 +511,7 @@ mod prove_bandierine {
     use super::*;
 
     fn post(id: &str) -> Post {
-        Post { id: id.repeat(64), autore: "f".repeat(64), creato: 1, testo: "ciao".into(), nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None }
+        Post { id: id.repeat(64), autore: "f".repeat(64), creato: 1, testo: "ciao".into(), nome: None, bandierine: vec![], mi_piace: 0, mio_mi_piace: None, ricondiviso_da: None, ricondivisione: None }
     }
 
     #[test]

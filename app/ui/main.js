@@ -241,6 +241,42 @@ function tastoConConferma(testo, conferma, azione) {
 }
 
 /** Il tasto "Blocca" per l'autore di un contenuto; niente per i tuoi contenuti. @param {string} autore */
+// ─── Ricondividere (I-73) ─────────────────────────────────────────────────────
+/** "Ricondividi" su un post di un altro (con identità; non su una ricondivisione). @param {any} p */
+function tastoRicondividi(p) {
+  const id = String(p.id), autore = String(p.autore)
+  if (!identita || !CHIAVE.test(id) || identita.identity === autore || p.ricondivisione) return null
+  const box = document.createElement('span')
+  box.className = 'segnala'
+  const stato = document.createElement('span')
+  stato.className = 'tenue'
+  stato.setAttribute('aria-live', 'polite')
+  const b = tastoConConferma('Ricondividi', 'Tocca ancora: lo vedranno tutti', async () => {
+    stato.textContent = 'firmo…'
+    try { await invoke('ricondividi', { id }); stato.textContent = 'ricondiviso ✓' } catch (e) { stato.textContent = String(e) }
+  })
+  b.title = 'La ricondivisione è pubblica, come un post'
+  box.append(b, stato)
+  return box
+}
+
+/** Riga "ricondiviso da …" sopra una voce; se è la TUA ricondivisione, "Togli" la cancella. @param {any} p @param {HTMLElement} li */
+function rigaRicondivisione(p, li) {
+  const da = String(p.ricondiviso_da || ''), rid = String(p.ricondivisione || '')
+  if (!CHIAVE.test(da) || !CHIAVE.test(rid)) return null
+  const riga = document.createElement('p')
+  riga.className = 'ricondiviso tenue'
+  const mia = !!identita && identita.identity === da
+  riga.textContent = mia ? '↻ l\'hai ricondiviso' : `↻ ricondiviso da ${da.slice(0, 8)}…`
+  if (mia) {
+    const t = tastoConConferma('Togli', 'Tocca ancora per togliere', async () => {
+      try { await invoke('cancella', { id: rid }); li.remove(); segnaVuoto() } catch (e) { riga.title = String(e) }
+    })
+    riga.append(t)
+  }
+  return riga
+}
+
 // ─── Cerca (I-72) ─────────────────────────────────────────────────────────────
 // Solo su questo dispositivo, tra ciò che è già scaricato e verificato: la parola cercata non esce mai dall'app
 // (né verso il nodo né verso il lato Rust). Si cerca nel testo visibile e nella chiave dell'autore.
@@ -604,12 +640,16 @@ function voce(p) {
   const elimina = tastoElimina(String(p.id), autore, () => { li.remove(); segnaVuoto() })
   const piace = tastoMiPiace(p)
   const segui = tastoSegui(autore)
+  const ricondividi = tastoRicondividi(p)
   if (piace) chi.append(piace)
   if (segui) chi.append(segui)
+  if (ricondividi) chi.append(ricondividi)
   if (segnala) chi.append(segnala)
   if (blocca) chi.append(blocca)
-  if (elimina) chi.append(elimina)
-  corpo.append(chi, ...(coperto ? [coperto] : []), testo)
+  if (elimina && !p.ricondivisione) chi.append(elimina)
+  const ric = rigaRicondivisione(p, li)
+  if (ric) li.setAttribute('data-ricondiviso-da', String(p.ricondiviso_da))
+  corpo.append(...(ric ? [ric] : []), chi, ...(coperto ? [coperto] : []), testo)
   li.append(av, corpo)
   return li
 }

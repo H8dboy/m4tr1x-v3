@@ -321,3 +321,6 @@ button, input, textarea { font: inherit; color: inherit; }
 
 /* Cerca (I-72) */
 .riga.cerca { gap: 8px; align-items: center; margin: 6px 0; }
+
+/* Ricondividere (I-73) */
+.ricondiviso { font-size: 12px; margin: 0 0 4px; display: flex; gap: 8px; align-items: center; }
