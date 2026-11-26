@@ -323,6 +323,26 @@ pub fn tag_segnalazione(id: &str, categoria: &str, ora: u64) -> Result<Vec<Vec<S
     Ok(vec![vec!["e".into(), id.into(), categoria.into()], vec!["expiration".into(), (ora + DURATA_SEGNALAZIONE).to_string()]])
 }
 
+// ─── Cancellazioni dell'autore (NIP-09 kind 5, NIP-62 kind 62; I-68) ─────────
+// Il nodo toglie solo contenuti dello STESSO autore della cancellazione e la tiene come lapide, così una copia vecchia
+// che torna da un altro nodo non rientra.
+
+pub const KIND_CANCELLA: u16 = 5;
+pub const KIND_SPARISCI: u16 = 62;
+
+/// Tag della cancellazione del tuo contenuto `id`.
+pub fn tag_cancella(id: &str) -> Result<Vec<Vec<String>>, Rifiuto> {
+    if !esadecimale_minuscolo(id, 64) {
+        return Err(Rifiuto::Forma("id del contenuto"));
+    }
+    Ok(vec![vec!["e".into(), id.into()]])
+}
+
+/// Tag della richiesta di sparire (NIP-62): vale per ogni nodo che la riceve.
+pub fn tag_sparisci() -> Vec<Vec<String>> {
+    vec![vec!["relay".into(), "ALL_RELAYS".into()]]
+}
+
 // ─── File: reels, film, musica (stesso schema della v2: kind 1063 NIP-94 con tag `t` della sezione) ──────
 // La scheda dice SOLO: hash del file (`x`), tipo (`m`, da un elenco chiuso), dimensione, sezione, titolo. Il file
 // sta sul nodo per hash; chi lo scarica ricontrolla l'hash (I-17) e il tipo dai primi byte.
@@ -630,6 +650,20 @@ fn da_esadecimale(s: &str) -> Option<Vec<u8>> {
         return None;
     }
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
+}
+
+#[cfg(test)]
+mod prove_cancella {
+    use super::*;
+
+    #[test]
+    fn cancella_un_solo_contenuto_valido() {
+        assert_eq!(tag_cancella(&"a".repeat(64)).unwrap(), vec![vec!["e".to_string(), "a".repeat(64)]]);
+        for id in ["", "A".repeat(64).as_str(), "a".repeat(63).as_str(), "../x"] {
+            assert!(tag_cancella(id).is_err(), "id accettato: {id:?}");
+        }
+        assert_eq!(tag_sparisci(), vec![vec!["relay".to_string(), "ALL_RELAYS".into()]]);
+    }
 }
 
 #[cfg(test)]

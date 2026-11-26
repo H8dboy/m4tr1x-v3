@@ -344,6 +344,61 @@ function tastoSegnala(id, autore) {
   return box
 }
 
+// ─── Cancellare (I-68) ────────────────────────────────────────────────────────
+// "Elimina" sui TUOI contenuti: il lato Rust firma la cancellazione e il nodo toglie il contenuto (solo se è tuo).
+// L'account: si scrive CANCELLA; le chiavi lasciano il dispositivo solo dopo il sì del nodo.
+
+/** "Elimina" su un tuo contenuto; `tolto` lo toglie dallo schermo quando il nodo ha detto sì.
+ * @param {string} id @param {string} autore @param {() => void} tolto */
+function tastoElimina(id, autore, tolto) {
+  if (!identita || identita.identity !== autore || !CHIAVE.test(id)) return null
+  const box = document.createElement('span')
+  box.className = 'segnala'
+  const stato = document.createElement('span')
+  stato.className = 'tenue'
+  stato.setAttribute('aria-live', 'polite')
+  const b = tastoConConferma('Elimina', 'Tocca ancora per eliminare', async () => {
+    stato.textContent = 'firmo e chiedo al nodo di toglierlo…'
+    try {
+      await invoke('cancella', { id })
+      stato.textContent = ''
+      tolto()
+    } catch (e) {
+      stato.textContent = String(e)
+    }
+  })
+  box.append(b, stato)
+  return box
+}
+
+async function cancellaAccount(/** @type {boolean} */ soloQui) {
+  const c = campo('account-conferma')
+  const bottoni = ['account-cancella', 'account-dimentica'].map(id => /** @type {HTMLButtonElement|null} */ (document.getElementById(id)))
+  bottoni.forEach(b => { if (b) b.disabled = true })
+  const fase = soloQui ? null : setInterval(async () => {
+    const a = await invoke('azioni_avanzamento').catch(() => null)
+    if (a) mostra('account-stato', testoFase(a))
+  }, 1000)
+  mostra('account-stato', soloQui ? 'tolgo le chiavi da questo dispositivo…' : 'firmo e chiedo al nodo di togliere tutto…')
+  try {
+    await invoke(soloQui ? 'identita_dimentica' : 'account_cancella', { conferma: c.value })
+    c.value = ''
+    mostra('account-stato', soloQui ? 'Identità tolta da questo dispositivo ✓' : 'Account cancellato ✓ Il nodo ha tolto i tuoi contenuti e le chiavi hanno lasciato questo dispositivo.')
+    mostraMioNome(null)
+    profiloChiesto = false
+    postaChiesta = false
+    conversazioni = []
+    disegnaPosta()
+    await aggiornaIdentita()
+    await caricaBloccati()
+  } catch (e) {
+    mostra('account-stato', String(e))
+  } finally {
+    if (fase) clearInterval(fase)
+    bottoni.forEach(b => { if (b) b.disabled = false })
+  }
+}
+
 /** @param {any} p */
 function voce(p) {
   const autore = String(p.autore)
@@ -381,8 +436,10 @@ function voce(p) {
   const coperto = velo(p, testo)
   const blocca = tastoBlocca(autore)
   const segnala = tastoSegnala(String(p.id), autore)
+  const elimina = tastoElimina(String(p.id), autore, () => { li.remove(); segnaVuoto() })
   if (segnala) chi.append(segnala)
   if (blocca) chi.append(blocca)
+  if (elimina) chi.append(elimina)
   corpo.append(chi, ...(coperto ? [coperto] : []), testo)
   li.append(av, corpo)
   return li
@@ -552,7 +609,8 @@ function voceMedia(m) {
   const coperto = velo(m, b)
   const blocca = tastoBlocca(String(m.autore))
   const segnala = tastoSegnala(String(m.id), String(m.autore))
-  li.append(...(coperto ? [coperto] : []), b, ...(segnala ? [segnala] : []), ...(blocca ? [blocca] : []))
+  const elimina = tastoElimina(String(m.id), String(m.autore), () => li.remove())
+  li.append(...(coperto ? [coperto] : []), b, ...(segnala ? [segnala] : []), ...(blocca ? [blocca] : []), ...(elimina ? [elimina] : []))
   return li
 }
 
@@ -920,7 +978,8 @@ async function apriDiscussione(/** @type {string} */ id) {
     mostra('disc-chi', `${chiDi(d.discussione)} · ${quando(Number(d.discussione.creato))}`)
     const bd = tastoBlocca(discAutore)
     const sd = tastoSegnala(discAperta, discAutore)
-    document.getElementById('disc-azioni')?.replaceChildren(...(sd ? [sd] : []), ...(bd ? [bd] : []))
+    const ed = tastoElimina(discAperta, discAutore, () => { vediElenco(); caricaForum() })
+    document.getElementById('disc-azioni')?.replaceChildren(...(sd ? [sd] : []), ...(bd ? [bd] : []), ...(ed ? [ed] : []))
     mostra('disc-testo', String(d.discussione.testo))
     document.getElementById('disc-risposte')?.replaceChildren(...d.risposte.map(voce))
     const veli = d.bandierine_disponibili ? '' : ' · bandierine del nodo non disponibili'
@@ -1133,6 +1192,8 @@ async function inviaMessaggio() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nodo-salva')?.addEventListener('click', salvaNodo)
   caricaBloccati()
+  document.getElementById('account-cancella')?.addEventListener('click', () => cancellaAccount(false))
+  document.getElementById('account-dimentica')?.addEventListener('click', () => cancellaAccount(true))
   document.getElementById('nodo-file-salva')?.addEventListener('click', () => salvaNodoFile(false))
   document.getElementById('nodo-file-togli')?.addEventListener('click', () => salvaNodoFile(true))
   aggiornaNodoFile()

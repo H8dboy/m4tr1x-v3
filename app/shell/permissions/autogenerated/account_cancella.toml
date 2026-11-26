@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-account-cancella"
+description = "Enables the account_cancella command without any pre-configured scope."
+commands.allow = ["account_cancella"]
+
+[[permission]]
+identifier = "deny-account-cancella"
+description = "Denies the account_cancella command without any pre-configured scope."
+commands.deny = ["account_cancella"]

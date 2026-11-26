@@ -1227,6 +1227,84 @@ fn azioni_avanzamento(op: tauri::State<'_, Operazioni>) -> Avanzamento {
     op.azioni.fase()
 }
 
+// ─── Cancellare (I-68) ────────────────────────────────────────────────────────
+// Un tuo contenuto: cancellazione firmata (kind 5) al nodo, che lo toglie e tiene la lapide. Il tuo account: richiesta
+// di sparire (kind 62) al nodo e al nodo dei file, poi le chiavi lasciano il portachiavi e l'elenco dei bloccati si
+// cancella. Se la richiesta non arriva al nodo, NIENTE si cancella dal dispositivo: si può riprovare.
+
+/// La parola da scrivere per cancellare l'account (un tocco sbagliato non basta).
+const PAROLA_CANCELLA: &str = "CANCELLA";
+
+/// Pubblica un evento già firmato su un nodo, con la fase delle azioni.
+async fn pubblica_azione(tor: &TorProcessTransport, nodo: &OnionV3, evento: &m4tr1x_protocol::Evento, op: &Operazione, cosa: &str) -> Result<(), String> {
+    m4tr1x_feed::pubblica(tor, nodo, evento, m4tr1x_feed::BUDGET, |f| op.imposta(Avanzamento::from(&f))).await.map(|_| ()).map_err(|e| match e {
+        m4tr1x_feed::ErrorePubblica::Rifiutato(m) => format!("il nodo ha rifiutato {cosa}: {m}"),
+        m4tr1x_feed::ErrorePubblica::NonRaggiungibile(n) => format!("{cosa} non è partita: il nodo non risponde ancora. Riprova tra un minuto ({})", n.ultimo),
+    })
+}
+
+/// Cancella dal nodo un TUO contenuto (post, risposta, discussione, file). Il nodo toglie solo contenuti tuoi.
+#[tauri::command]
+async fn cancella(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>) -> Result<(), String> {
+    let tags = m4tr1x_protocol::tag_cancella(&id).map_err(|e| e.to_string())?;
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let evento = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_CANCELLA, "", &tags).map_err(|e| format!("cancellazione non firmata: {e}"))?;
+    let op = &op.azioni;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra azione è in corso".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        pubblica_azione(&tor, &nodo, &evento, op, "la cancellazione").await
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito
+}
+
+/// Cancella il TUO account: chiede al nodo (e al nodo dei file) di togliere tutto ciò che è tuo, poi toglie le tue
+/// chiavi da questo dispositivo e l'elenco dei bloccati. `conferma` deve essere la parola CANCELLA.
+#[tauri::command]
+async fn account_cancella(conferma: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>, bloccati: tauri::State<'_, Bloccati>) -> Result<(), String> {
+    if conferma.trim() != PAROLA_CANCELLA {
+        return Err(format!("per cancellare l'account scrivi {PAROLA_CANCELLA}"));
+    }
+    let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
+    let nodo = rete.nodo()?;
+    let nodo_file = rete.nodo_file.lock().unwrap().clone().filter(|h| h.host() != nodo.host());
+    let evento = firma_con_la_mia_identita(&chiavi, m4tr1x_protocol::KIND_SPARISCI, "", &m4tr1x_protocol::tag_sparisci()).map_err(|e| format!("richiesta non firmata: {e}"))?;
+    let op = &op.azioni;
+    if op.in_corso.swap(true, Ordering::SeqCst) {
+        return Err("un'altra azione è in corso".into());
+    }
+    let esito = async {
+        attendi_tor(&tor, op).await?;
+        pubblica_azione(&tor, &nodo, &evento, op, "la richiesta di cancellare l'account").await?;
+        if let Some(h) = &nodo_file {
+            pubblica_azione(&tor, h, &evento, op, "la richiesta al nodo dei file").await?;
+        }
+        Ok::<(), String>(())
+    }
+    .await;
+    op.in_corso.store(false, Ordering::SeqCst);
+    esito?;
+    // il nodo ha accettato: ora le chiavi lasciano questo dispositivo
+    m4tr1x_identity::portachiavi::dimentica_tutto(&*chiavi.0).map_err(|e| format!("account cancellato dal nodo, ma le chiavi sono rimaste nel portachiavi: {e}"))?;
+    bloccati.svuota()
+}
+
+/// Toglie la tua identità SOLO da questo dispositivo (chiavi e elenco dei bloccati), senza toccare i nodi: per chi
+/// cambia computer o non raggiunge più il suo nodo. Con le 24 parole la si ritrova. `conferma` = CANCELLA.
+#[tauri::command]
+fn identita_dimentica(conferma: String, chiavi: tauri::State<'_, Chiavi>, bloccati: tauri::State<'_, Bloccati>) -> Result<(), String> {
+    if conferma.trim() != PAROLA_CANCELLA {
+        return Err(format!("per togliere l'identità da questo dispositivo scrivi {PAROLA_CANCELLA}"));
+    }
+    m4tr1x_identity::portachiavi::dimentica_tutto(&*chiavi.0).map_err(|e| e.to_string())?;
+    bloccati.svuota()
+}
+
 // ─── Persone bloccate (I-66) ──────────────────────────────────────────────────
 // Elenco solo su questo dispositivo, mai pubblicato; si applica qui, prima dell'interfaccia (bloccati.rs).
 
@@ -1356,7 +1434,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica])
 }
 
 pub fn run() {
