@@ -9,10 +9,12 @@
 pub mod api;
 pub mod api_seme;
 pub mod bloccati;
+pub mod seguiti;
 
 use api::{Avanzamento, CellePronte, CelleStato, Discussione, DiscussioneAperta, Feed, FilePronto, Forum, Galleria, Identita, Media, Messaggio, Post, Posta, Profilo, Stato};
 use api_seme::SemeDaMostrare;
 use bloccati::Bloccati;
+use seguiti::Seguiti;
 use m4tr1x_identity::creazione::{self, CreazioneInCorso};
 use m4tr1x_identity::portachiavi::{firma_come_identita, Portachiavi, Sistema};
 use m4tr1x_transport::{OnionV3, TorProcessConfig, TorProcessTransport, Transport, TransportStatus};
@@ -254,8 +256,10 @@ fn stato(rete: tauri::State<'_, Rete>) -> Stato {
 /// Ultimi post del nodo di prova, verificati nel lato Rust (m4tr1x-feed). Aspetta tor pronto, poi
 /// tentativi da 30 s fino a 4 minuti; la fase si legge con `feed_avanzamento`.
 /// Gli errori dicono cosa manca o quanto si è aspettato, mai l'indirizzo del nodo.
+/// `solo_seguiti`: solo i post di chi segui, filtrati QUI (al nodo si chiede lo stesso feed di sempre, I-70).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
-async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<Feed, String> {
+async fn feed(solo_seguiti: Option<bool>, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bloccati: tauri::State<'_, Bloccati>, seguiti: tauri::State<'_, Seguiti>, chiavi: tauri::State<'_, Chiavi>) -> Result<Feed, String> {
     let tor = rete.tor.clone().ok_or("tor non configurato (M4TR1X_TOR_BIN)")?;
     let nodo = rete.nodo()?;
     let op = &op.feed;
@@ -270,6 +274,9 @@ async fn feed(rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, bl
             .map_err(|e| format!("il nodo non risponde ancora: Tor continua a cercarlo. Riprova tra un minuto ({})", e.ultimo))?;
         // I-66: chi hai bloccato non arriva all'interfaccia
         f.post.retain(|p| !bloccati.contiene(&p.autore));
+        if solo_seguiti == Some(true) {
+            f.post.retain(|p| seguiti.contiene(&p.autore));
+        }
         // bandierine della moderazione (I-65): se il nodo non le dà, il feed si vede lo stesso, senza veli, e lo si dice
         let ids: Vec<String> = f.post.iter().map(|p| p.id.clone()).collect();
         let veli = m4tr1x_feed::bandierine(&*tor, &nodo, &ids).await.ok();
@@ -1202,6 +1209,27 @@ fn mia_chiave(chiavi: &Chiavi) -> Option<String> {
     creazione::identita_salvata(&*chiavi.0).ok().flatten().map(|i| i.identity)
 }
 
+// ─── Chi segui (I-70) ─────────────────────────────────────────────────────────
+// Elenco solo su questo dispositivo, mai pubblicato e mai chiesto al nodo (seguiti.rs).
+
+#[tauri::command]
+fn seguiti(seguiti: tauri::State<'_, Seguiti>) -> Vec<String> {
+    seguiti.elenco()
+}
+
+#[tauri::command]
+fn segui(chiave: String, seguiti: tauri::State<'_, Seguiti>, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<(), String> {
+    if bloccati.contiene(&chiave.trim().to_ascii_lowercase()) {
+        return Err("hai bloccato questa persona: sbloccala prima di seguirla".into());
+    }
+    seguiti.segui(&chiave, mia_chiave(&chiavi).as_deref())
+}
+
+#[tauri::command]
+fn smetti_di_seguire(chiave: String, seguiti: tauri::State<'_, Seguiti>) -> Result<(), String> {
+    seguiti.smetti(&chiave)
+}
+
 // ─── Mi piace (I-69) ──────────────────────────────────────────────────────────
 // Pubblico come un post (firmato con la tua identità); nomina solo il contenuto. Si toglie con `cancella` sull'id
 // della reazione: il nodo la toglie e tiene la lapide (I-68).
@@ -1298,8 +1326,9 @@ async fn cancella(id: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_,
 
 /// Cancella il TUO account: chiede al nodo (e al nodo dei file) di togliere tutto ciò che è tuo, poi toglie le tue
 /// chiavi da questo dispositivo e l'elenco dei bloccati. `conferma` deve essere la parola CANCELLA.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
-async fn account_cancella(conferma: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>, bloccati: tauri::State<'_, Bloccati>) -> Result<(), String> {
+async fn account_cancella(conferma: String, rete: tauri::State<'_, Rete>, op: tauri::State<'_, Operazioni>, chiavi: tauri::State<'_, Chiavi>, bloccati: tauri::State<'_, Bloccati>, seguiti: tauri::State<'_, Seguiti>) -> Result<(), String> {
     if conferma.trim() != PAROLA_CANCELLA {
         return Err(format!("per cancellare l'account scrivi {PAROLA_CANCELLA}"));
     }
@@ -1324,17 +1353,19 @@ async fn account_cancella(conferma: String, rete: tauri::State<'_, Rete>, op: ta
     esito?;
     // il nodo ha accettato: ora le chiavi lasciano questo dispositivo
     m4tr1x_identity::portachiavi::dimentica_tutto(&*chiavi.0).map_err(|e| format!("account cancellato dal nodo, ma le chiavi sono rimaste nel portachiavi: {e}"))?;
+    seguiti.svuota()?;
     bloccati.svuota()
 }
 
 /// Toglie la tua identità SOLO da questo dispositivo (chiavi e elenco dei bloccati), senza toccare i nodi: per chi
 /// cambia computer o non raggiunge più il suo nodo. Con le 24 parole la si ritrova. `conferma` = CANCELLA.
 #[tauri::command]
-fn identita_dimentica(conferma: String, chiavi: tauri::State<'_, Chiavi>, bloccati: tauri::State<'_, Bloccati>) -> Result<(), String> {
+fn identita_dimentica(conferma: String, chiavi: tauri::State<'_, Chiavi>, bloccati: tauri::State<'_, Bloccati>, seguiti: tauri::State<'_, Seguiti>) -> Result<(), String> {
     if conferma.trim() != PAROLA_CANCELLA {
         return Err(format!("per togliere l'identità da questo dispositivo scrivi {PAROLA_CANCELLA}"));
     }
     m4tr1x_identity::portachiavi::dimentica_tutto(&*chiavi.0).map_err(|e| e.to_string())?;
+    seguiti.svuota()?;
     bloccati.svuota()
 }
 
@@ -1350,9 +1381,11 @@ fn bloccati(bloccati: tauri::State<'_, Bloccati>) -> Vec<String> {
 /// Blocca la persona con chiave pubblica d'identità `chiave`: i suoi contenuti e i suoi messaggi spariscono
 /// dall'app. Non si pubblica niente e lei non lo sa.
 #[tauri::command]
-fn blocca(chiave: String, bloccati: tauri::State<'_, Bloccati>, chiavi: tauri::State<'_, Chiavi>) -> Result<(), String> {
+fn blocca(chiave: String, bloccati: tauri::State<'_, Bloccati>, seguiti: tauri::State<'_, Seguiti>, chiavi: tauri::State<'_, Chiavi>) -> Result<(), String> {
     let mia = creazione::identita_salvata(&*chiavi.0).ok().flatten().map(|i| i.identity);
-    bloccati.blocca(&chiave, mia.as_deref())
+    bloccati.blocca(&chiave, mia.as_deref())?;
+    // chi blocchi non resta tra chi segui (I-70)
+    seguiti.smetti(&chiave)
 }
 
 /// Sblocca `chiave`.
@@ -1455,6 +1488,7 @@ pub fn costruisci<R: Runtime>(
         .setup(move |app| {
             prima(app)?;
             app.manage(Bloccati::apri(Some(app.path().app_data_dir()?.join("bloccati"))));
+            app.manage(Seguiti::apri(Some(app.path().app_data_dir()?.join("seguiti"))));
             let rete = avvia_rete(app)?;
             app.manage(rete);
             Ok(())
@@ -1467,7 +1501,7 @@ pub fn costruisci<R: Runtime>(
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica, mi_piace])
+        .invoke_handler(tauri::generate_handler![stato, identita, apri_finestra_seme, seme_nuovo, seme_conferma, seme_recupera, feed, feed_avanzamento, pubblica, pubblica_avanzamento, profilo_mio, profilo_salva, profilo_avanzamento, messaggi, messaggio_invia, messaggi_avanzamento, nodo_impostato, nodo_imposta, nodo_file_impostato, nodo_file_imposta, forum, forum_discussione, forum_pubblica, forum_rispondi, forum_avanzamento, media, media_file, media_prepara, media_pubblica, media_avanzamento, celle_prepara, celle_pubblica, celle_apri, celle_stato, celle_quadro, celle_avanzamento, bloccati, blocca, sblocca, segnala, azioni_avanzamento, cancella, account_cancella, identita_dimentica, mi_piace, seguiti, segui, smetti_di_seguire])
 }
 
 pub fn run() {

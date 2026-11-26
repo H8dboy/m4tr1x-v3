@@ -228,6 +228,9 @@ fn nessuna_chiave_raggiunge_il_javascript() {
         ("identita_dimentica", json!({"conferma": "si"}), "per togliere l'identità"),
         ("mi_piace", json!({"id": "a".repeat(64)}), "tor non configurato"),
         ("mi_piace", json!({"id": "x"}), "forma non valida: id del contenuto"),
+        ("seguiti", json!({}), OK),
+        ("segui", json!({"chiave": "x"}), "chiave non valida"),
+        ("smetti_di_seguire", json!({"chiave": "x"}), "chiave non valida"),
     ];
     for (cmd, args, atteso) in comandi {
         let r = chiama(&main, cmd, args);

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-seguiti"
+description = "Enables the seguiti command without any pre-configured scope."
+commands.allow = ["seguiti"]
+
+[[permission]]
+identifier = "deny-seguiti"
+description = "Denies the seguiti command without any pre-configured scope."
+commands.deny = ["seguiti"]

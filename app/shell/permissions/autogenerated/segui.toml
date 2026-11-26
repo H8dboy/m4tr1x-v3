@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-segui"
+description = "Enables the segui command without any pre-configured scope."
+commands.allow = ["segui"]
+
+[[permission]]
+identifier = "deny-segui"
+description = "Denies the segui command without any pre-configured scope."
+commands.deny = ["segui"]
